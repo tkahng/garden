@@ -1,8 +1,6 @@
 package io.k2dv.garden.admin.user.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.admin.user.dto.AdminUserResponse;
-import io.k2dv.garden.admin.user.dto.AssignRoleRequest;
 import io.k2dv.garden.admin.user.service.AdminUserService;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.shared.dto.PageMeta;
@@ -31,8 +29,6 @@ class AdminUserControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean AdminUserService adminUserService;
-
-    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void listUsers_returns200WithPage() throws Exception {

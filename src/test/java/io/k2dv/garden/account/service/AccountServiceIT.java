@@ -51,9 +51,9 @@ class AccountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createAddress_setsDefault_clearsOld() {
-        var addr1 = accountService.createAddress(userId,
+        accountService.createAddress(userId,
             new AddressRequest("Jane", "Doe", null, "1 Main St", null, "Portland", null, "97201", "US", true));
-        var addr2 = accountService.createAddress(userId,
+        accountService.createAddress(userId,
             new AddressRequest("Jane", "Doe", null, "2 Oak Ave", null, "Portland", null, "97202", "US", true));
 
         var addresses = accountService.listAddresses(userId);

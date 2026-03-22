@@ -1,9 +1,6 @@
 package io.k2dv.garden.account.controller;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.account.dto.AccountResponse;
-import io.k2dv.garden.account.dto.AddressRequest;
-import io.k2dv.garden.account.dto.AddressResponse;
 import io.k2dv.garden.account.service.AccountService;
 import io.k2dv.garden.auth.security.CurrentUserArgumentResolver;
 import io.k2dv.garden.config.TestSecurityConfig;
@@ -23,7 +20,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -36,7 +32,6 @@ class AccountControllerTest {
     @MockitoBean AccountService accountService;
     @MockitoBean CurrentUserArgumentResolver currentUserArgumentResolver;
 
-    private final ObjectMapper objectMapper = new ObjectMapper();
     private final UUID userId = UUID.randomUUID();
 
     @BeforeEach

@@ -2,7 +2,6 @@ package io.k2dv.garden.auth.service;
 
 import io.k2dv.garden.auth.dto.*;
 import io.k2dv.garden.auth.model.IdentityProvider;
-import io.k2dv.garden.auth.model.TokenType;
 import io.k2dv.garden.auth.repository.IdentityRepository;
 import io.k2dv.garden.auth.repository.TokenRepository;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
