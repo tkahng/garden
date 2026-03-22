@@ -71,8 +71,8 @@ class AdminIamServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void listPermissions_returns14() {
+    void listPermissions_returns16() {
         var perms = adminIamService.listPermissions();
-        assertThat(perms).hasSize(14);
+        assertThat(perms).hasSize(16);
     }
 }
