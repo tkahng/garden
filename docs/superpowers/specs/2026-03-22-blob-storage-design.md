@@ -61,7 +61,7 @@ No `url` column. Public URL is always computed: `resolveUrl(key)` = `{storage.ba
 
 ```sql
 CREATE TABLE blob_objects (
-    id           UUID        NOT NULL DEFAULT gen_ulid() PRIMARY KEY,
+    id           UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
     key          TEXT        NOT NULL UNIQUE,  -- UNIQUE guards against duplicate storage paths
     filename     TEXT        NOT NULL,
     content_type TEXT        NOT NULL,
