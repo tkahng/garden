@@ -36,7 +36,7 @@ public class AdminUserService {
                 cb.like(cb.lower(root.get("email")), "%" + filter.email().toLowerCase() + "%"));
         }
         Page<User> page = userRepo.findAll(spec, pageable);
-        return PagedResult.of(page.map(u -> AdminUserResponse.from(u, userRepo.findRoleNamesByUserId(u.getId()))));
+        return PagedResult.of(page.map((User u) -> AdminUserResponse.from(u, userRepo.findRoleNamesByUserId(u.getId()))));
     }
 
     @Transactional(readOnly = true)
