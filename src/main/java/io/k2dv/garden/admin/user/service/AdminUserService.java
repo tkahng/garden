@@ -11,11 +11,13 @@ import io.k2dv.garden.user.model.UserStatus;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -36,7 +38,11 @@ public class AdminUserService {
                 cb.like(cb.lower(root.get("email")), "%" + filter.email().toLowerCase() + "%"));
         }
         Page<User> page = userRepo.findAll(spec, pageable);
-        return PagedResult.of(page.map((User u) -> AdminUserResponse.from(u, userRepo.findRoleNamesByUserId(u.getId()))));
+        List<AdminUserResponse> content = page.getContent().stream()
+            .map(u -> AdminUserResponse.from(u, userRepo.findRoleNamesByUserId(u.getId())))
+            .toList();
+        Page<AdminUserResponse> mapped = new PageImpl<>(content, pageable, page.getTotalElements());
+        return PagedResult.of(mapped);
     }
 
     @Transactional(readOnly = true)
