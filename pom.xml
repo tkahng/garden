@@ -104,6 +104,12 @@
 		<scope>runtime</scope>
 	</dependency>
 
+	<!-- Flyway PostgreSQL support (required for PostgreSQL 10+ in community edition) -->
+	<dependency>
+		<groupId>org.flywaydb</groupId>
+		<artifactId>flyway-database-postgresql</artifactId>
+	</dependency>
+
 	<!-- Testcontainers -->
 	<dependency>
 		<groupId>org.springframework.boot</groupId>
