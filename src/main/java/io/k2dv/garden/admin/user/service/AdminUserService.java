@@ -10,6 +10,7 @@ import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.model.UserStatus;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
@@ -34,8 +35,8 @@ public class AdminUserService {
             spec = spec.and((root, query, cb) ->
                 cb.like(cb.lower(root.get("email")), "%" + filter.email().toLowerCase() + "%"));
         }
-        return PagedResult.of(userRepo.findAll(spec, pageable)
-            .map(u -> AdminUserResponse.from(u, userRepo.findRoleNamesByUserId(u.getId()))));
+        Page<User> page = userRepo.findAll(spec, pageable);
+        return PagedResult.of(page.map(u -> AdminUserResponse.from(u, userRepo.findRoleNamesByUserId(u.getId()))));
     }
 
     @Transactional(readOnly = true)
