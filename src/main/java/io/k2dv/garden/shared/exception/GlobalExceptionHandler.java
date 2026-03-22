@@ -3,11 +3,26 @@ package io.k2dv.garden.shared.exception;
 import lombok.Builder;
 import lombok.Getter;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    ResponseEntity<ErrorResponse> handleValidation(MethodArgumentNotValidException ex) {
+        String message = ex.getBindingResult().getAllErrors().stream()
+                .findFirst()
+                .map(e -> e.getDefaultMessage())
+                .orElse("Validation failed");
+        return ResponseEntity.badRequest()
+                .body(ErrorResponse.builder()
+                        .error("VALIDATION_ERROR")
+                        .message(message)
+                        .status(400)
+                        .build());
+    }
 
     @ExceptionHandler(DomainException.class)
     ResponseEntity<ErrorResponse> handleDomain(DomainException ex) {
