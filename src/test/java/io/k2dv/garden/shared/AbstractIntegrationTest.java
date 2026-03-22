@@ -1,9 +1,7 @@
 package io.k2dv.garden.shared;
 
-import io.k2dv.garden.config.TestSecurityConfig;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
-import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.Rollback;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
@@ -16,7 +14,6 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 @Transactional
 @Rollback
 @ActiveProfiles("test")
-@Import(TestSecurityConfig.class)
 public abstract class AbstractIntegrationTest {
 
     @Container
