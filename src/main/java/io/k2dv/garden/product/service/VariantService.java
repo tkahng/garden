@@ -2,6 +2,7 @@ package io.k2dv.garden.product.service;
 
 import io.k2dv.garden.product.dto.AdminVariantResponse;
 import io.k2dv.garden.product.dto.CreateVariantRequest;
+import io.k2dv.garden.product.dto.InventoryItemResponse;
 import io.k2dv.garden.product.dto.OptionValueLabel;
 import io.k2dv.garden.product.dto.UpdateVariantRequest;
 import io.k2dv.garden.product.model.InventoryItem;
@@ -108,6 +109,15 @@ public class VariantService {
             .filter(vv -> vv.getProductId().equals(productId))
             .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
         v.setDeletedAt(Instant.now());
+    }
+
+    @Transactional(readOnly = true)
+    public List<InventoryItemResponse> getInventoryForProduct(UUID productId) {
+        List<ProductVariant> variants = variantRepo.findByProductIdAndDeletedAtIsNullOrderByCreatedAtAsc(productId);
+        List<UUID> variantIds = variants.stream().map(ProductVariant::getId).toList();
+        return inventoryRepo.findByVariantIdIn(variantIds).stream()
+            .map(inv -> new InventoryItemResponse(inv.getId(), inv.getVariantId(), inv.isRequiresShipping()))
+            .toList();
     }
 
     String buildTitle(List<ProductOptionValue> values) {
