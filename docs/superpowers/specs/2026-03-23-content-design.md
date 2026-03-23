@@ -88,7 +88,7 @@ Handle uniqueness: service checks uniqueness within the same `blog_id` among non
 | Column | Type | Notes |
 |---|---|---|
 | `id` | UUID PK | `gen_random_uuid()` default |
-| `article_id` | UUID NOT NULL FK→articles | |
+| `article_id` | UUID NOT NULL FK→articles ON DELETE CASCADE | |
 | `blob_id` | UUID NOT NULL FK→blob_objects | |
 | `alt_text` | TEXT | |
 | `position` | INT NOT NULL | Display order |
