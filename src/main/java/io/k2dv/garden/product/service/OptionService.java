@@ -81,9 +81,8 @@ public class OptionService {
         List<ProductVariant> affected = variantRepo.findByOptionValueIdAndDeletedAtIsNull(valueId);
         for (ProductVariant v : affected) {
             v.setTitle(variantService.buildTitle(v.getOptionValues()));
-            variantRepo.save(v);
         }
-        variantRepo.flush();
+        // No save/flush needed — @Transactional dirty-checking handles it
 
         return new ProductOptionValueResponse(val.getId(), val.getLabel(), val.getPosition());
     }

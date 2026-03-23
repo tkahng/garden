@@ -19,9 +19,13 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -44,11 +48,15 @@ public class VariantService {
         }
 
         // Resolve option values
-        List<ProductOptionValue> optionValues = req.optionValueIds() == null ? List.of()
-            : req.optionValueIds().stream()
-                .map(id -> optionValueRepo.findById(id)
-                    .orElseThrow(() -> new NotFoundException("OPTION_VALUE_NOT_FOUND", "Option value not found")))
-                .toList();
+        List<ProductOptionValue> optionValues;
+        if (req.optionValueIds() == null || req.optionValueIds().isEmpty()) {
+            optionValues = List.of();
+        } else {
+            optionValues = optionValueRepo.findAllById(req.optionValueIds());
+            if (optionValues.size() != req.optionValueIds().size()) {
+                throw new NotFoundException("OPTION_VALUE_NOT_FOUND", "One or more option values not found");
+            }
+        }
 
         // Build title
         String title = buildTitle(optionValues);
@@ -81,7 +89,7 @@ public class VariantService {
             .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
 
         // Validate compareAtPrice against the effective price (new or existing)
-        java.math.BigDecimal effectivePrice = req.price() != null ? req.price() : v.getPrice();
+        BigDecimal effectivePrice = req.price() != null ? req.price() : v.getPrice();
         if (req.compareAtPrice() != null && req.compareAtPrice().compareTo(effectivePrice) <= 0) {
             throw new ValidationException("INVALID_COMPARE_PRICE", "Compare-at price must be greater than price");
         }
@@ -100,7 +108,6 @@ public class VariantService {
             .filter(vv -> vv.getProductId().equals(productId))
             .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
         v.setDeletedAt(Instant.now());
-        variantRepo.save(v);
     }
 
     String buildTitle(List<ProductOptionValue> values) {
@@ -109,12 +116,13 @@ public class VariantService {
     }
 
     private AdminVariantResponse toResponse(ProductVariant v) {
-        List<OptionValueLabel> labels = v.getOptionValues().stream()
-            .map(ov -> {
-                String optName = optionRepo.findById(ov.getOptionId())
-                    .map(ProductOption::getName).orElse("");
-                return new OptionValueLabel(optName, ov.getLabel());
-            }).toList();
+        List<ProductOptionValue> ovs = v.getOptionValues();
+        Set<UUID> optionIds = ovs.stream().map(ProductOptionValue::getOptionId).collect(Collectors.toSet());
+        Map<UUID, String> optionNamesById = optionRepo.findAllById(optionIds).stream()
+            .collect(Collectors.toMap(ProductOption::getId, ProductOption::getName));
+        List<OptionValueLabel> labels = ovs.stream()
+            .map(ov -> new OptionValueLabel(optionNamesById.getOrDefault(ov.getOptionId(), ""), ov.getLabel()))
+            .toList();
         return new AdminVariantResponse(v.getId(), v.getTitle(), v.getSku(), v.getBarcode(),
             v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
             labels, v.getDeletedAt());
