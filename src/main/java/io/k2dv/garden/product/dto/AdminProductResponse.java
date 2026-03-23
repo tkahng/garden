@@ -3,6 +3,7 @@ package io.k2dv.garden.product.dto;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import io.k2dv.garden.product.model.ProductStatus;
 
 public record AdminProductResponse(
     UUID id,
@@ -11,7 +12,7 @@ public record AdminProductResponse(
     String handle,
     String vendor,
     String productType,
-    String status,
+    ProductStatus status,
     UUID featuredImageId,
     List<AdminVariantResponse> variants,
     List<ProductImageResponse> images,
