@@ -161,7 +161,7 @@ No `id`, `created_at`, `updated_at`, or trigger on the join table.
 - `Article.featuredImageId` is a plain `@Column` UUID — no `@ManyToOne` (avoids circular FK with `ArticleImage`)
 - `Article.tags` managed via `@ManyToMany` on `Article` → `ContentTag` through `article_content_tags`
 - **N+1 prevention:** `listArticles` and `listPublishedArticles` fetch the article page first, then batch-load associated tags using `contentTagRepo.findAllById(...)` grouped by article — same pattern as `ProductService.toAdminResponse` using `blobRepo.findAllById(blobIds)`
-- `Page.searchVector` and `Article.searchVector` are mapped as `@Column(name = "search_vector", insertable = false, updatable = false)` with type `String` — the column is trigger-managed and never written by JPA
+- `Page.searchVector` and `Article.searchVector` are mapped as `@Column(name = "search_vector", insertable = false, updatable = false, columnDefinition = "tsvector")` with Java type `Object` (mapped via `@JdbcTypeCode(SqlTypes.OTHER)`) — the `columnDefinition` ensures schema validation passes against PostgreSQL's `tsvector` type; the field is never read by the application, only referenced via `root.get("searchVector")` in `cb.function(...)`
 
 ---
 
@@ -299,7 +299,7 @@ Each list endpoint accepts a filter record (all fields nullable/optional):
 ```java
 // io.k2dv.garden.content.dto
 record PageFilterRequest(String status, String titleContains, String handleContains, String q) {}
-record BlogFilterRequest(String titleContains, String handleContains) {}
+record BlogFilterRequest(String titleContains, String handleContains) {} // handleContains is admin-only; storefront controller binds only titleContains
 record ArticleFilterRequest(String status, String titleContains, String handleContains, UUID authorId, String tag, String q) {}
 ```
 
@@ -314,7 +314,7 @@ One static factory per entity in `io.k2dv.garden.content.specification`:
 - `status` → `cb.equal(root.get("status"), PageStatus.valueOf(status))`
 - `titleContains` → `cb.like(cb.lower(root.get("title")), "%" + titleContains.toLowerCase() + "%")`
 - `handleContains` → `cb.like(cb.lower(root.get("handle")), "%" + handleContains.toLowerCase() + "%")`
-- `q` → full-text: `cb.isTrue(cb.function("websearch_to_tsquery_match", Boolean.class, root.get("searchVector"), cb.literal(q)))` — implemented as a native Hibernate function registration that emits `search_vector @@ websearch_to_tsquery('english', ?)`.
+- `q` → full-text: `cb.isTrue(cb.function("fts_match", Boolean.class, root.get("searchVector"), cb.literal(q)))` — implemented as a Hibernate `FunctionContributor`-registered function that emits `?1 @@ websearch_to_tsquery('english', ?2)`.
 
 **`BlogSpecification.toSpec(BlogFilterRequest filter)`** returns `Specification<Blog>`:
 - `titleContains` → ILIKE on title
@@ -326,22 +326,31 @@ One static factory per entity in `io.k2dv.garden.content.specification`:
 - `titleContains` → ILIKE on title
 - `handleContains` → ILIKE on handle
 - `authorId` → `cb.equal(root.get("authorId"), authorId)`
-- `tag` → subquery or JOIN: `JOIN article_content_tags act JOIN content_tags ct ON ct.id = act.content_tag_id WHERE ct.name = ?`
+- `tag` → `root.join("tags", JoinType.INNER)` then `cb.equal(tagJoin.get("name"), tag)` — uses the `Article.tags` `@ManyToMany` path directly; no manual subquery needed. Spring Data JPA's pagination `COUNT` query uses `COUNT(DISTINCT root.id)` automatically to avoid inflated counts from the JOIN.
 - `q` → full-text match on `search_vector` (same pattern as pages)
 
 ### Full-Text Search Implementation
 
-`q` is passed to PostgreSQL via `websearch_to_tsquery('english', q)` (supports `+`, `-`, `"phrase"` syntax). The `@@` match is registered as a Hibernate dialect function so it can be used inside a `Specification`:
+`q` is passed to PostgreSQL via `websearch_to_tsquery('english', q)` (supports `+`, `-`, `"phrase"` syntax). The `@@` match is registered as a Hibernate `FunctionContributor` so it can be used inside a `Specification`:
 
 ```java
-// Registered in a HibernatePropertiesCustomizer or @PostConstruct on the dialect:
-// Function name: "fts_match" — emits: "?1 @@ websearch_to_tsquery('english', ?2)"
+// io.k2dv.garden.config.ContentFunctionContributor implements FunctionContributor
+// Registered via META-INF/services/org.hibernate.boot.model.FunctionContributor
+@Override
+public void contributeFunctions(FunctionContributions contributions) {
+    contributions.getFunctionRegistry()
+        .registerPattern("fts_match", "?1 @@ websearch_to_tsquery('english', ?2)");
+}
+```
+
+Call site in any Specification:
+```java
 Predicate fts = cb.isTrue(
     cb.function("fts_match", Boolean.class, root.get("searchVector"), cb.literal(q))
 );
 ```
 
-The Hibernate function registration uses `SqmFunctionRegistry.registerPattern("fts_match", "?1 @@ websearch_to_tsquery('english', ?2)")`.
+`FunctionContributor` is the correct Hibernate 6 SPI for registering custom SQL functions. `HibernatePropertiesCustomizer` and dialect `@PostConstruct` do not have access to `SqmFunctionRegistry` and must not be used for this purpose.
 
 ### Null Safety
 
@@ -383,6 +392,7 @@ Default: `page=0`, `pageSize=10`.
 - `changeStatus_toDraft_clearsPublishedAt`: `publishedAt` cleared on revert to DRAFT
 - `softDelete_excludedFromStorefrontList`: deleted page not returned by `listPublished`
 - `listPages_filterByStatus_returnsDraftOnly`: `status=DRAFT` filter returns only draft pages
+- `listPages_filterByQ_matchesTitleOnInsert`: immediately after `create(...)` (no update), `q` matching a word from the title returns the page — verifies INSERT trigger fires
 - `listPages_filterByQ_matchesBody`: `q` matching a word in page body returns the page
 
 **`ArticleServiceIT`:**
@@ -397,6 +407,7 @@ Default: `page=0`, `pageSize=10`.
 - `changeStatus_toPublished_snapshotsAuthorName`: `authorName` set to `firstName + " " + lastName` on first publish
 - `listArticles_filterByTag_returnsMatchingArticles`: `tag=java` returns only articles tagged with "java"
 - `listArticles_filterByAuthorId_returnsMatchingArticles`: `authorId` filter returns only that author's articles
+- `listArticles_filterByQ_matchesTitleOnInsert`: immediately after `createArticle(...)` (no update), `q` matching the title returns the article — verifies INSERT trigger fires
 - `listArticles_filterByQ_matchesExcerptAndBody`: `q` matching words across excerpt and body returns the article
 - `listPublishedArticles_filterByTag_excludesDraftAndUntagged`: storefront tag filter returns only PUBLISHED articles with that tag
 
