@@ -1,0 +1,122 @@
+package io.k2dv.garden.product.service;
+
+import io.k2dv.garden.product.dto.AdminVariantResponse;
+import io.k2dv.garden.product.dto.CreateVariantRequest;
+import io.k2dv.garden.product.dto.OptionValueLabel;
+import io.k2dv.garden.product.dto.UpdateVariantRequest;
+import io.k2dv.garden.product.model.InventoryItem;
+import io.k2dv.garden.product.model.ProductOption;
+import io.k2dv.garden.product.model.ProductOptionValue;
+import io.k2dv.garden.product.model.ProductVariant;
+import io.k2dv.garden.product.repository.InventoryItemRepository;
+import io.k2dv.garden.product.repository.ProductOptionRepository;
+import io.k2dv.garden.product.repository.ProductOptionValueRepository;
+import io.k2dv.garden.product.repository.ProductRepository;
+import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+@Service
+@RequiredArgsConstructor
+public class VariantService {
+
+    private final ProductVariantRepository variantRepo;
+    private final ProductOptionValueRepository optionValueRepo;
+    private final ProductOptionRepository optionRepo;
+    private final InventoryItemRepository inventoryRepo;
+    private final ProductRepository productRepo;
+
+    @Transactional
+    public AdminVariantResponse create(UUID productId, CreateVariantRequest req) {
+        productRepo.findByIdAndDeletedAtIsNull(productId)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+
+        if (req.compareAtPrice() != null && req.price() != null
+                && req.compareAtPrice().compareTo(req.price()) <= 0) {
+            throw new ValidationException("INVALID_COMPARE_PRICE", "Compare-at price must be greater than price");
+        }
+
+        // Resolve option values
+        List<ProductOptionValue> optionValues = req.optionValueIds() == null ? List.of()
+            : req.optionValueIds().stream()
+                .map(id -> optionValueRepo.findById(id)
+                    .orElseThrow(() -> new NotFoundException("OPTION_VALUE_NOT_FOUND", "Option value not found")))
+                .toList();
+
+        // Build title
+        String title = buildTitle(optionValues);
+
+        ProductVariant v = new ProductVariant();
+        v.setProductId(productId);
+        v.setTitle(title);
+        v.setSku(req.sku());
+        v.setBarcode(req.barcode());
+        v.setPrice(req.price());
+        v.setCompareAtPrice(req.compareAtPrice());
+        v.setWeight(req.weight());
+        v.setWeightUnit(req.weightUnit());
+        v.getOptionValues().addAll(optionValues);
+        v = variantRepo.save(v);
+
+        // Auto-create inventory item
+        InventoryItem inv = new InventoryItem();
+        inv.setVariantId(v.getId());
+        inv.setRequiresShipping(true);
+        inventoryRepo.save(inv);
+
+        return toResponse(v);
+    }
+
+    @Transactional
+    public AdminVariantResponse update(UUID productId, UUID variantId, UpdateVariantRequest req) {
+        ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(variantId)
+            .filter(vv -> vv.getProductId().equals(productId))
+            .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
+
+        // Validate compareAtPrice against the effective price (new or existing)
+        java.math.BigDecimal effectivePrice = req.price() != null ? req.price() : v.getPrice();
+        if (req.compareAtPrice() != null && req.compareAtPrice().compareTo(effectivePrice) <= 0) {
+            throw new ValidationException("INVALID_COMPARE_PRICE", "Compare-at price must be greater than price");
+        }
+        if (req.price() != null) v.setPrice(req.price());
+        if (req.compareAtPrice() != null) v.setCompareAtPrice(req.compareAtPrice());
+        if (req.sku() != null) v.setSku(req.sku());
+        if (req.barcode() != null) v.setBarcode(req.barcode());
+        if (req.weight() != null) v.setWeight(req.weight());
+        if (req.weightUnit() != null) v.setWeightUnit(req.weightUnit());
+        return toResponse(variantRepo.save(v));
+    }
+
+    @Transactional
+    public void softDelete(UUID productId, UUID variantId) {
+        ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(variantId)
+            .filter(vv -> vv.getProductId().equals(productId))
+            .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
+        v.setDeletedAt(Instant.now());
+        variantRepo.save(v);
+    }
+
+    String buildTitle(List<ProductOptionValue> values) {
+        if (values.isEmpty()) return "Default Title";
+        return values.stream().map(ProductOptionValue::getLabel).reduce((a, b) -> a + " / " + b).orElse("Default Title");
+    }
+
+    private AdminVariantResponse toResponse(ProductVariant v) {
+        List<OptionValueLabel> labels = v.getOptionValues().stream()
+            .map(ov -> {
+                String optName = optionRepo.findById(ov.getOptionId())
+                    .map(ProductOption::getName).orElse("");
+                return new OptionValueLabel(optName, ov.getLabel());
+            }).toList();
+        return new AdminVariantResponse(v.getId(), v.getTitle(), v.getSku(), v.getBarcode(),
+            v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
+            labels, v.getDeletedAt());
+    }
+}
