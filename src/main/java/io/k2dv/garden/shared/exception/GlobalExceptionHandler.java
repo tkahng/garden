@@ -35,6 +35,17 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
+    ResponseEntity<ErrorResponse> handleMaxUploadSize(
+            org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
+        return ResponseEntity.badRequest()
+            .body(ErrorResponse.builder()
+                .error("FILE_TOO_LARGE")
+                .message("File exceeds maximum upload size")
+                .status(400)
+                .build());
+    }
+
     @ExceptionHandler(DomainException.class)
     ResponseEntity<ErrorResponse> handleDomain(DomainException ex) {
         return ResponseEntity
