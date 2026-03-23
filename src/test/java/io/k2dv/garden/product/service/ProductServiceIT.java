@@ -4,7 +4,7 @@ import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
-import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.shared.exception.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -37,11 +37,11 @@ class ProductServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void createProduct_duplicateHandle_throwsValidationException() {
+    void createProduct_duplicateHandle_throwsConflictException() {
         productService.create(new CreateProductRequest("First", null, null, null, null, List.of()));
         assertThatThrownBy(() ->
             productService.create(new CreateProductRequest("First", null, null, null, null, List.of()))
-        ).isInstanceOf(ValidationException.class);
+        ).isInstanceOf(ConflictException.class);
     }
 
     @Test

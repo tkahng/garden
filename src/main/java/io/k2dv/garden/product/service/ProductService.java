@@ -6,6 +6,7 @@ import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.*;
 import io.k2dv.garden.product.repository.*;
 import io.k2dv.garden.shared.dto.CursorMeta;
+import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +15,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -28,12 +32,14 @@ public class ProductService {
     private final ProductImageRepository imageRepo;
     private final ProductOptionRepository optionRepo;
     private final ProductVariantRepository variantRepo;
-    private final InventoryItemRepository inventoryRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
 
     @Transactional
     public AdminProductResponse create(CreateProductRequest req) {
+        if (req.title() == null) {
+            throw new ValidationException("TITLE_REQUIRED", "Title is required");
+        }
         String handle = req.handle() != null ? req.handle() : slugify(req.title());
         checkHandleUnique(handle, null);
 
@@ -148,7 +154,7 @@ public class ProductService {
             ? productRepo.existsByHandleAndDeletedAtIsNull(handle)
             : productRepo.existsByHandleAndDeletedAtIsNullAndIdNot(handle, excludeId);
         if (conflict) {
-            throw new ValidationException("HANDLE_CONFLICT", "A product with this handle already exists");
+            throw new ConflictException("HANDLE_CONFLICT", "A product with this handle already exists");
         }
     }
 
@@ -167,12 +173,12 @@ public class ProductService {
         return slug.isEmpty() ? "product" : slug;
     }
 
-    AdminProductResponse toAdminResponse(Product p) {
+    private AdminProductResponse toAdminResponse(Product p) {
         List<ProductVariant> variants = variantRepo.findByProductIdAndDeletedAtIsNullOrderByCreatedAtAsc(p.getId());
         List<ProductImage> images = imageRepo.findByProductIdOrderByPositionAsc(p.getId());
         List<ProductOption> options = optionRepo.findByProductIdOrderByPositionAsc(p.getId());
         Map<UUID, String> optionNameById = options.stream()
-            .collect(Collectors.toMap(o -> o.getId(), ProductOption::getName));
+            .collect(Collectors.toMap(ProductOption::getId, ProductOption::getName));
 
         List<AdminVariantResponse> variantResponses = variants.stream().map(v -> {
             List<OptionValueLabel> labels = v.getOptionValues().stream()
@@ -185,10 +191,12 @@ public class ProductService {
                 labels, v.getDeletedAt());
         }).toList();
 
+        Set<UUID> blobIds = images.stream().map(ProductImage::getBlobId).collect(Collectors.toSet());
+        Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+            .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
+
         List<ProductImageResponse> imageResponses = images.stream().map(img -> {
-            String url = blobRepo.findById(img.getBlobId())
-                .map(b -> storageService.resolveUrl(b.getKey()))
-                .orElse("");
+            String url = blobUrls.getOrDefault(img.getBlobId(), "");
             return new ProductImageResponse(img.getId(), url, img.getAltText(), img.getPosition());
         }).toList();
 
@@ -205,7 +213,7 @@ public class ProductService {
         List<ProductImage> images = imageRepo.findByProductIdOrderByPositionAsc(p.getId());
         List<ProductOption> options = optionRepo.findByProductIdOrderByPositionAsc(p.getId());
         Map<UUID, String> optionNameById = options.stream()
-            .collect(Collectors.toMap(o -> o.getId(), ProductOption::getName));
+            .collect(Collectors.toMap(ProductOption::getId, ProductOption::getName));
 
         List<ProductVariantResponse> variantResponses = variants.stream().map(v -> {
             List<OptionValueLabel> labels = v.getOptionValues().stream()
@@ -217,10 +225,12 @@ public class ProductService {
                 v.getPrice(), v.getCompareAtPrice(), labels);
         }).toList();
 
+        Set<UUID> blobIds = images.stream().map(ProductImage::getBlobId).collect(Collectors.toSet());
+        Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+            .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
+
         List<ProductImageResponse> imageResponses = images.stream().map(img -> {
-            String url = blobRepo.findById(img.getBlobId())
-                .map(b -> storageService.resolveUrl(b.getKey()))
-                .orElse("");
+            String url = blobUrls.getOrDefault(img.getBlobId(), "");
             return new ProductImageResponse(img.getId(), url, img.getAltText(), img.getPosition());
         }).toList();
 
