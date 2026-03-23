@@ -28,6 +28,43 @@ All content permissions (`content:read`, `content:write`, `content:publish`, `co
 
 Every table with `updated_at` requires a `CREATE TRIGGER set_updated_at BEFORE UPDATE ON <table> FOR EACH ROW EXECUTE FUNCTION set_updated_at();` — consistent with all prior migrations.
 
+V10 also creates two dedicated trigger functions for full-text search:
+
+```sql
+-- pages
+CREATE OR REPLACE FUNCTION pages_search_vector_update() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector := to_tsvector('english',
+    coalesce(NEW.title, '') || ' ' ||
+    coalesce(regexp_replace(NEW.body, '<[^>]+>', ' ', 'g'), '')
+  );
+  RETURN NEW;
+END;$$ LANGUAGE plpgsql;
+CREATE TRIGGER pages_search_vector_trigger
+  BEFORE INSERT OR UPDATE ON pages
+  FOR EACH ROW EXECUTE FUNCTION pages_search_vector_update();
+
+-- articles
+CREATE OR REPLACE FUNCTION articles_search_vector_update() RETURNS trigger AS $$
+BEGIN
+  NEW.search_vector := to_tsvector('english',
+    coalesce(NEW.title, '') || ' ' ||
+    coalesce(NEW.excerpt, '') || ' ' ||
+    coalesce(regexp_replace(NEW.body, '<[^>]+>', ' ', 'g'), '')
+  );
+  RETURN NEW;
+END;$$ LANGUAGE plpgsql;
+CREATE TRIGGER articles_search_vector_trigger
+  BEFORE INSERT OR UPDATE ON articles
+  FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update();
+```
+
+GIN indexes for fast full-text lookup:
+```sql
+CREATE INDEX pages_search_vector_idx    ON pages    USING gin(search_vector);
+CREATE INDEX articles_search_vector_idx ON articles USING gin(search_vector);
+```
+
 ### Tables
 
 #### `pages`
@@ -45,6 +82,7 @@ Every table with `updated_at` requires a `CREATE TRIGGER set_updated_at BEFORE U
 | `deleted_at` | TIMESTAMPTZ | Soft delete |
 | `created_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | |
 | `updated_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | Trigger-managed |
+| `search_vector` | TSVECTOR | Trigger-managed; covers `title` + HTML-stripped `body`; populated by `pages_search_vector_update` trigger (BEFORE INSERT OR UPDATE) |
 
 Handle uniqueness: service checks `existsByHandleAndDeletedAtIsNull` before create, and `existsByHandleAndDeletedAtIsNullAndIdNot` before update. Throws `ConflictException` on collision.
 
@@ -80,6 +118,7 @@ No soft delete on blogs — deleting a blog hard-deletes and cascades to its art
 | `deleted_at` | TIMESTAMPTZ | Soft delete |
 | `created_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | |
 | `updated_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | Trigger-managed |
+| `search_vector` | TSVECTOR | Trigger-managed; covers `title` + `excerpt` + HTML-stripped `body`; populated by `articles_search_vector_update` trigger (BEFORE INSERT OR UPDATE) |
 
 Handle uniqueness: service checks uniqueness within the same `blog_id` among non-deleted articles. Throws `ConflictException` on collision. Two articles in different blogs may share the same handle.
 
@@ -122,6 +161,7 @@ No `id`, `created_at`, `updated_at`, or trigger on the join table.
 - `Article.featuredImageId` is a plain `@Column` UUID — no `@ManyToOne` (avoids circular FK with `ArticleImage`)
 - `Article.tags` managed via `@ManyToMany` on `Article` → `ContentTag` through `article_content_tags`
 - **N+1 prevention:** `listArticles` and `listPublishedArticles` fetch the article page first, then batch-load associated tags using `contentTagRepo.findAllById(...)` grouped by article — same pattern as `ProductService.toAdminResponse` using `blobRepo.findAllById(blobIds)`
+- `Page.searchVector` and `Article.searchVector` are mapped as `@Column(name = "search_vector", insertable = false, updatable = false)` with type `String` — the column is trigger-managed and never written by JPA
 
 ---
 
@@ -139,6 +179,14 @@ GET /api/v1/blogs/{blogHandle}/articles/{articleHandle}     — get PUBLISHED ar
 ```
 
 All storefront list endpoints accept `page` (default 0) and `pageSize` (default 10) query parameters.
+
+**Storefront filter params:**
+
+| Endpoint | Filter params |
+|---|---|
+| `GET /api/v1/pages` | `q` — full-text search over `search_vector` (title + body) |
+| `GET /api/v1/blogs` | `titleContains` — case-insensitive ILIKE on title |
+| `GET /api/v1/blogs/{blogHandle}/articles` | `tag` — exact tag name match; `q` — full-text search over `search_vector` (title + excerpt + body) |
 
 ### Admin
 
@@ -174,6 +222,16 @@ DELETE /api/v1/admin/blogs/{id}/articles/{articleId}/images/{imageId} content:de
 
 All admin list endpoints accept `page` (default 0) and `pageSize` (default 10) query parameters.
 
+**Admin filter params:**
+
+| Endpoint | Filter params |
+|---|---|
+| `GET /api/v1/admin/pages` | `status` (`DRAFT`/`PUBLISHED`); `titleContains`; `handleContains`; `q` — full-text search over `search_vector` |
+| `GET /api/v1/admin/blogs` | `titleContains`; `handleContains` |
+| `GET /api/v1/admin/blogs/{id}/articles` | `status` (`DRAFT`/`PUBLISHED`); `titleContains`; `handleContains`; `authorId` (UUID); `tag` (tag name); `q` — full-text search over `search_vector` |
+
+All filter params are optional. Multiple params are ANDed together. `q` and `titleContains` may be combined.
+
 ---
 
 ## Section 3: Services and Behaviors
@@ -183,13 +241,13 @@ All admin list endpoints accept `page` (default 0) and `pageSize` (default 10) q
 | Method | Behavior |
 |---|---|
 | `create(CreatePageRequest)` → `AdminPageResponse` | Slugify handle from title if not provided (fallback: `"page"`). Check handle unique among non-deleted (`ConflictException` on collision). Status defaults to `DRAFT`. |
-| `list(Pageable)` → `PagedResult<AdminPageResponse>` | All non-deleted pages, ordered by `createdAt` desc. |
+| `list(PageFilterRequest, Pageable)` → `PagedResult<AdminPageResponse>` | All non-deleted pages, ordered by `createdAt` desc. Applies `PageSpecification.toSpec(filter)`. |
 | `get(UUID id)` → `AdminPageResponse` | Non-deleted or `NotFoundException`. |
 | `update(UUID id, UpdatePageRequest)` → `AdminPageResponse` | Full replace of all updatable fields. Handle uniqueness checked excluding self. |
 | `changeStatus(UUID id, PageStatusRequest)` → `AdminPageResponse` | Transition to PUBLISHED: sets `publishedAt = Instant.now()`. Transition to DRAFT: clears `publishedAt = null`. |
 | `delete(UUID id)` | Sets `deletedAt = Instant.now()`. |
 | `getByHandle(String handle)` → `PageResponse` | Storefront: PUBLISHED + non-deleted only. `NotFoundException` otherwise. |
-| `listPublished(Pageable)` → `PagedResult<PageResponse>` | Storefront: PUBLISHED + non-deleted, ordered by `publishedAt` desc. |
+| `listPublished(PageFilterRequest, Pageable)` → `PagedResult<PageResponse>` | Storefront: PUBLISHED + non-deleted, ordered by `publishedAt` desc. Applies `PageSpecification.toSpec(filter)`. |
 
 ### ArticleService
 
@@ -198,25 +256,25 @@ All admin list endpoints accept `page` (default 0) and `pageSize` (default 10) q
 | Method | Behavior |
 |---|---|
 | `createBlog(CreateBlogRequest)` → `AdminBlogResponse` | Handle unique check (`ConflictException`). |
-| `listBlogs(Pageable)` → `PagedResult<AdminBlogResponse>` | All blogs, ordered by `createdAt` desc. |
+| `listBlogs(BlogFilterRequest, Pageable)` → `PagedResult<AdminBlogResponse>` | All blogs, ordered by `createdAt` desc. Applies `BlogSpecification.toSpec(filter)`. |
 | `getBlog(UUID id)` → `AdminBlogResponse` | `NotFoundException` if missing. |
 | `updateBlog(UUID id, UpdateBlogRequest)` → `AdminBlogResponse` | Full replace. Handle uniqueness checked excluding self. |
 | `deleteBlog(UUID id)` | Hard delete. DB cascade removes articles and their images. |
 | `getBlogByHandle(String handle)` → `BlogResponse` | Storefront: `NotFoundException` if not found. |
-| `listBlogsPublic(Pageable)` → `PagedResult<BlogResponse>` | Storefront: all blogs, ordered by `createdAt` desc. |
+| `listBlogsPublic(BlogFilterRequest, Pageable)` → `PagedResult<BlogResponse>` | Storefront: all blogs, ordered by `createdAt` desc. Applies `BlogSpecification.toSpec(filter)`. |
 
 **Article operations:**
 
 | Method | Behavior |
 |---|---|
 | `createArticle(UUID blogId, CreateArticleRequest)` → `AdminArticleResponse` | Verify blog exists. Handle unique within blog among non-deleted (fallback slug: `"article"`). Status defaults to DRAFT. Tags: find-or-create `ContentTag` by name. |
-| `listArticles(UUID blogId, Pageable)` → `PagedResult<AdminArticleResponse>` | All non-deleted articles for blog, ordered by `createdAt` desc. Batch-load tags to avoid N+1. |
+| `listArticles(UUID blogId, ArticleFilterRequest, Pageable)` → `PagedResult<AdminArticleResponse>` | All non-deleted articles for blog, ordered by `createdAt` desc. Batch-load tags. Applies `ArticleSpecification.toSpec(blogId, filter)`. |
 | `getArticle(UUID blogId, UUID articleId)` → `AdminArticleResponse` | Article must belong to blog; non-deleted or `NotFoundException`. |
 | `updateArticle(UUID blogId, UUID articleId, UpdateArticleRequest)` → `AdminArticleResponse` | Full replace. Handle uniqueness within blog excluding self. Tags replaced (find-or-create). |
 | `changeArticleStatus(UUID blogId, UUID articleId, ArticleStatusRequest)` → `AdminArticleResponse` | Transition to PUBLISHED: sets `publishedAt = Instant.now()`. If `authorName` is currently null and `authorId` is set, snapshot `firstName + " " + lastName` from `UserRepository`. Transition to DRAFT: clears `publishedAt = null`. `authorName` is never updated after it is first set. |
 | `deleteArticle(UUID blogId, UUID articleId)` | Soft delete (`deletedAt = Instant.now()`). |
 | `getArticleByHandle(String blogHandle, String articleHandle)` → `ArticleResponse` | Storefront: verifies blog exists by handle (`NotFoundException` if not), then finds PUBLISHED + non-deleted article by handle within that blog (`NotFoundException` if not found). |
-| `listPublishedArticles(String blogHandle, Pageable)` → `PagedResult<ArticleResponse>` | Storefront: verifies blog exists by handle (`NotFoundException` if not), then lists PUBLISHED + non-deleted articles ordered by `publishedAt` desc. Batch-load tags. |
+| `listPublishedArticles(String blogHandle, ArticleFilterRequest, Pageable)` → `PagedResult<ArticleResponse>` | Storefront: verifies blog exists by handle (`NotFoundException` if not), then lists PUBLISHED + non-deleted articles ordered by `publishedAt` desc. Batch-load tags. Applies `ArticleSpecification.toSpec(blogId, filter)`. |
 
 **Image operations (same pattern as `ProductImageService`):**
 
@@ -232,7 +290,66 @@ Same algorithm as `ProductService.slugify`: lowercase → replace non-alphanumer
 
 ---
 
-## Section 4: Pagination
+## Section 4: Filtering
+
+### Filter Request Records
+
+Each list endpoint accepts a filter record (all fields nullable/optional):
+
+```java
+// io.k2dv.garden.content.dto
+record PageFilterRequest(String status, String titleContains, String handleContains, String q) {}
+record BlogFilterRequest(String titleContains, String handleContains) {}
+record ArticleFilterRequest(String status, String titleContains, String handleContains, UUID authorId, String tag, String q) {}
+```
+
+Controllers bind these from `@RequestParam` fields directly (individual params, not a request body).
+
+### Specification Builders
+
+One static factory per entity in `io.k2dv.garden.content.specification`:
+
+**`PageSpecification.toSpec(PageFilterRequest filter)`** returns `Specification<Page>`:
+- Always adds: `deletedAt IS NULL`
+- `status` → `cb.equal(root.get("status"), PageStatus.valueOf(status))`
+- `titleContains` → `cb.like(cb.lower(root.get("title")), "%" + titleContains.toLowerCase() + "%")`
+- `handleContains` → `cb.like(cb.lower(root.get("handle")), "%" + handleContains.toLowerCase() + "%")`
+- `q` → full-text: `cb.isTrue(cb.function("websearch_to_tsquery_match", Boolean.class, root.get("searchVector"), cb.literal(q)))` — implemented as a native Hibernate function registration that emits `search_vector @@ websearch_to_tsquery('english', ?)`.
+
+**`BlogSpecification.toSpec(BlogFilterRequest filter)`** returns `Specification<Blog>`:
+- `titleContains` → ILIKE on title
+- `handleContains` → ILIKE on handle
+
+**`ArticleSpecification.toSpec(UUID blogId, ArticleFilterRequest filter)`** returns `Specification<Article>`:
+- Always adds: `blogId = ?` and `deletedAt IS NULL`
+- `status` → exact match on `ArticleStatus`
+- `titleContains` → ILIKE on title
+- `handleContains` → ILIKE on handle
+- `authorId` → `cb.equal(root.get("authorId"), authorId)`
+- `tag` → subquery or JOIN: `JOIN article_content_tags act JOIN content_tags ct ON ct.id = act.content_tag_id WHERE ct.name = ?`
+- `q` → full-text match on `search_vector` (same pattern as pages)
+
+### Full-Text Search Implementation
+
+`q` is passed to PostgreSQL via `websearch_to_tsquery('english', q)` (supports `+`, `-`, `"phrase"` syntax). The `@@` match is registered as a Hibernate dialect function so it can be used inside a `Specification`:
+
+```java
+// Registered in a HibernatePropertiesCustomizer or @PostConstruct on the dialect:
+// Function name: "fts_match" — emits: "?1 @@ websearch_to_tsquery('english', ?2)"
+Predicate fts = cb.isTrue(
+    cb.function("fts_match", Boolean.class, root.get("searchVector"), cb.literal(q))
+);
+```
+
+The Hibernate function registration uses `SqmFunctionRegistry.registerPattern("fts_match", "?1 @@ websearch_to_tsquery('english', ?2)")`.
+
+### Null Safety
+
+Every predicate is only added when its corresponding filter field is non-null and non-blank. Specs are combined with `Specification.where(...).and(...)`. If all fields are null the spec is `null`, which `JpaSpecificationExecutor.findAll(null, pageable)` treats as no filter.
+
+---
+
+## Section 5: Pagination
 
 All list endpoints use Spring Data `Pageable` constructed in the controller from `page` and `pageSize` query parameters. Sort field is endpoint-specific:
 
@@ -255,7 +372,7 @@ Default: `page=0`, `pageSize=10`.
 
 ---
 
-## Section 5: Testing
+## Section 6: Testing
 
 ### Integration Tests (extend `AbstractIntegrationTest`)
 
@@ -265,6 +382,8 @@ Default: `page=0`, `pageSize=10`.
 - `changeStatus_toPublished_setsPublishedAt`: `publishedAt` set on PUBLISHED transition
 - `changeStatus_toDraft_clearsPublishedAt`: `publishedAt` cleared on revert to DRAFT
 - `softDelete_excludedFromStorefrontList`: deleted page not returned by `listPublished`
+- `listPages_filterByStatus_returnsDraftOnly`: `status=DRAFT` filter returns only draft pages
+- `listPages_filterByQ_matchesBody`: `q` matching a word in page body returns the page
 
 **`ArticleServiceIT`:**
 - `createBlog_persistsBlog`: blog saved with correct handle
@@ -276,14 +395,18 @@ Default: `page=0`, `pageSize=10`.
 - `publishedArticle_visibleOnStorefront`: PUBLISHED article returned by `listPublishedArticles`
 - `draftArticle_notVisibleOnStorefront`: DRAFT article not returned by `listPublishedArticles`
 - `changeStatus_toPublished_snapshotsAuthorName`: `authorName` set to `firstName + " " + lastName` on first publish
+- `listArticles_filterByTag_returnsMatchingArticles`: `tag=java` returns only articles tagged with "java"
+- `listArticles_filterByAuthorId_returnsMatchingArticles`: `authorId` filter returns only that author's articles
+- `listArticles_filterByQ_matchesExcerptAndBody`: `q` matching words across excerpt and body returns the article
+- `listPublishedArticles_filterByTag_excludesDraftAndUntagged`: storefront tag filter returns only PUBLISHED articles with that tag
 
 ### Controller Slice Tests (`@WebMvcTest` + `@MockitoBean`)
 
-**`AdminPageControllerTest`:** create 201, blank title 400, not found 404, status change 200, delete 204.
+**`AdminPageControllerTest`:** create 201, blank title 400, not found 404, status change 200, delete 204, list with `status` filter 200.
 
-**`AdminArticleControllerTest`:** create article 201, get article 200, delete 204, add image 201.
+**`AdminArticleControllerTest`:** create article 201, get article 200, delete 204, add image 201, list with `tag` filter 200.
 
-**`StorefrontContentControllerTest`:** published page 200, draft page 404, published article 200, draft article 404.
+**`StorefrontContentControllerTest`:** published page 200, draft page 404, published article 200, draft article 404, list articles with `tag` filter 200.
 
 ---
 
