@@ -28,43 +28,6 @@ All content permissions (`content:read`, `content:write`, `content:publish`, `co
 
 Every table with `updated_at` requires a `CREATE TRIGGER set_updated_at BEFORE UPDATE ON <table> FOR EACH ROW EXECUTE FUNCTION set_updated_at();` — consistent with all prior migrations.
 
-V10 also creates two dedicated trigger functions for full-text search:
-
-```sql
--- pages
-CREATE OR REPLACE FUNCTION pages_search_vector_update() RETURNS trigger AS $$
-BEGIN
-  NEW.search_vector := to_tsvector('english',
-    coalesce(NEW.title, '') || ' ' ||
-    coalesce(regexp_replace(NEW.body, '<[^>]+>', ' ', 'g'), '')
-  );
-  RETURN NEW;
-END;$$ LANGUAGE plpgsql;
-CREATE TRIGGER pages_search_vector_trigger
-  BEFORE INSERT OR UPDATE ON pages
-  FOR EACH ROW EXECUTE FUNCTION pages_search_vector_update();
-
--- articles
-CREATE OR REPLACE FUNCTION articles_search_vector_update() RETURNS trigger AS $$
-BEGIN
-  NEW.search_vector := to_tsvector('english',
-    coalesce(NEW.title, '') || ' ' ||
-    coalesce(NEW.excerpt, '') || ' ' ||
-    coalesce(regexp_replace(NEW.body, '<[^>]+>', ' ', 'g'), '')
-  );
-  RETURN NEW;
-END;$$ LANGUAGE plpgsql;
-CREATE TRIGGER articles_search_vector_trigger
-  BEFORE INSERT OR UPDATE ON articles
-  FOR EACH ROW EXECUTE FUNCTION articles_search_vector_update();
-```
-
-GIN indexes for fast full-text lookup:
-```sql
-CREATE INDEX pages_search_vector_idx    ON pages    USING gin(search_vector);
-CREATE INDEX articles_search_vector_idx ON articles USING gin(search_vector);
-```
-
 ### Tables
 
 #### `pages`
@@ -82,7 +45,6 @@ CREATE INDEX articles_search_vector_idx ON articles USING gin(search_vector);
 | `deleted_at` | TIMESTAMPTZ | Soft delete |
 | `created_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | |
 | `updated_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | Trigger-managed |
-| `search_vector` | TSVECTOR | Trigger-managed; covers `title` + HTML-stripped `body`; populated by `pages_search_vector_update` trigger (BEFORE INSERT OR UPDATE) |
 
 Handle uniqueness: service checks `existsByHandleAndDeletedAtIsNull` before create, and `existsByHandleAndDeletedAtIsNullAndIdNot` before update. Throws `ConflictException` on collision.
 
@@ -118,7 +80,6 @@ No soft delete on blogs — deleting a blog hard-deletes and cascades to its art
 | `deleted_at` | TIMESTAMPTZ | Soft delete |
 | `created_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | |
 | `updated_at` | TIMESTAMPTZ NOT NULL DEFAULT `clock_timestamp()` | Trigger-managed |
-| `search_vector` | TSVECTOR | Trigger-managed; covers `title` + `excerpt` + HTML-stripped `body`; populated by `articles_search_vector_update` trigger (BEFORE INSERT OR UPDATE) |
 
 Handle uniqueness: service checks uniqueness within the same `blog_id` among non-deleted articles. Throws `ConflictException` on collision. Two articles in different blogs may share the same handle.
 
@@ -161,7 +122,6 @@ No `id`, `created_at`, `updated_at`, or trigger on the join table.
 - `Article.featuredImageId` is a plain `@Column` UUID — no `@ManyToOne` (avoids circular FK with `ArticleImage`)
 - `Article.tags` managed via `@ManyToMany` on `Article` → `ContentTag` through `article_content_tags`
 - **N+1 prevention:** `listArticles` and `listPublishedArticles` fetch the article page first, then batch-load associated tags using `contentTagRepo.findAllById(...)` grouped by article — same pattern as `ProductService.toAdminResponse` using `blobRepo.findAllById(blobIds)`
-- `Page.searchVector` and `Article.searchVector` are mapped as `@Column(name = "search_vector", insertable = false, updatable = false, columnDefinition = "tsvector")` with Java type `Object` (mapped via `@JdbcTypeCode(SqlTypes.OTHER)`) — the `columnDefinition` ensures schema validation passes against PostgreSQL's `tsvector` type; the field is never read by the application, only referenced via `root.get("searchVector")` in `cb.function(...)`
 
 ---
 
@@ -184,9 +144,9 @@ All storefront list endpoints accept `page` (default 0) and `pageSize` (default 
 
 | Endpoint | Filter params |
 |---|---|
-| `GET /api/v1/pages` | `q` — full-text search over `search_vector` (title + body) |
+| `GET /api/v1/pages` | `q` — case-insensitive ILIKE on title OR body |
 | `GET /api/v1/blogs` | `titleContains` — case-insensitive ILIKE on title |
-| `GET /api/v1/blogs/{blogHandle}/articles` | `tag` — exact tag name match; `q` — full-text search over `search_vector` (title + excerpt + body) |
+| `GET /api/v1/blogs/{blogHandle}/articles` | `tag` — exact tag name match; `q` — case-insensitive ILIKE on title OR excerpt OR body |
 
 ### Admin
 
@@ -226,9 +186,9 @@ All admin list endpoints accept `page` (default 0) and `pageSize` (default 10) q
 
 | Endpoint | Filter params |
 |---|---|
-| `GET /api/v1/admin/pages` | `status` (`DRAFT`/`PUBLISHED`); `titleContains`; `handleContains`; `q` — full-text search over `search_vector` |
+| `GET /api/v1/admin/pages` | `status` (`DRAFT`/`PUBLISHED`); `titleContains`; `handleContains`; `q` — ILIKE on title OR body |
 | `GET /api/v1/admin/blogs` | `titleContains`; `handleContains` |
-| `GET /api/v1/admin/blogs/{id}/articles` | `status` (`DRAFT`/`PUBLISHED`); `titleContains`; `handleContains`; `authorId` (UUID); `tag` (tag name); `q` — full-text search over `search_vector` |
+| `GET /api/v1/admin/blogs/{id}/articles` | `status` (`DRAFT`/`PUBLISHED`); `titleContains`; `handleContains`; `authorId` (UUID); `tag` (tag name); `q` — ILIKE on title OR excerpt OR body |
 
 All filter params are optional. Multiple params are ANDed together. `q` and `titleContains` may be combined.
 
@@ -314,7 +274,7 @@ One static factory per entity in `io.k2dv.garden.content.specification`:
 - `status` → `cb.equal(root.get("status"), PageStatus.valueOf(status))`
 - `titleContains` → `cb.like(cb.lower(root.get("title")), "%" + titleContains.toLowerCase() + "%")`
 - `handleContains` → `cb.like(cb.lower(root.get("handle")), "%" + handleContains.toLowerCase() + "%")`
-- `q` → full-text: `cb.isTrue(cb.function("fts_match", Boolean.class, root.get("searchVector"), cb.literal(q)))` — implemented as a Hibernate `FunctionContributor`-registered function that emits `?1 @@ websearch_to_tsquery('english', ?2)`.
+- `q` → `cb.or(ILIKE on title, ILIKE on body)` — case-insensitive substring match across both fields
 
 **`BlogSpecification.toSpec(BlogFilterRequest filter)`** returns `Specification<Blog>`:
 - `titleContains` → ILIKE on title
@@ -327,30 +287,28 @@ One static factory per entity in `io.k2dv.garden.content.specification`:
 - `handleContains` → ILIKE on handle
 - `authorId` → `cb.equal(root.get("authorId"), authorId)`
 - `tag` → `root.join("tags", JoinType.INNER)` then `cb.equal(tagJoin.get("name"), tag)` — uses the `Article.tags` `@ManyToMany` path directly; no manual subquery needed. Spring Data JPA's pagination `COUNT` query uses `COUNT(DISTINCT root.id)` automatically to avoid inflated counts from the JOIN.
-- `q` → full-text match on `search_vector` (same pattern as pages)
+- `q` → `cb.or(ILIKE on title, ILIKE on excerpt, ILIKE on body)` — case-insensitive substring match across all three fields
 
-### Full-Text Search Implementation
+### `q` Search Implementation
 
-`q` is passed to PostgreSQL via `websearch_to_tsquery('english', q)` (supports `+`, `-`, `"phrase"` syntax). The `@@` match is registered as a Hibernate `FunctionContributor` so it can be used inside a `Specification`:
+`q` produces an OR of case-insensitive ILIKE predicates across the relevant text fields:
 
 ```java
-// io.k2dv.garden.config.ContentFunctionContributor implements FunctionContributor
-// Registered via META-INF/services/org.hibernate.boot.model.FunctionContributor
-@Override
-public void contributeFunctions(FunctionContributions contributions) {
-    contributions.getFunctionRegistry()
-        .registerPattern("fts_match", "?1 @@ websearch_to_tsquery('english', ?2)");
-}
+String pattern = "%" + q.toLowerCase() + "%";
+// pages
+cb.or(
+    cb.like(cb.lower(root.get("title")), pattern),
+    cb.like(cb.lower(root.get("body")),  pattern)
+)
+// articles
+cb.or(
+    cb.like(cb.lower(root.get("title")),   pattern),
+    cb.like(cb.lower(root.get("excerpt")), pattern),
+    cb.like(cb.lower(root.get("body")),    pattern)
+)
 ```
 
-Call site in any Specification:
-```java
-Predicate fts = cb.isTrue(
-    cb.function("fts_match", Boolean.class, root.get("searchVector"), cb.literal(q))
-);
-```
-
-`FunctionContributor` is the correct Hibernate 6 SPI for registering custom SQL functions. `HibernatePropertiesCustomizer` and dialect `@PostConstruct` do not have access to `SqmFunctionRegistry` and must not be used for this purpose.
+`body` is nullable — `cb.like` on a null column produces no match (no special null handling needed; SQL `LIKE` on NULL evaluates to NULL/false).
 
 ### Null Safety
 
@@ -392,8 +350,7 @@ Default: `page=0`, `pageSize=10`.
 - `changeStatus_toDraft_clearsPublishedAt`: `publishedAt` cleared on revert to DRAFT
 - `softDelete_excludedFromStorefrontList`: deleted page not returned by `listPublished`
 - `listPages_filterByStatus_returnsDraftOnly`: `status=DRAFT` filter returns only draft pages
-- `listPages_filterByQ_matchesTitleOnInsert`: immediately after `create(...)` (no update), `q` matching a word from the title returns the page — verifies INSERT trigger fires
-- `listPages_filterByQ_matchesBody`: `q` matching a word in page body returns the page
+- `listPages_filterByQ_matchesTitleAndBody`: `q` matching a word in title or body returns the page; page not matching is excluded
 
 **`ArticleServiceIT`:**
 - `createBlog_persistsBlog`: blog saved with correct handle
@@ -407,8 +364,7 @@ Default: `page=0`, `pageSize=10`.
 - `changeStatus_toPublished_snapshotsAuthorName`: `authorName` set to `firstName + " " + lastName` on first publish
 - `listArticles_filterByTag_returnsMatchingArticles`: `tag=java` returns only articles tagged with "java"
 - `listArticles_filterByAuthorId_returnsMatchingArticles`: `authorId` filter returns only that author's articles
-- `listArticles_filterByQ_matchesTitleOnInsert`: immediately after `createArticle(...)` (no update), `q` matching the title returns the article — verifies INSERT trigger fires
-- `listArticles_filterByQ_matchesExcerptAndBody`: `q` matching words across excerpt and body returns the article
+- `listArticles_filterByQ_matchesTitleExcerptAndBody`: `q` matching a word in title, excerpt, or body returns the article; article not matching is excluded
 - `listPublishedArticles_filterByTag_excludesDraftAndUntagged`: storefront tag filter returns only PUBLISHED articles with that tag
 
 ### Controller Slice Tests (`@WebMvcTest` + `@MockitoBean`)
