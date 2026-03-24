@@ -5,6 +5,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
@@ -24,4 +25,13 @@ public interface CollectionProductRepository extends JpaRepository<CollectionPro
 
     @Query("SELECT MAX(cp.position) FROM CollectionProduct cp WHERE cp.collectionId = :collectionId")
     Integer findMaxPositionByCollectionId(UUID collectionId);
+
+    @Query("SELECT cp FROM CollectionProduct cp " +
+           "WHERE cp.collectionId = :collectionId " +
+           "AND EXISTS (" +
+           "  SELECT p FROM io.k2dv.garden.product.model.Product p " +
+           "  WHERE p.id = cp.productId AND p.status = io.k2dv.garden.product.model.ProductStatus.ACTIVE AND p.deletedAt IS NULL" +
+           ") " +
+           "ORDER BY cp.position ASC, cp.createdAt ASC")
+    Page<CollectionProduct> findActiveProductsByCollectionId(@Param("collectionId") UUID collectionId, Pageable pageable);
 }

@@ -23,10 +23,8 @@ import io.k2dv.garden.collection.repository.CollectionRepository;
 import io.k2dv.garden.collection.repository.CollectionRuleRepository;
 import io.k2dv.garden.collection.specification.CollectionSpecification;
 import io.k2dv.garden.product.model.Product;
-import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.dto.PagedResult;
-import io.k2dv.garden.shared.dto.PageMeta;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
@@ -221,22 +219,12 @@ public class CollectionService {
     public PagedResult<CollectionProductResponse> listProductsStorefront(String handle, Pageable pageable) {
         Collection c = collectionRepo.findByHandleAndDeletedAtIsNullAndStatus(handle, CollectionStatus.ACTIVE)
                 .orElseThrow(() -> new NotFoundException("COLLECTION_NOT_FOUND", "Collection not found"));
-        Page<CollectionProduct> page = cpRepo.findByCollectionIdOrderByPositionAscCreatedAtAsc(c.getId(), pageable);
-        List<CollectionProductResponse> content = page.getContent().stream()
-                .map(cp -> {
-                    Product p = productRepo.findByIdAndDeletedAtIsNull(cp.getProductId())
-                            .filter(prod -> prod.getStatus() == ProductStatus.ACTIVE)
-                            .orElse(null);
-                    if (p == null) return null;
-                    return toProductResponse(cp, p);
-                })
-                .filter(r -> r != null)
-                .toList();
-        return new PagedResult<>(content, PageMeta.builder()
-                .page(page.getNumber())
-                .pageSize(page.getSize())
-                .total(page.getTotalElements())
-                .build());
+        Page<CollectionProduct> page = cpRepo.findActiveProductsByCollectionId(c.getId(), pageable);
+        return PagedResult.of(page, cp -> {
+            Product p = productRepo.findByIdAndDeletedAtIsNull(cp.getProductId()).orElseThrow(
+                    () -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+            return toProductResponse(cp, p);
+        });
     }
 
     // --- Helpers ---
