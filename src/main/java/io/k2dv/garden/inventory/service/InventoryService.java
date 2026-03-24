@@ -78,9 +78,9 @@ public class InventoryService {
                 "Use the receive endpoint for RECEIVED; SOLD is system-managed");
         }
 
-        InventoryItem item = findItemByVariant(variantId);
         ProductVariant variant = variantRepo.findById(variantId)
             .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
+        InventoryItem item = findItemByVariant(variantId);
         Location location = findLocation(req.locationId());
 
         InventoryLevel level = levelRepo
