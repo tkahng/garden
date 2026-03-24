@@ -1,6 +1,6 @@
-package io.k2dv.garden.product.repository;
+package io.k2dv.garden.inventory.repository;
 
-import io.k2dv.garden.product.model.InventoryItem;
+import io.k2dv.garden.inventory.model.InventoryItem;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
 import java.util.Optional;

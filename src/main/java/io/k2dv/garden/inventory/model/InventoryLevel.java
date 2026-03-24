@@ -1,6 +1,6 @@
 package io.k2dv.garden.inventory.model;
 
-import io.k2dv.garden.product.model.InventoryItem;
+import io.k2dv.garden.inventory.model.InventoryItem;
 import io.k2dv.garden.shared.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;

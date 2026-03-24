@@ -1,4 +1,4 @@
-package io.k2dv.garden.product.model;
+package io.k2dv.garden.inventory.model;
 
 import io.k2dv.garden.shared.model.BaseEntity;
 import jakarta.persistence.*;

@@ -2,7 +2,7 @@ package io.k2dv.garden.product.service;
 
 import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
-import io.k2dv.garden.product.repository.InventoryItemRepository;
+import io.k2dv.garden.inventory.repository.InventoryItemRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
