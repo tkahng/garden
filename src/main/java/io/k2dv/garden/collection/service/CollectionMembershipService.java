@@ -4,7 +4,9 @@ import io.k2dv.garden.collection.model.Collection;
 import io.k2dv.garden.collection.model.CollectionProduct;
 import io.k2dv.garden.collection.model.CollectionRule;
 import io.k2dv.garden.collection.model.CollectionType;
-import io.k2dv.garden.collection.repository.*;
+import io.k2dv.garden.collection.repository.CollectionProductRepository;
+import io.k2dv.garden.collection.repository.CollectionRepository;
+import io.k2dv.garden.collection.repository.CollectionRuleRepository;
 import io.k2dv.garden.product.model.Product;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductTag;
@@ -17,7 +19,6 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -59,7 +60,11 @@ public class CollectionMembershipService {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public void syncCollectionMembership(UUID collectionId) {
-        Collection collection = collectionRepo.findById(collectionId).orElseThrow();
+        Collection collection = collectionRepo.findById(collectionId)
+            .orElseThrow(() -> new java.util.NoSuchElementException("Collection not found: " + collectionId));
+        if (collection.getCollectionType() != CollectionType.AUTOMATED) {
+            return;
+        }
         List<CollectionRule> rules = ruleRepo.findByCollectionIdOrderByCreatedAtAsc(collectionId);
 
         if (rules.isEmpty()) {
