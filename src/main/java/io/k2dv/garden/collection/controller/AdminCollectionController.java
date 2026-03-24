@@ -73,7 +73,7 @@ public class AdminCollectionController {
     @PatchMapping("/{id}")
     @HasPermission("collection:write")
     public ResponseEntity<ApiResponse<AdminCollectionResponse>> update(
-            @PathVariable UUID id, @RequestBody UpdateCollectionRequest req) {
+            @PathVariable UUID id, @Valid @RequestBody UpdateCollectionRequest req) {
         return ResponseEntity.ok(ApiResponse.of(collectionService.update(id, req)));
     }
 
