@@ -36,6 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -75,7 +76,16 @@ public class CollectionService {
     @Transactional(readOnly = true)
     public PagedResult<AdminCollectionSummaryResponse> listAdmin(CollectionFilterRequest filter, Pageable pageable) {
         Page<Collection> page = collectionRepo.findAll(CollectionSpecification.toSpec(filter), pageable);
-        return PagedResult.of(page, c -> toAdminSummary(c));
+        List<UUID> ids = page.getContent().stream().map(Collection::getId).toList();
+        Map<UUID, Long> countMap = ids.isEmpty() ? Map.of() :
+                cpRepo.countByCollectionIdIn(ids).stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                CollectionProductRepository.CollectionCount::getCollectionId,
+                                CollectionProductRepository.CollectionCount::getProductCount));
+        return PagedResult.of(page, c ->
+                new AdminCollectionSummaryResponse(c.getId(), c.getTitle(), c.getHandle(),
+                        c.getCollectionType(), c.getStatus(),
+                        countMap.getOrDefault(c.getId(), 0L), c.getCreatedAt()));
     }
 
     @Transactional
@@ -220,9 +230,12 @@ public class CollectionService {
         Collection c = collectionRepo.findByHandleAndDeletedAtIsNullAndStatus(handle, CollectionStatus.ACTIVE)
                 .orElseThrow(() -> new NotFoundException("COLLECTION_NOT_FOUND", "Collection not found"));
         Page<CollectionProduct> page = cpRepo.findActiveProductsByCollectionId(c.getId(), pageable);
+        List<UUID> productIds = page.getContent().stream().map(CollectionProduct::getProductId).toList();
+        Map<UUID, Product> productMap = productRepo.findAllById(productIds).stream()
+                .collect(java.util.stream.Collectors.toMap(Product::getId, p -> p));
         return PagedResult.of(page, cp -> {
-            Product p = productRepo.findByIdAndDeletedAtIsNull(cp.getProductId()).orElseThrow(
-                    () -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+            Product p = productMap.get(cp.getProductId());
+            if (p == null) throw new NotFoundException("PRODUCT_NOT_FOUND", "Product not found");
             return toProductResponse(cp, p);
         });
     }
@@ -270,7 +283,7 @@ public class CollectionService {
     }
 
     private CollectionProductResponse toProductResponse(CollectionProduct cp) {
-        Product p = productRepo.findById(cp.getProductId())
+        Product p = productRepo.findByIdAndDeletedAtIsNull(cp.getProductId())
                 .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
         return new CollectionProductResponse(cp.getId(), cp.getProductId(), p.getTitle(), p.getHandle(), cp.getPosition());
     }

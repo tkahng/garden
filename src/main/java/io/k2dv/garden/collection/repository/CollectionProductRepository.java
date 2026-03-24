@@ -26,6 +26,14 @@ public interface CollectionProductRepository extends JpaRepository<CollectionPro
     @Query("SELECT MAX(cp.position) FROM CollectionProduct cp WHERE cp.collectionId = :collectionId")
     Integer findMaxPositionByCollectionId(UUID collectionId);
 
+    @Query("SELECT cp.collectionId AS collectionId, COUNT(cp) AS productCount FROM CollectionProduct cp WHERE cp.collectionId IN :collectionIds GROUP BY cp.collectionId")
+    List<CollectionCount> countByCollectionIdIn(@Param("collectionIds") java.util.Collection<UUID> collectionIds);
+
+    interface CollectionCount {
+        UUID getCollectionId();
+        long getProductCount();
+    }
+
     @Query("SELECT cp FROM CollectionProduct cp " +
            "WHERE cp.collectionId = :collectionId " +
            "AND EXISTS (" +
