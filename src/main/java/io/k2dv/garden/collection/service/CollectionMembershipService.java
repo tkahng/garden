@@ -120,10 +120,14 @@ public class CollectionMembershipService {
      */
     @Transactional(propagation = Propagation.REQUIRED)
     public void syncCollectionsForProduct(UUID productId, Set<String> newTagNames) {
+        // Only ACTIVE products should be members of automated collections
+        Product product = productRepo.findByIdAndDeletedAtIsNull(productId).orElse(null);
+        boolean isActive = product != null && product.getStatus() == ProductStatus.ACTIVE;
+
         List<Collection> automated = collectionRepo.findAllByCollectionTypeAndDeletedAtIsNull(CollectionType.AUTOMATED);
         for (Collection collection : automated) {
             List<CollectionRule> rules = ruleRepo.findByCollectionIdOrderByCreatedAtAsc(collection.getId());
-            boolean qualifies = evaluate(newTagNames, rules, collection.isDisjunctive());
+            boolean qualifies = isActive && evaluate(newTagNames, rules, collection.isDisjunctive());
             boolean isMember  = cpRepo.existsByCollectionIdAndProductId(collection.getId(), productId);
 
             if (qualifies && !isMember) {

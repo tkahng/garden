@@ -162,7 +162,15 @@ public class CollectionService {
     public PagedResult<CollectionProductResponse> listProducts(UUID collectionId, Pageable pageable) {
         findActiveOrThrow(collectionId);
         Page<CollectionProduct> page = cpRepo.findByCollectionIdOrderByPositionAscCreatedAtAsc(collectionId, pageable);
-        return PagedResult.of(page, cp -> toProductResponse(cp));
+        List<UUID> productIds = page.getContent().stream().map(CollectionProduct::getProductId).toList();
+        Map<UUID, Product> productMap = productIds.isEmpty() ? Map.of() :
+                productRepo.findAllById(productIds).stream()
+                        .collect(java.util.stream.Collectors.toMap(Product::getId, p -> p));
+        return PagedResult.of(page, cp -> {
+            Product p = productMap.get(cp.getProductId());
+            if (p == null) throw new NotFoundException("PRODUCT_NOT_FOUND", "Product not found");
+            return toProductResponse(cp, p);
+        });
     }
 
     @Transactional
@@ -270,12 +278,6 @@ public class CollectionService {
         return new AdminCollectionResponse(c.getId(), c.getTitle(), c.getHandle(), c.getDescription(),
                 c.getCollectionType(), c.getStatus(), c.getFeaturedImageId(), c.isDisjunctive(),
                 productCount, rules, c.getCreatedAt(), c.getUpdatedAt(), c.getDeletedAt());
-    }
-
-    private AdminCollectionSummaryResponse toAdminSummary(Collection c) {
-        long productCount = cpRepo.countByCollectionId(c.getId());
-        return new AdminCollectionSummaryResponse(c.getId(), c.getTitle(), c.getHandle(),
-                c.getCollectionType(), c.getStatus(), productCount, c.getCreatedAt());
     }
 
     private CollectionRuleResponse toRuleResponse(CollectionRule r) {
