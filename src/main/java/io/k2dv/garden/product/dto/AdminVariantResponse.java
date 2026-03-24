@@ -1,5 +1,8 @@
 package io.k2dv.garden.product.dto;
 
+import io.k2dv.garden.inventory.model.FulfillmentType;
+import io.k2dv.garden.inventory.model.InventoryPolicy;
+
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
@@ -15,5 +18,8 @@ public record AdminVariantResponse(
     BigDecimal weight,
     String weightUnit,
     List<OptionValueLabel> optionValues,
+    FulfillmentType fulfillmentType,
+    InventoryPolicy inventoryPolicy,
+    int leadTimeDays,
     Instant deletedAt
 ) {}

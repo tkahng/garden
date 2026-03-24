@@ -135,6 +135,6 @@ public class VariantService {
             .toList();
         return new AdminVariantResponse(v.getId(), v.getTitle(), v.getSku(), v.getBarcode(),
             v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
-            labels, v.getDeletedAt());
+            labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(), v.getDeletedAt());
     }
 }

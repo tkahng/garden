@@ -188,7 +188,7 @@ public class ProductService {
                 .toList();
             return new AdminVariantResponse(v.getId(), v.getTitle(), v.getSku(), v.getBarcode(),
                 v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
-                labels, v.getDeletedAt());
+                labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(), v.getDeletedAt());
         }).toList();
 
         Set<UUID> blobIds = images.stream().map(ProductImage::getBlobId).collect(Collectors.toSet());
@@ -222,7 +222,8 @@ public class ProductService {
                     ov.getLabel()))
                 .toList();
             return new ProductVariantResponse(v.getId(), v.getTitle(), v.getSku(),
-                v.getPrice(), v.getCompareAtPrice(), labels);
+                v.getPrice(), v.getCompareAtPrice(), labels,
+                v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays());
         }).toList();
 
         Set<UUID> blobIds = images.stream().map(ProductImage::getBlobId).collect(Collectors.toSet());
