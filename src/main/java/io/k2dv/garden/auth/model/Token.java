@@ -9,7 +9,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "tokens")
+@Table(schema = "auth", name = "tokens")
 @Getter
 @Setter
 public class Token extends BaseEntity {

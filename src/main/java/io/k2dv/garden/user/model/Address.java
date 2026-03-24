@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "addresses")
+@Table(schema = "auth", name = "addresses")
 @Getter
 @Setter
 public class Address extends BaseEntity {

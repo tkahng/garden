@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "product_tags")
+@Table(schema = "catalog", name = "product_tags")
 @Getter
 @Setter
 public class ProductTag extends BaseEntity {

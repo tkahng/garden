@@ -8,7 +8,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "blob_objects")
+@Table(schema = "storage", name = "blob_objects")
 @Getter
 @Setter
 public class BlobObject extends BaseEntity {

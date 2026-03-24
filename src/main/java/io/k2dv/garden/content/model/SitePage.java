@@ -7,7 +7,7 @@ import lombok.Setter;
 import java.time.Instant;
 
 @Entity
-@Table(name = "pages")
+@Table(schema = "content", name = "pages")
 @Getter
 @Setter
 public class SitePage extends BaseEntity {

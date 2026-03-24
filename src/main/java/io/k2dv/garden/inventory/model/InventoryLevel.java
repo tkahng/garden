@@ -7,7 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "inventory_levels", uniqueConstraints = {
+@Table(schema = "inventory", name = "inventory_levels", uniqueConstraints = {
     @UniqueConstraint(columnNames = {"inventory_item_id", "location_id"})
 })
 @Getter

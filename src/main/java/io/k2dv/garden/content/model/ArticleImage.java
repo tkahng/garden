@@ -7,7 +7,7 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
-@Table(name = "article_images")
+@Table(schema = "content", name = "article_images")
 @Getter
 @Setter
 public class ArticleImage extends BaseEntity {

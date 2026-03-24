@@ -9,7 +9,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 @Entity
-@Table(name = "identities",
+@Table(schema = "auth", name = "identities",
     uniqueConstraints = @UniqueConstraint(columnNames = {"provider", "account_id"}))
 @Getter
 @Setter

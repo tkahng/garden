@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "locations")
+@Table(schema = "inventory", name = "locations")
 @Getter
 @Setter
 public class Location extends BaseEntity {

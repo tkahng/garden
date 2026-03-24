@@ -7,7 +7,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "probe")
+@Table(schema = "shared", name = "probe")
 @Getter
 @Setter
 public class ProbeEntity extends BaseEntity {

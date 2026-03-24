@@ -10,7 +10,7 @@ import java.util.Set;
 import java.util.UUID;
 
 @Entity
-@Table(name = "articles")
+@Table(schema = "content", name = "articles")
 @Getter
 @Setter
 public class Article extends BaseEntity {
@@ -43,6 +43,7 @@ public class Article extends BaseEntity {
     private Instant deletedAt;
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
+        schema = "content",
         name = "article_content_tags",
         joinColumns = @JoinColumn(name = "article_id"),
         inverseJoinColumns = @JoinColumn(name = "content_tag_id")

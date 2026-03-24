@@ -6,7 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "content_tags")
+@Table(schema = "content", name = "content_tags")
 @Getter
 @Setter
 public class ContentTag extends BaseEntity {

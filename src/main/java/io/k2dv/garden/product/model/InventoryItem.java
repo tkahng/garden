@@ -7,7 +7,7 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
-@Table(name = "inventory_items")
+@Table(schema = "inventory", name = "inventory_items")
 @Getter
 @Setter
 public class InventoryItem extends BaseEntity {

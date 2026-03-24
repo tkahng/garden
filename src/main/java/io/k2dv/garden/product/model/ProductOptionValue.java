@@ -7,7 +7,7 @@ import lombok.Setter;
 import java.util.UUID;
 
 @Entity
-@Table(name = "product_option_values")
+@Table(schema = "catalog", name = "product_option_values")
 @Getter
 @Setter
 public class ProductOptionValue extends BaseEntity {
