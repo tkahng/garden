@@ -49,7 +49,6 @@ public class LocationService {
     public void deactivate(UUID id) {
         Location loc = findOrThrow(id);
         loc.setActive(false);
-        locationRepo.save(loc);
     }
 
     @Transactional
@@ -64,7 +63,7 @@ public class LocationService {
             .orElseThrow(() -> new NotFoundException("LOCATION_NOT_FOUND", "Location not found"));
     }
 
-    LocationResponse toResponse(Location loc) {
+    private LocationResponse toResponse(Location loc) {
         return new LocationResponse(loc.getId(), loc.getName(), loc.getAddress(),
             loc.isActive(), loc.getCreatedAt(), loc.getUpdatedAt());
     }
