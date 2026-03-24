@@ -1,22 +1,22 @@
-CREATE TABLE users (
-    id              UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    email           TEXT        NOT NULL UNIQUE,
-    first_name      TEXT        NOT NULL,
-    last_name       TEXT        NOT NULL,
-    phone           TEXT,
-    status          TEXT        NOT NULL DEFAULT 'UNVERIFIED',
+CREATE TABLE auth.users (
+    id                UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    email             TEXT        NOT NULL UNIQUE,
+    first_name        TEXT        NOT NULL,
+    last_name         TEXT        NOT NULL,
+    phone             TEXT,
+    status            TEXT        NOT NULL DEFAULT 'UNVERIFIED',
     email_verified_at TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
-    updated_at      TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp()
 );
 
 CREATE TRIGGER set_updated_at
-    BEFORE UPDATE ON users
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    BEFORE UPDATE ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION shared.set_updated_at();
 
-CREATE TABLE addresses (
+CREATE TABLE auth.addresses (
     id          UUID        NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-    user_id     UUID        NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id     UUID        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     first_name  TEXT        NOT NULL,
     last_name   TEXT        NOT NULL,
     company     TEXT,
@@ -32,5 +32,5 @@ CREATE TABLE addresses (
 );
 
 CREATE TRIGGER set_updated_at
-    BEFORE UPDATE ON addresses
-    FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+    BEFORE UPDATE ON auth.addresses
+    FOR EACH ROW EXECUTE FUNCTION shared.set_updated_at();
