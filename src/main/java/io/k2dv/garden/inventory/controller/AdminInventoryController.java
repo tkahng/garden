@@ -16,7 +16,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
-@RestController
+@RestController("adminInventoryStockController")
 @RequestMapping("/api/v1/admin/inventory")
 @RequiredArgsConstructor
 public class AdminInventoryController {
