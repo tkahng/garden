@@ -112,7 +112,7 @@ public class InventoryService {
         Page<InventoryTransaction> page = locationId != null
             ? txnRepo.findByInventoryItemIdAndLocationId(item.getId(), locationId, pageable)
             : txnRepo.findByInventoryItemId(item.getId(), pageable);
-        return PagedResult.of(page.map(this::toTxnResponse));
+        return PagedResult.of(page, this::toTxnResponse);
     }
 
     @Transactional

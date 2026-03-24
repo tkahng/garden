@@ -1,7 +1,6 @@
 package io.k2dv.garden.content.controller;
 
 import io.k2dv.garden.content.dto.*;
-import io.k2dv.garden.content.model.ArticleStatus;
 import io.k2dv.garden.content.service.ArticleService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;

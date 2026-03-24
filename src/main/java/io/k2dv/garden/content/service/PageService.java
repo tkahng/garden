@@ -43,7 +43,7 @@ public class PageService {
     public PagedResult<AdminPageResponse> list(PageFilterRequest filter, Pageable pageable) {
         var spec = PageSpecification.toSpec(filter);
         Page<SitePage> pages = pageRepo.findAll(spec, pageable);
-        return PagedResult.of(pages.map(this::toAdminResponse));
+        return PagedResult.of(pages, this::toAdminResponse);
     }
 
     @Transactional(readOnly = true)
@@ -106,7 +106,7 @@ public class PageService {
             ));
         }
         Page<SitePage> pages = pageRepo.findAll(spec, pageable);
-        return PagedResult.of(pages.map(this::toResponse));
+        return PagedResult.of(pages, this::toResponse);
     }
 
     // --- helpers ---

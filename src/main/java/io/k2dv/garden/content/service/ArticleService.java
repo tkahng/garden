@@ -50,7 +50,7 @@ public class ArticleService {
     @Transactional(readOnly = true)
     public PagedResult<AdminBlogResponse> listBlogs(BlogFilterRequest filter, Pageable pageable) {
         Page<Blog> blogs = blogRepo.findAll(BlogSpecification.toSpec(filter), pageable);
-        return PagedResult.of(blogs.map(this::toBlogAdminResponse));
+        return PagedResult.of(blogs, this::toBlogAdminResponse);
     }
 
     @Transactional(readOnly = true)
@@ -90,7 +90,7 @@ public class ArticleService {
             ? new BlogFilterRequest(filter.titleContains(), null)
             : null;
         Page<Blog> blogs = blogRepo.findAll(BlogSpecification.toSpec(sfFilter), pageable);
-        return PagedResult.of(blogs.map(this::toBlogResponse));
+        return PagedResult.of(blogs, this::toBlogResponse);
     }
 
     // ---- Article operations ----
@@ -123,7 +123,7 @@ public class ArticleService {
         findBlogOrThrow(blogId);
         var spec = ArticleSpecification.toSpec(blogId, filter);
         Page<Article> page = articleRepo.findAll(spec, pageable);
-        return PagedResult.of(page.map(this::toArticleAdminResponse));
+        return PagedResult.of(page, this::toArticleAdminResponse);
     }
 
     @Transactional(readOnly = true)
@@ -203,7 +203,7 @@ public class ArticleService {
             ? new ArticleFilterRequest(ArticleStatus.PUBLISHED, null, null, null, filter.tag(), filter.q())
             : new ArticleFilterRequest(ArticleStatus.PUBLISHED, null, null, null, null, null);
         Page<Article> articles = articleRepo.findAll(ArticleSpecification.toSpec(blog.getId(), sfFilter), pageable);
-        return PagedResult.of(articles.map(this::toArticleResponse));
+        return PagedResult.of(articles, this::toArticleResponse);
     }
 
     // ---- Helpers ----
