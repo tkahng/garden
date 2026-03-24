@@ -20,7 +20,7 @@ Implement a Shopify-style Collections feature for the Garden e-commerce backend.
 | `handle` | TEXT | Unique, URL-friendly slug |
 | `description` | TEXT | Nullable |
 | `collection_type` | ENUM `collection_type` | `MANUAL` or `AUTOMATED` |
-| `status` | ENUM `product_status` | `DRAFT` or `ACTIVE` — reuses existing enum type |
+| `status` | TEXT | `DRAFT` or `ACTIVE` — consistent with `catalog.products.status` (TEXT with CHECK constraint, not a PostgreSQL enum type) |
 | `featured_image_id` | UUID | Nullable UUID (no DB-level FK constraint — consistent with `catalog.products` and `content.articles` patterns) |
 | `disjunctive` | BOOLEAN | false = AND logic, true = OR logic (reserved for future multi-condition use, default false). Ignored for `MANUAL` collections. |
 | `created_at` | TIMESTAMPTZ | DB-managed |
@@ -154,7 +154,7 @@ The core non-trivial logic. Membership in `collection_products` for automated co
 1. A rule is added to a collection → re-evaluate all products against the full updated ruleset
 2. A rule is deleted from a collection → re-evaluate all products against the remaining ruleset
 3. A product's tags are updated → re-evaluate all automated collections against that product
-4. A product is soft-deleted → remove it from all `collection_products` rows (both manual and automated). Storefront queries also filter via join for defense-in-depth.
+4. A product is soft-deleted **or set to `ARCHIVED`** → remove it from all `collection_products` rows (both manual and automated) via `removeProductFromAllCollections`. Storefront queries also filter via join for defense-in-depth.
 
 **Empty ruleset:** An automated collection with no rules qualifies **no** products. No membership rows are created or retained.
 
@@ -213,7 +213,7 @@ collectionMembershipService.syncCollectionsForProduct(UUID productId, Set<String
 - This call is **synchronous** and participates in the caller's `@Transactional` context. `syncCollectionsForProduct` uses `@Transactional(propagation = REQUIRED)` so it joins the outer transaction.
 - `CollectionMembershipService` is injected into `ProductService` via constructor injection
 
-When a product is soft-deleted, `ProductService` must also call:
+When a product is soft-deleted **or its status changes to `ARCHIVED`**, `ProductService` must also call:
 
 ```java
 // Removes the product from both manual and automated collection_products rows
@@ -231,7 +231,7 @@ A new Flyway migration (V13) will:
 1. Create `collection_type` enum type (`MANUAL`, `AUTOMATED`) in the `catalog` schema
 2. Create `collection_rule_field` enum type (`TAG`) in the `catalog` schema
 3. Create `collection_rule_operator` enum type (`EQUALS`, `NOT_EQUALS`, `CONTAINS`) in the `catalog` schema
-4. Create `catalog.collections` table with indexes on `handle`, `status`, `deleted_at`; reuses existing `product_status` enum for `status` column
+4. Create `catalog.collections` table with `status TEXT NOT NULL DEFAULT 'DRAFT' CHECK (status IN ('DRAFT', 'ACTIVE'))`, indexes on `handle`, `status`, `deleted_at`
 5. Attach `set_updated_at()` trigger to `catalog.collections`
 6. Create `catalog.collection_rules` table with `ON DELETE CASCADE` FK, `created_at` column; index on `collection_id`
 7. Create `catalog.collection_products` table with `ON DELETE CASCADE` FKs and unique constraint on `(collection_id, product_id)`; indexes on `collection_id`, `product_id`
@@ -264,7 +264,7 @@ A new Flyway migration (V13) will:
   - Automated rule add triggers full membership sync
   - Automated rule remove triggers full membership sync
   - Product tag update triggers membership sync across all automated collections
-  - Product soft-delete removes from `collection_products` (both manual and automated)
+  - Product soft-delete or ARCHIVED status removes from `collection_products` (both manual and automated)
   - Soft-delete of collection removes `collection_products` and `collection_rules` rows
   - `disjunctive = true` is stored without error (even though OR evaluation is not exercised in sync tests)
   - Storefront list returns only ACTIVE, non-deleted collections
