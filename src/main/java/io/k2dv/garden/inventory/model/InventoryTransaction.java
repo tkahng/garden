@@ -3,13 +3,16 @@ package io.k2dv.garden.inventory.model;
 import io.k2dv.garden.product.model.InventoryItem;
 import io.k2dv.garden.shared.model.ImmutableBaseEntity;
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.Setter;
+import lombok.NoArgsConstructor;
 
 @Entity
 @Table(name = "inventory_transactions")
 @Getter
-@Setter
+@AllArgsConstructor
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class InventoryTransaction extends ImmutableBaseEntity {
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "inventory_item_id", nullable = false)

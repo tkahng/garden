@@ -14,5 +14,5 @@ public class Location extends BaseEntity {
     private String name;
     private String address;
     @Column(name = "is_active", nullable = false)
-    private boolean isActive = true;
+    private boolean active = true;
 }
