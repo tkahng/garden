@@ -12,6 +12,7 @@ import io.k2dv.garden.user.repository.UserRepository;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.blob.service.StorageService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,8 +49,8 @@ public class ArticleService {
 
     @Transactional(readOnly = true)
     public PagedResult<AdminBlogResponse> listBlogs(BlogFilterRequest filter, Pageable pageable) {
-        return PagedResult.of(blogRepo.findAll(BlogSpecification.toSpec(filter), pageable)
-            .map(this::toBlogAdminResponse));
+        Page<Blog> blogs = blogRepo.findAll(BlogSpecification.toSpec(filter), pageable);
+        return PagedResult.of(blogs.map(this::toBlogAdminResponse));
     }
 
     @Transactional(readOnly = true)
@@ -88,8 +89,8 @@ public class ArticleService {
         BlogFilterRequest sfFilter = filter != null
             ? new BlogFilterRequest(filter.titleContains(), null)
             : null;
-        return PagedResult.of(blogRepo.findAll(BlogSpecification.toSpec(sfFilter), pageable)
-            .map(this::toBlogResponse));
+        Page<Blog> blogs = blogRepo.findAll(BlogSpecification.toSpec(sfFilter), pageable);
+        return PagedResult.of(blogs.map(this::toBlogResponse));
     }
 
     // ---- Article operations ----
@@ -121,7 +122,7 @@ public class ArticleService {
     public PagedResult<AdminArticleResponse> listArticles(UUID blogId, ArticleFilterRequest filter, Pageable pageable) {
         findBlogOrThrow(blogId);
         var spec = ArticleSpecification.toSpec(blogId, filter);
-        var page = articleRepo.findAll(spec, pageable);
+        Page<Article> page = articleRepo.findAll(spec, pageable);
         return PagedResult.of(page.map(this::toArticleAdminResponse));
     }
 
@@ -201,8 +202,8 @@ public class ArticleService {
         ArticleFilterRequest sfFilter = filter != null
             ? new ArticleFilterRequest(ArticleStatus.PUBLISHED, null, null, null, filter.tag(), filter.q())
             : new ArticleFilterRequest(ArticleStatus.PUBLISHED, null, null, null, null, null);
-        return PagedResult.of(articleRepo.findAll(ArticleSpecification.toSpec(blog.getId(), sfFilter), pageable)
-            .map(this::toArticleResponse));
+        Page<Article> articles = articleRepo.findAll(ArticleSpecification.toSpec(blog.getId(), sfFilter), pageable);
+        return PagedResult.of(articles.map(this::toArticleResponse));
     }
 
     // ---- Helpers ----

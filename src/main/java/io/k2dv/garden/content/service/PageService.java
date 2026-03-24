@@ -9,6 +9,7 @@ import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,7 +42,8 @@ public class PageService {
     @Transactional(readOnly = true)
     public PagedResult<AdminPageResponse> list(PageFilterRequest filter, Pageable pageable) {
         var spec = PageSpecification.toSpec(filter);
-        return PagedResult.of(pageRepo.findAll(spec, pageable).map(this::toAdminResponse));
+        Page<SitePage> pages = pageRepo.findAll(spec, pageable);
+        return PagedResult.of(pages.map(this::toAdminResponse));
     }
 
     @Transactional(readOnly = true)
@@ -103,7 +105,8 @@ public class PageService {
                 cb.like(cb.lower(root.get("body")),  pattern)
             ));
         }
-        return PagedResult.of(pageRepo.findAll(spec, pageable).map(this::toResponse));
+        Page<SitePage> pages = pageRepo.findAll(spec, pageable);
+        return PagedResult.of(pages.map(this::toResponse));
     }
 
     // --- helpers ---
