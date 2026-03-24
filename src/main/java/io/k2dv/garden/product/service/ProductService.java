@@ -2,6 +2,7 @@ package io.k2dv.garden.product.service;
 
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.blob.service.StorageService;
+import io.k2dv.garden.collection.service.CollectionMembershipService;
 import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.*;
 import io.k2dv.garden.product.repository.*;
@@ -34,6 +35,7 @@ public class ProductService {
     private final ProductVariantRepository variantRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
+    private final CollectionMembershipService collectionMembershipService;
 
     @Transactional
     public AdminProductResponse create(CreateProductRequest req) {
@@ -88,7 +90,14 @@ public class ProductService {
             p.getTags().clear();
             req.tags().forEach(name -> p.getTags().add(findOrCreateTag(name)));
         }
-        return toAdminResponse(productRepo.save(p));
+        Product saved = productRepo.save(p);
+        if (req.tags() != null) {
+            Set<String> newTagNames = saved.getTags().stream()
+                .map(ProductTag::getName)
+                .collect(Collectors.toSet());
+            collectionMembershipService.syncCollectionsForProduct(saved.getId(), newTagNames);
+        }
+        return toAdminResponse(saved);
     }
 
     @Transactional
@@ -96,6 +105,9 @@ public class ProductService {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
         p.setStatus(req.status());
+        if (req.status() == ProductStatus.ARCHIVED) {
+            collectionMembershipService.removeProductFromAllCollections(p.getId());
+        }
         return toAdminResponse(productRepo.save(p));
     }
 
@@ -103,6 +115,7 @@ public class ProductService {
     public void softDelete(UUID id) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        collectionMembershipService.removeProductFromAllCollections(p.getId());
         p.setDeletedAt(Instant.now());
         productRepo.save(p);
     }
