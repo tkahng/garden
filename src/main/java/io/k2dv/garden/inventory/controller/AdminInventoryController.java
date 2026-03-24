@@ -3,6 +3,7 @@ package io.k2dv.garden.inventory.controller;
 import io.k2dv.garden.inventory.dto.*;
 import io.k2dv.garden.inventory.service.InventoryService;
 import io.k2dv.garden.product.dto.AdminVariantResponse;
+import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
 import jakarta.validation.Valid;
@@ -10,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -24,14 +24,14 @@ public class AdminInventoryController {
     private final InventoryService inventoryService;
 
     @GetMapping("/variants/{variantId}/levels")
-    @PreAuthorize("hasAuthority('inventory:read')")
+    @HasPermission("inventory:read")
     public ResponseEntity<ApiResponse<List<InventoryLevelResponse>>> getLevels(
             @PathVariable UUID variantId) {
         return ResponseEntity.ok(ApiResponse.of(inventoryService.getLevels(variantId)));
     }
 
     @PostMapping("/variants/{variantId}/receive")
-    @PreAuthorize("hasAuthority('inventory:write')")
+    @HasPermission("inventory:write")
     public ResponseEntity<ApiResponse<InventoryLevelResponse>> receiveStock(
             @PathVariable UUID variantId,
             @RequestBody @Valid ReceiveStockRequest req) {
@@ -39,7 +39,7 @@ public class AdminInventoryController {
     }
 
     @PostMapping("/variants/{variantId}/adjust")
-    @PreAuthorize("hasAuthority('inventory:write')")
+    @HasPermission("inventory:write")
     public ResponseEntity<ApiResponse<InventoryLevelResponse>> adjustStock(
             @PathVariable UUID variantId,
             @RequestBody @Valid AdjustStockRequest req) {
@@ -47,7 +47,7 @@ public class AdminInventoryController {
     }
 
     @GetMapping("/variants/{variantId}/transactions")
-    @PreAuthorize("hasAuthority('inventory:read')")
+    @HasPermission("inventory:read")
     public ResponseEntity<ApiResponse<PagedResult<InventoryTransactionResponse>>> listTransactions(
             @PathVariable UUID variantId,
             @RequestParam(required = false) UUID locationId,
@@ -58,7 +58,7 @@ public class AdminInventoryController {
     }
 
     @PatchMapping("/variants/{variantId}/fulfillment")
-    @PreAuthorize("hasAuthority('inventory:write')")
+    @HasPermission("inventory:write")
     public ResponseEntity<ApiResponse<AdminVariantResponse>> updateFulfillment(
             @PathVariable UUID variantId,
             @RequestBody @Valid UpdateVariantFulfillmentRequest req) {
