@@ -9,6 +9,7 @@ import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ConflictException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 
 import java.util.List;
 
@@ -71,12 +72,9 @@ class ProductServiceIT extends AbstractIntegrationTest {
         var active = productService.create(new CreateProductRequest("Active Product", null, null, null, null, List.of()));
         productService.changeStatus(active.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
 
-        var result = productService.listStorefront(null);
-        @SuppressWarnings("unchecked")
-        var items = (java.util.List<?>) result.get("items");
-        assertThat(items).hasSize(1);
-        assertThat(((io.k2dv.garden.product.dto.ProductSummaryResponse) items.get(0)).title())
-            .isEqualTo("Active Product");
+        var result = productService.listStorefront(null, PageRequest.of(0, 20));
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).title()).isEqualTo("Active Product");
     }
 
     @Test

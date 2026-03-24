@@ -5,14 +5,16 @@ import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.service.*;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.shared.dto.PagedResult;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -34,10 +36,17 @@ public class AdminProductController {
 
     @GetMapping
     @HasPermission("product:read")
-    public ResponseEntity<Map<String, Object>> list(
+    public ResponseEntity<ApiResponse<PagedResult<AdminProductResponse>>> list(
             @RequestParam(required = false) ProductStatus status,
-            @RequestParam(required = false) String cursor) {
-        return ResponseEntity.ok(productService.listAdmin(status, cursor));
+            @RequestParam(required = false) String titleContains,
+            @RequestParam(required = false) String vendor,
+            @RequestParam(required = false) String productType,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        int clampedSize = Math.min(size, 100);
+        var filter = new ProductFilterRequest(status, titleContains, vendor, productType);
+        return ResponseEntity.ok(ApiResponse.of(
+                productService.listAdmin(filter, PageRequest.of(page, clampedSize, Sort.by("createdAt").descending()))));
     }
 
     @GetMapping("/{id}")

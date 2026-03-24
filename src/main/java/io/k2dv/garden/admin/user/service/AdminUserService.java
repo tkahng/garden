@@ -3,6 +3,7 @@ package io.k2dv.garden.admin.user.service;
 import io.k2dv.garden.admin.user.dto.AdminUserResponse;
 import io.k2dv.garden.admin.user.dto.UpdateUserRequest;
 import io.k2dv.garden.admin.user.dto.UserFilter;
+import io.k2dv.garden.admin.user.specification.UserSpecification;
 import io.k2dv.garden.iam.service.IamService;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.NotFoundException;
@@ -13,7 +14,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,15 +29,7 @@ public class AdminUserService {
 
     @Transactional(readOnly = true)
     public PagedResult<AdminUserResponse> listUsers(UserFilter filter, Pageable pageable) {
-        Specification<User> spec = (root, query, cb) -> cb.conjunction();
-        if (filter.status() != null) {
-            spec = spec.and((root, query, cb) -> cb.equal(root.get("status"), filter.status()));
-        }
-        if (filter.email() != null && !filter.email().isBlank()) {
-            spec = spec.and((root, query, cb) ->
-                cb.like(cb.lower(root.get("email")), "%" + filter.email().toLowerCase() + "%"));
-        }
-        Page<User> page = userRepo.findAll(spec, pageable);
+        Page<User> page = userRepo.findAll(UserSpecification.toSpec(filter), pageable);
         List<AdminUserResponse> content = page.getContent().stream()
             .map(u -> AdminUserResponse.from(u, userRepo.findRoleNamesByUserId(u.getId())))
             .toList();

@@ -5,12 +5,14 @@ import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.*;
 import io.k2dv.garden.product.repository.*;
-import io.k2dv.garden.shared.dto.CursorMeta;
+import io.k2dv.garden.product.specification.ProductSpecification;
+import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Limit;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,8 +26,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class ProductService {
-
-    private static final int PAGE_SIZE = 20;
 
     private final ProductRepository productRepo;
     private final ProductTagRepository tagRepo;
@@ -65,21 +65,9 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> listAdmin(ProductStatus status, String cursor) {
-        UUID cursorId = cursor != null ? UUID.fromString(cursor) : null;
-        int limit = PAGE_SIZE + 1;
-        List<Product> raw = cursorId == null
-            ? productRepo.findForAdminList(status, Limit.of(limit))
-            : productRepo.findForAdminListAfterCursor(status, cursorId, Limit.of(limit));
-
-        boolean hasMore = raw.size() > PAGE_SIZE;
-        List<Product> page = hasMore ? raw.subList(0, PAGE_SIZE) : raw;
-        String nextCursor = hasMore ? page.get(page.size() - 1).getId().toString() : null;
-
-        List<AdminProductResponse> items = page.stream().map(this::toAdminResponse).toList();
-        CursorMeta meta = CursorMeta.builder()
-            .nextCursor(nextCursor).hasMore(hasMore).pageSize(PAGE_SIZE).build();
-        return Map.of("items", items, "meta", meta);
+    public PagedResult<AdminProductResponse> listAdmin(ProductFilterRequest filter, Pageable pageable) {
+        Page<Product> page = productRepo.findAll(ProductSpecification.toSpec(filter), pageable);
+        return PagedResult.of(page, this::toAdminResponse);
     }
 
     @Transactional
@@ -120,23 +108,9 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public Map<String, Object> listStorefront(String cursor) {
-        UUID cursorId = cursor != null ? UUID.fromString(cursor) : null;
-        int limit = PAGE_SIZE + 1;
-        List<Product> raw = cursorId == null
-            ? productRepo.findByStatusAndDeletedAtIsNullOrderByIdAsc(ProductStatus.ACTIVE, Limit.of(limit))
-            : productRepo.findByStatusAndDeletedAtIsNullAndIdGreaterThanOrderByIdAsc(ProductStatus.ACTIVE, cursorId, Limit.of(limit));
-
-        boolean hasMore = raw.size() > PAGE_SIZE;
-        List<Product> page = hasMore ? raw.subList(0, PAGE_SIZE) : raw;
-        String nextCursor = hasMore ? page.get(page.size() - 1).getId().toString() : null;
-
-        List<ProductSummaryResponse> items = page.stream()
-            .map(p -> new ProductSummaryResponse(p.getId(), p.getTitle(), p.getHandle(), p.getVendor()))
-            .toList();
-        CursorMeta meta = CursorMeta.builder()
-            .nextCursor(nextCursor).hasMore(hasMore).pageSize(PAGE_SIZE).build();
-        return Map.of("items", items, "meta", meta);
+    public PagedResult<ProductSummaryResponse> listStorefront(StorefrontProductFilterRequest filter, Pageable pageable) {
+        Page<Product> page = productRepo.findAll(ProductSpecification.storefrontSpec(filter), pageable);
+        return PagedResult.of(page, p -> new ProductSummaryResponse(p.getId(), p.getTitle(), p.getHandle(), p.getVendor()));
     }
 
     @Transactional(readOnly = true)

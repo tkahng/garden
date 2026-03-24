@@ -4,7 +4,8 @@ import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.product.dto.ProductDetailResponse;
 import io.k2dv.garden.product.dto.ProductSummaryResponse;
 import io.k2dv.garden.product.service.ProductService;
-import io.k2dv.garden.shared.dto.CursorMeta;
+import io.k2dv.garden.shared.dto.PageMeta;
+import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.GlobalExceptionHandler;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import org.junit.jupiter.api.Test;
@@ -15,7 +16,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -31,14 +31,14 @@ class StorefrontProductControllerTest {
     @MockitoBean ProductService productService;
 
     @Test
-    void listProducts_returns200WithCursorMeta() throws Exception {
+    void listProducts_returns200WithPageMeta() throws Exception {
         var items = List.of(new ProductSummaryResponse(UUID.randomUUID(), "Shirt", "shirt", null));
-        var meta = CursorMeta.builder().nextCursor(null).hasMore(false).pageSize(20).build();
-        when(productService.listStorefront(any())).thenReturn(Map.of("items", items, "meta", meta));
+        var meta = PageMeta.builder().page(0).pageSize(20).total(1L).build();
+        when(productService.listStorefront(any(), any())).thenReturn(new PagedResult<>(items, meta));
 
         mvc.perform(get("/api/v1/products"))
             .andExpect(status().isOk())
-            .andExpect(jsonPath("$.items[0].title").value("Shirt"));
+            .andExpect(jsonPath("$.data.content[0].title").value("Shirt"));
     }
 
     @Test
