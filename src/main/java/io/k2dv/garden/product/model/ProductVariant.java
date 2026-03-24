@@ -1,5 +1,7 @@
 package io.k2dv.garden.product.model;
 
+import io.k2dv.garden.inventory.model.FulfillmentType;
+import io.k2dv.garden.inventory.model.InventoryPolicy;
 import io.k2dv.garden.shared.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
@@ -22,6 +24,16 @@ public class ProductVariant extends BaseEntity {
     @Column(unique = true)
     private String sku;
     private String barcode;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "fulfillment_type", nullable = false)
+    private FulfillmentType fulfillmentType = FulfillmentType.IN_STOCK;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inventory_policy", nullable = false)
+    private InventoryPolicy inventoryPolicy = InventoryPolicy.DENY;
+
+    @Column(name = "lead_time_days", nullable = false)
+    private int leadTimeDays = 0;
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal price;
     @Column(name = "compare_at_price", precision = 19, scale = 4)
