@@ -11,7 +11,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 @Entity
-@Table(name = "users")
+@Table(schema = "auth", name = "users")
 @Getter
 @Setter
 public class User extends BaseEntity {
@@ -37,6 +37,7 @@ public class User extends BaseEntity {
 
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
+        schema = "auth",
         name = "user_roles",
         joinColumns = @JoinColumn(name = "user_id"),
         inverseJoinColumns = @JoinColumn(name = "role_id")

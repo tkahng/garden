@@ -17,6 +17,9 @@ public abstract class AbstractIntegrationTest {
     // Single container instance shared across all IT subclasses for the entire
     // test run. Not managed by @Testcontainers so JUnit never stops it between
     // test classes; Spring's cached application context stays valid throughout.
+    // PostgreSQLContainer deprecation suppressed: @ServiceConnection + @Container
+    // would hand lifecycle to JUnit, breaking Spring's cached context.
+    @SuppressWarnings("deprecation")
     static final PostgreSQLContainer<?> postgres;
 
     static {
