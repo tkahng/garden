@@ -88,4 +88,14 @@ class AdminOrderControllerTest {
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error").value("INVALID_ORDER_STATUS"));
     }
+
+    @Test
+    void cancelOrder_notFound_returns404() throws Exception {
+        doThrow(new NotFoundException("ORDER_NOT_FOUND", "Not found"))
+            .when(orderService).cancelAndReturn(any());
+
+        mvc.perform(put("/api/v1/admin/orders/{id}/cancel", UUID.randomUUID()))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("ORDER_NOT_FOUND"));
+    }
 }

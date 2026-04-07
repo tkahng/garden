@@ -8,6 +8,7 @@ import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
 import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.service.PaymentService;
 import io.k2dv.garden.shared.exception.GlobalExceptionHandler;
+import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -73,5 +74,25 @@ class CheckoutControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("PAID"))
             .andExpect(jsonPath("$.data.orderId").value(orderId.toString()));
+    }
+
+    @Test
+    void checkoutReturn_sessionNotFound_returns404() throws Exception {
+        when(paymentService.verifyReturn(any(), any()))
+            .thenThrow(new NotFoundException("ORDER_NOT_FOUND", "Not found"));
+
+        mvc.perform(get("/api/v1/checkout/return").param("session_id", "cs_missing"))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("ORDER_NOT_FOUND"));
+    }
+
+    @Test
+    void checkoutReturn_wrongUser_returns400() throws Exception {
+        when(paymentService.verifyReturn(any(), any()))
+            .thenThrow(new ValidationException("ORDER_NOT_OWNED", "Not yours"));
+
+        mvc.perform(get("/api/v1/checkout/return").param("session_id", "cs_stolen"))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("ORDER_NOT_OWNED"));
     }
 }
