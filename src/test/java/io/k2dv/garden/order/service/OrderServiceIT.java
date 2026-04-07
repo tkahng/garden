@@ -176,4 +176,67 @@ class OrderServiceIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> orderService.cancelOrder(order.getId()))
             .isInstanceOf(ConflictException.class);
     }
+
+    @Test
+    void createFromCart_emptyItems_throwsValidation() {
+        UUID userId = createUserId();
+
+        assertThatThrownBy(() -> orderService.createFromCart(userId, List.of()))
+            .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void createFromCart_inactiveProduct_throwsValidation() {
+        UUID userId = createUserId();
+
+        // Create a DRAFT product (do NOT call changeStatus to ACTIVE)
+        AdminProductResponse draftProduct = productService.create(
+            new CreateProductRequest("Draft Product", null, null, null, null, List.of()));
+        AdminVariantResponse draftVariant = variantService.create(draftProduct.id(),
+            new CreateVariantRequest(new BigDecimal("25.00"), null, null, null, null, null, List.of()));
+
+        assertThatThrownBy(() -> orderService.createFromCart(userId,
+                List.of(cartItem(draftVariant.id(), 1, BigDecimal.ONE))))
+            .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void confirmPayment_calledTwice_isIdempotent() {
+        UUID userId = createUserId();
+        List<CartItem> items = List.of(cartItem(variant.id(), 2, new BigDecimal("50.00")));
+        Order order = orderService.createFromCart(userId, items);
+
+        orderService.setStripeSession(order.getId(), "cs_test_idempotent");
+        orderService.confirmPayment("cs_test_idempotent", "pi_test_idempotent");
+        // Second call — must not throw
+        orderService.confirmPayment("cs_test_idempotent", "pi_test_idempotent");
+
+        Order confirmed = orderService.findByStripeSessionId("cs_test_idempotent");
+        assertThat(confirmed.getStatus()).isEqualTo(OrderStatus.PAID);
+
+        InventoryLevel level = levelRepo.findByInventoryItemIdAndLocationId(
+            inventoryItemRepo.findByVariantId(variant.id()).orElseThrow().getId(),
+            location.getId()).orElseThrow();
+        assertThat(level.getQuantityOnHand()).isEqualTo(8); // 10 - 2, only deducted once
+    }
+
+    @Test
+    void cancelOrder_alreadyCancelled_isNoOp() {
+        UUID userId = createUserId();
+        List<CartItem> items = List.of(cartItem(variant.id(), 1, new BigDecimal("50.00")));
+        Order order = orderService.createFromCart(userId, items);
+
+        orderService.cancelOrder(order.getId());
+        // Second cancel — must not throw
+        orderService.cancelOrder(order.getId());
+
+        Order cancelled = orderService.getById(order.getId());
+        assertThat(cancelled.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+    }
+
+    @Test
+    void cancelBySession_unknownSession_isNoOp() {
+        // Should silently do nothing when session doesn't exist
+        orderService.cancelBySession("cs_nonexistent_session");
+    }
 }
