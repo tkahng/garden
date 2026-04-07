@@ -14,7 +14,6 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -31,7 +30,6 @@ class WebhookControllerTest {
     @Test
     void webhook_validEvent_returns200() throws Exception {
         when(stripeProperties.getWebhookSecret()).thenReturn("whsec_stub");
-        doNothing().when(paymentService).handleWebhook(any(), any(), any());
 
         mvc.perform(post("/api/v1/webhooks/stripe")
                 .contentType(MediaType.APPLICATION_JSON)

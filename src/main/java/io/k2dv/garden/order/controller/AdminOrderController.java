@@ -47,7 +47,6 @@ public class AdminOrderController {
     @PutMapping("/{id}/cancel")
     @HasPermission("order:write")
     public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(@PathVariable UUID id) {
-        orderService.cancelOrder(id);
-        return ResponseEntity.ok(ApiResponse.of(orderService.getOrderResponse(id)));
+        return ResponseEntity.ok(ApiResponse.of(orderService.cancelAndReturn(id)));
     }
 }

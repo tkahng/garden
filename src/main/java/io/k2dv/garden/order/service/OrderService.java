@@ -135,6 +135,24 @@ public class OrderService {
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
     }
 
+    @Transactional
+    public OrderResponse cancelAndReturn(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            return toResponse(order);
+        }
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new ConflictException("INVALID_ORDER_STATUS",
+                "Cannot cancel order in status: " + order.getStatus());
+        }
+        order.setStatus(OrderStatus.CANCELLED);
+        orderRepo.save(order);
+        orderItemRepo.findByOrderId(orderId)
+            .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+        return toResponse(order);
+    }
+
     @Transactional(readOnly = true)
     public Order findByStripeSessionId(String stripeSessionId) {
         return orderRepo.findByStripeSessionId(stripeSessionId)

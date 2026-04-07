@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -74,8 +73,7 @@ class AdminOrderControllerTest {
     @Test
     void cancelOrder_returns200() throws Exception {
         UUID id = UUID.randomUUID();
-        doNothing().when(orderService).cancelOrder(any());
-        when(orderService.getOrderResponse(id)).thenReturn(stubOrder(id));
+        when(orderService.cancelAndReturn(id)).thenReturn(stubOrder(id));
 
         mvc.perform(put("/api/v1/admin/orders/{id}/cancel", id))
             .andExpect(status().isOk());
@@ -84,7 +82,7 @@ class AdminOrderControllerTest {
     @Test
     void cancelOrder_paidOrder_returns409() throws Exception {
         doThrow(new ConflictException("INVALID_ORDER_STATUS", "Cannot cancel paid order"))
-            .when(orderService).cancelOrder(any());
+            .when(orderService).cancelAndReturn(any());
 
         mvc.perform(put("/api/v1/admin/orders/{id}/cancel", UUID.randomUUID()))
             .andExpect(status().isConflict())
