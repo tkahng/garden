@@ -1,7 +1,7 @@
 -- New permissions for order management
 INSERT INTO auth.permissions (id, name, resource, action, created_at, updated_at) VALUES
-    ('00000000-0000-7000-8000-000000000029', 'order:read',  'order', 'read',  clock_timestamp(), clock_timestamp()),
-    ('00000000-0000-7000-8000-000000000030', 'order:write', 'order', 'write', clock_timestamp(), clock_timestamp())
+    ('00000000-0000-7000-8000-000000000033', 'order:read',  'order', 'read',  clock_timestamp(), clock_timestamp()),
+    ('00000000-0000-7000-8000-000000000034', 'order:write', 'order', 'write', clock_timestamp(), clock_timestamp())
 ON CONFLICT (name) DO NOTHING;
 
 -- MANAGER and OWNER get order permissions
