@@ -40,7 +40,7 @@ class CartControllerTest {
     private CartResponse stubCart(UUID id) {
         return new CartResponse(id, CartStatus.ACTIVE,
             List.of(new CartItemResponse(UUID.randomUUID(), UUID.randomUUID(), 2, new BigDecimal("49.99"))),
-            null);
+            /* createdAt */ null);
     }
 
     @Test
@@ -92,7 +92,8 @@ class CartControllerTest {
         mvc.perform(put("/api/v1/cart/items/{id}", UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(mapper.writeValueAsString(new UpdateCartItemRequest(1))))
-            .andExpect(status().isNotFound());
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("CART_ITEM_NOT_FOUND"));
     }
 
     @Test
