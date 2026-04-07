@@ -172,4 +172,74 @@ public class InventoryService {
             v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
             labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(), v.getDeletedAt());
     }
+
+    @Transactional
+    public void reserveStock(UUID variantId, int quantity) {
+        InventoryItem item = inventoryItemRepo.findByVariantId(variantId)
+            .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND",
+                "No inventory item for variant " + variantId));
+
+        List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
+        int totalAvailable = levels.stream()
+            .mapToInt(l -> l.getQuantityOnHand() - l.getQuantityCommitted())
+            .sum();
+
+        if (totalAvailable < quantity) {
+            throw new ValidationException("INSUFFICIENT_STOCK",
+                "Insufficient stock for variant " + variantId + ": available=" + totalAvailable + ", requested=" + quantity);
+        }
+
+        int remaining = quantity;
+        for (InventoryLevel level : levels) {
+            if (remaining <= 0) break;
+            int available = level.getQuantityOnHand() - level.getQuantityCommitted();
+            int toCommit = Math.min(available, remaining);
+            if (toCommit > 0) {
+                level.setQuantityCommitted(level.getQuantityCommitted() + toCommit);
+                levelRepo.save(level);
+                remaining -= toCommit;
+            }
+        }
+    }
+
+    @Transactional
+    public void releaseReservation(UUID variantId, int quantity) {
+        InventoryItem item = inventoryItemRepo.findByVariantId(variantId)
+            .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND",
+                "No inventory item for variant " + variantId));
+
+        List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
+        int remaining = quantity;
+        for (InventoryLevel level : levels) {
+            if (remaining <= 0) break;
+            int toRelease = Math.min(level.getQuantityCommitted(), remaining);
+            if (toRelease > 0) {
+                level.setQuantityCommitted(level.getQuantityCommitted() - toRelease);
+                levelRepo.save(level);
+                remaining -= toRelease;
+            }
+        }
+    }
+
+    @Transactional
+    public void confirmSale(UUID variantId, int quantity) {
+        InventoryItem item = inventoryItemRepo.findByVariantId(variantId)
+            .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND",
+                "No inventory item for variant " + variantId));
+
+        List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
+        int remaining = quantity;
+        for (InventoryLevel level : levels) {
+            if (remaining <= 0) break;
+            int toDeduct = Math.min(level.getQuantityCommitted(), remaining);
+            if (toDeduct > 0) {
+                level.setQuantityOnHand(level.getQuantityOnHand() - toDeduct);
+                level.setQuantityCommitted(level.getQuantityCommitted() - toDeduct);
+                levelRepo.save(level);
+                txnRepo.save(new InventoryTransaction(
+                    item, level.getLocation(), -toDeduct, InventoryTransactionReason.SOLD, null));
+                remaining -= toDeduct;
+            }
+        }
+    }
 }
