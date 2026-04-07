@@ -38,6 +38,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/pages/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/blogs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/menus/**").permitAll()
+                .requestMatchers("/api/v1/webhooks/**").permitAll()
                 // Everything else requires authentication
                 .anyRequest().authenticated()
             )
