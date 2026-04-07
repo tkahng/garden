@@ -15,6 +15,7 @@ import io.k2dv.garden.order.model.Order;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
+import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
 import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
@@ -208,6 +209,40 @@ class PaymentServiceTest {
 
     assertThatThrownBy(() -> paymentService.verifyReturn("cs_test_missing", UUID.randomUUID()))
         .isInstanceOf(NotFoundException.class);
+  }
+
+  @Test
+  void verifyReturn_stripeComplete_returnsPaidStatus() throws StripeException {
+    UUID userId = UUID.randomUUID();
+    UUID orderId = UUID.randomUUID();
+    Order order = new Order();
+    order.setUserId(userId);
+    order.setStatus(OrderStatus.PENDING_PAYMENT); // DB hasn't been updated yet
+
+    Session session = mock(Session.class);
+    when(session.getStatus()).thenReturn("complete");
+
+    when(orderService.findByStripeSessionId("cs_test_abc")).thenReturn(order);
+    when(stripeGateway.retrieveSession("cs_test_abc")).thenReturn(session);
+
+    CheckoutReturnResponse response = paymentService.verifyReturn("cs_test_abc", userId);
+
+    assertThat(response.status()).isEqualTo(OrderStatus.PAID);
+  }
+
+  @Test
+  void verifyReturn_stripeCallFails_fallsBackToDbStatus() throws StripeException {
+    UUID userId = UUID.randomUUID();
+    Order order = new Order();
+    order.setUserId(userId);
+    order.setStatus(OrderStatus.PENDING_PAYMENT);
+
+    when(orderService.findByStripeSessionId("cs_test_abc")).thenReturn(order);
+    when(stripeGateway.retrieveSession("cs_test_abc")).thenThrow(mock(StripeException.class));
+
+    CheckoutReturnResponse response = paymentService.verifyReturn("cs_test_abc", userId);
+
+    assertThat(response.status()).isEqualTo(OrderStatus.PENDING_PAYMENT);
   }
 
   @Test

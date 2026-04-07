@@ -10,6 +10,7 @@ import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.order.model.Order;
+import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
@@ -104,7 +105,20 @@ public class PaymentService {
     if (!order.getUserId().equals(userId)) {
       throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
     }
-    return new CheckoutReturnResponse(order.getId(), order.getStatus());
+
+    OrderStatus status = order.getStatus(); // fallback
+    try {
+      Session session = stripeGateway.retrieveSession(stripeSessionId);
+      status = switch (session.getStatus()) {
+        case "complete" -> OrderStatus.PAID;
+        case "expired" -> OrderStatus.CANCELLED;
+        default -> order.getStatus();
+      };
+    } catch (StripeException e) {
+      // best-effort — use DB status as fallback
+    }
+
+    return new CheckoutReturnResponse(order.getId(), status);
   }
 
   public void handleWebhook(String payload, String sigHeader, String webhookSecret) {
