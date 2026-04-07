@@ -154,4 +154,41 @@ class CartServiceIT extends AbstractIntegrationTest {
         // Abandoning again should not fail (no active cart to abandon — just a no-op)
         cartService.abandonCart(userId);
     }
+
+    @Test
+    void addItem_noActiveCart_throwsValidation() {
+        UUID userId = createUserId();
+        AdminVariantResponse variant = createActiveVariant(new BigDecimal("10.00"));
+        // No getOrCreateActiveCart call — user has no cart
+        assertThatThrownBy(() -> cartService.addItem(userId, new AddCartItemRequest(variant.id(), 1)))
+            .isInstanceOf(ValidationException.class);
+    }
+
+    @Test
+    void addItem_softDeletedVariant_throwsNotFound() {
+        UUID userId = createUserId();
+        // Create product + variant manually to retain the productId for softDelete
+        AdminProductResponse product = productService.create(
+            new CreateProductRequest("Soft-Delete Product", null, null, null, null, List.of()));
+        productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
+        AdminVariantResponse variant = variantService.create(product.id(),
+            new CreateVariantRequest(new BigDecimal("15.00"), null, null, null, null, null, List.of()));
+        // Soft-delete the variant
+        variantService.softDelete(product.id(), variant.id());
+
+        cartService.getOrCreateActiveCart(userId);
+        assertThatThrownBy(() -> cartService.addItem(userId, new AddCartItemRequest(variant.id(), 1)))
+            .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void addItem_checkedOutCart_throwsValidation() {
+        UUID userId = createUserId();
+        AdminVariantResponse variant = createActiveVariant(new BigDecimal("10.00"));
+        CartResponse cart = cartService.getOrCreateActiveCart(userId);
+        cartService.markCheckedOut(cart.id());  // transitions to CHECKED_OUT
+
+        assertThatThrownBy(() -> cartService.addItem(userId, new AddCartItemRequest(variant.id(), 1)))
+            .isInstanceOf(ValidationException.class);
+    }
 }
