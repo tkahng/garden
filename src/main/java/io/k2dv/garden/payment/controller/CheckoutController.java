@@ -1,0 +1,33 @@
+package io.k2dv.garden.payment.controller;
+
+import io.k2dv.garden.auth.security.Authenticated;
+import io.k2dv.garden.auth.security.CurrentUser;
+import io.k2dv.garden.payment.dto.CheckoutResponse;
+import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
+import io.k2dv.garden.payment.service.PaymentService;
+import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.user.model.User;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+
+@RestController
+@RequestMapping("/api/v1/checkout")
+@RequiredArgsConstructor
+@Authenticated
+public class CheckoutController {
+
+    private final PaymentService paymentService;
+
+    @PostMapping
+    public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(@CurrentUser User user) {
+        return ResponseEntity.ok(ApiResponse.of(paymentService.initiateCheckout(user.getId())));
+    }
+
+    @GetMapping("/return")
+    public ResponseEntity<ApiResponse<CheckoutReturnResponse>> checkoutReturn(
+            @CurrentUser User user,
+            @RequestParam("session_id") String sessionId) {
+        return ResponseEntity.ok(ApiResponse.of(paymentService.verifyReturn(sessionId, user.getId())));
+    }
+}
