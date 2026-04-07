@@ -18,11 +18,13 @@ import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.util.List;
 import java.util.UUID;
 
@@ -54,14 +56,19 @@ public class PaymentService {
                 .setMode(SessionCreateParams.Mode.PAYMENT)
                 .setSuccessUrl(appProperties.getFrontendUrl()
                     + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
+                // Both success and cancel redirect to the same return page; the page checks session status
                 .setCancelUrl(appProperties.getFrontendUrl()
                     + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
                 .putMetadata("orderId", order.getId() != null ? order.getId().toString() : "");
 
             for (CartItem cartItem : cartItems) {
-                ProductVariant variant = variantRepo.findById(cartItem.getVariantId()).orElseThrow();
+                ProductVariant variant = variantRepo.findById(cartItem.getVariantId())
+                    .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
+                        "Variant not found: " + cartItem.getVariantId()));
                 long unitAmountCents = cartItem.getUnitPrice()
-                    .multiply(BigDecimal.valueOf(100)).longValue();
+                    .multiply(BigDecimal.valueOf(100))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValueExact();
 
                 builder.addLineItem(
                     SessionCreateParams.LineItem.builder()

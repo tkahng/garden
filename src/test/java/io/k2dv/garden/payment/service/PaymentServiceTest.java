@@ -51,7 +51,7 @@ class PaymentServiceTest {
         paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties);
     }
 
-    private Cart stubCart(UUID cartId, UUID userId) {
+    private Cart stubCart(UUID userId) {
         Cart cart = new Cart();
         cart.setUserId(userId);
         cart.setStatus(CartStatus.ACTIVE);
@@ -78,7 +78,7 @@ class PaymentServiceTest {
     void initiateCheckout_happyPath_returnsCheckoutUrl() throws StripeException {
         UUID userId = UUID.randomUUID();
         UUID variantId = UUID.randomUUID();
-        Cart cart = stubCart(UUID.randomUUID(), userId);
+        Cart cart = stubCart(userId);
         CartItem cartItem = stubCartItem(variantId);
         Order order = stubOrder(UUID.randomUUID(), userId);
 
@@ -109,7 +109,7 @@ class PaymentServiceTest {
     void initiateCheckout_stripeFailure_cancelsOrderAndThrows() throws StripeException {
         UUID userId = UUID.randomUUID();
         UUID variantId = UUID.randomUUID();
-        Cart cart = stubCart(UUID.randomUUID(), userId);
+        Cart cart = stubCart(userId);
         Order order = stubOrder(UUID.randomUUID(), userId);
 
         ProductVariant variant = new ProductVariant();
@@ -133,7 +133,7 @@ class PaymentServiceTest {
     void initiateCheckout_lineItemUsesCorrectUnitAmount() throws StripeException {
         UUID userId = UUID.randomUUID();
         UUID variantId = UUID.randomUUID();
-        Cart cart = stubCart(UUID.randomUUID(), userId);
+        Cart cart = stubCart(userId);
         CartItem item = stubCartItem(variantId); // unitPrice = 49.99
         Order order = stubOrder(UUID.randomUUID(), userId);
 
