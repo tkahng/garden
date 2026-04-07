@@ -17,6 +17,7 @@ import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.product.service.VariantService;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -127,6 +128,21 @@ class CartServiceIT extends AbstractIntegrationTest {
 
         CartResponse updated = cartService.removeItem(userId, itemId);
         assertThat(updated.items()).isEmpty();
+    }
+
+    @Test
+    void addItem_inactiveProduct_throwsValidation() {
+        UUID userId = createUserId();
+        // Create a DRAFT product (not activated)
+        AdminProductResponse draftProduct = productService.create(
+            new CreateProductRequest("Draft Product", null, null, null, null, List.of()));
+        AdminVariantResponse variant = variantService.create(draftProduct.id(),
+            new CreateVariantRequest(new BigDecimal("10.00"), null, null, null, null, null, List.of()));
+        cartService.getOrCreateActiveCart(userId);
+
+        assertThatThrownBy(() ->
+            cartService.addItem(userId, new AddCartItemRequest(variant.id(), 1)))
+            .isInstanceOf(ValidationException.class);
     }
 
     @Test

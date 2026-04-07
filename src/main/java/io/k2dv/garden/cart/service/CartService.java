@@ -45,7 +45,7 @@ public class CartService {
 
     @Transactional
     public CartResponse addItem(UUID userId, AddCartItemRequest req) {
-        Cart cart = requireActiveCart(userId);
+        Cart cart = findActiveCartOrThrow(userId);
         ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(req.variantId())
             .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
         Product product = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId())
@@ -70,7 +70,7 @@ public class CartService {
 
     @Transactional
     public CartResponse updateItem(UUID userId, UUID itemId, UpdateCartItemRequest req) {
-        Cart cart = requireActiveCart(userId);
+        Cart cart = findActiveCartOrThrow(userId);
         CartItem item = cartItemRepo.findByIdAndCartId(itemId, cart.getId())
             .orElseThrow(() -> new NotFoundException("CART_ITEM_NOT_FOUND", "Cart item not found"));
         item.setQuantity(req.quantity());
@@ -80,7 +80,7 @@ public class CartService {
 
     @Transactional
     public CartResponse removeItem(UUID userId, UUID itemId) {
-        Cart cart = requireActiveCart(userId);
+        Cart cart = findActiveCartOrThrow(userId);
         CartItem item = cartItemRepo.findByIdAndCartId(itemId, cart.getId())
             .orElseThrow(() -> new NotFoundException("CART_ITEM_NOT_FOUND", "Cart item not found"));
         cartItemRepo.delete(item);
@@ -99,6 +99,10 @@ public class CartService {
 
     @Transactional(readOnly = true)
     public Cart requireActiveCart(UUID userId) {
+        return findActiveCartOrThrow(userId);
+    }
+
+    private Cart findActiveCartOrThrow(UUID userId) {
         return cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
             .orElseThrow(() -> new ValidationException("NO_ACTIVE_CART", "No active cart found"));
     }
