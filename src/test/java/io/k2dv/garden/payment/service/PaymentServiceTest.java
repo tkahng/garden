@@ -1,6 +1,9 @@
 package io.k2dv.garden.payment.service;
 
+import com.stripe.exception.SignatureVerificationException;
 import com.stripe.exception.StripeException;
+import com.stripe.model.Event;
+import com.stripe.model.EventDataObjectDeserializer;
 import com.stripe.model.checkout.Session;
 import com.stripe.param.checkout.SessionCreateParams;
 import io.k2dv.garden.cart.model.Cart;
@@ -16,10 +19,13 @@ import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.Mockito;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -51,7 +57,7 @@ class PaymentServiceTest {
 
   @BeforeEach
   void setUp() {
-    when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
+    Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
     paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties);
   }
 
@@ -162,5 +168,102 @@ class PaymentServiceTest {
     SessionCreateParams params = captor.getValue();
     SessionCreateParams.LineItem lineItem = params.getLineItems().get(0);
     assertThat(lineItem.getPriceData().getUnitAmount()).isEqualTo(4999L); // 49.99 * 100
+  }
+
+  @Test
+  void initiateCheckout_emptyCart_throwsValidation() {
+    UUID userId = UUID.randomUUID();
+    Cart cart = stubCart(userId);
+
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of());
+
+    assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+        .isInstanceOf(ValidationException.class)
+        .extracting("errorCode")
+        .isEqualTo("EMPTY_CART");
+  }
+
+  @Test
+  void verifyReturn_wrongUser_throwsValidation() {
+    UUID ownerUserId = UUID.randomUUID();
+    UUID callerUserId = UUID.randomUUID();
+
+    Order order = new Order();
+    order.setUserId(ownerUserId);
+    order.setStatus(OrderStatus.PENDING_PAYMENT);
+
+    when(orderService.findByStripeSessionId("cs_test_abc")).thenReturn(order);
+
+    assertThatThrownBy(() -> paymentService.verifyReturn("cs_test_abc", callerUserId))
+        .isInstanceOf(ValidationException.class)
+        .extracting("errorCode")
+        .isEqualTo("ORDER_NOT_OWNED");
+  }
+
+  @Test
+  void verifyReturn_sessionNotFound_throwsNotFound() {
+    when(orderService.findByStripeSessionId(any()))
+        .thenThrow(new NotFoundException("ORDER_NOT_FOUND", "Not found"));
+
+    assertThatThrownBy(() -> paymentService.verifyReturn("cs_test_missing", UUID.randomUUID()))
+        .isInstanceOf(NotFoundException.class);
+  }
+
+  @Test
+  void handleWebhook_sessionCompleted_callsConfirmPayment() throws SignatureVerificationException {
+    Event event = mock(Event.class);
+    when(event.getType()).thenReturn("checkout.session.completed");
+
+    EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_test_123");
+    when(session.getPaymentIntent()).thenReturn("pi_test_456");
+    when(deserializer.getObject()).thenReturn(Optional.of(session));
+    when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+    when(stripeGateway.constructEvent(any(), any(), any())).thenReturn(event);
+
+    paymentService.handleWebhook("payload", "sig", "secret");
+
+    verify(orderService).confirmPayment("cs_test_123", "pi_test_456");
+  }
+
+  @Test
+  void handleWebhook_sessionExpired_callsCancelBySession() throws SignatureVerificationException {
+    Event event = mock(Event.class);
+    when(event.getType()).thenReturn("checkout.session.expired");
+
+    EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_test_123");
+    when(deserializer.getObject()).thenReturn(Optional.of(session));
+    when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+    when(stripeGateway.constructEvent(any(), any(), any())).thenReturn(event);
+
+    paymentService.handleWebhook("payload", "sig", "secret");
+
+    verify(orderService).cancelBySession("cs_test_123");
+  }
+
+  @Test
+  void handleWebhook_unknownEventType_doesNothing() throws SignatureVerificationException {
+    Event event = mock(Event.class);
+    when(event.getType()).thenReturn("payment_intent.created");
+    when(stripeGateway.constructEvent(any(), any(), any())).thenReturn(event);
+
+    paymentService.handleWebhook("payload", "sig", "secret");
+
+    verifyNoInteractions(orderService);
+  }
+
+  @Test
+  void handleWebhook_invalidSignature_throwsValidation() throws SignatureVerificationException {
+    when(stripeGateway.constructEvent(any(), any(), any()))
+        .thenThrow(mock(SignatureVerificationException.class));
+
+    assertThatThrownBy(() -> paymentService.handleWebhook("payload", "bad-sig", "secret"))
+        .isInstanceOf(ValidationException.class)
+        .extracting("errorCode")
+        .isEqualTo("INVALID_WEBHOOK_SIGNATURE");
   }
 }
