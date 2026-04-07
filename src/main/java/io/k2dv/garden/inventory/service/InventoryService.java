@@ -175,9 +175,7 @@ public class InventoryService {
 
     @Transactional
     public void reserveStock(UUID variantId, int quantity) {
-        InventoryItem item = inventoryItemRepo.findByVariantId(variantId)
-            .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND",
-                "No inventory item for variant " + variantId));
+        InventoryItem item = findItemByVariant(variantId);
 
         List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
         int totalAvailable = levels.stream()
@@ -204,9 +202,7 @@ public class InventoryService {
 
     @Transactional
     public void releaseReservation(UUID variantId, int quantity) {
-        InventoryItem item = inventoryItemRepo.findByVariantId(variantId)
-            .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND",
-                "No inventory item for variant " + variantId));
+        InventoryItem item = findItemByVariant(variantId);
 
         List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
         int remaining = quantity;
@@ -223,9 +219,7 @@ public class InventoryService {
 
     @Transactional
     public void confirmSale(UUID variantId, int quantity) {
-        InventoryItem item = inventoryItemRepo.findByVariantId(variantId)
-            .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND",
-                "No inventory item for variant " + variantId));
+        InventoryItem item = findItemByVariant(variantId);
 
         List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
         int remaining = quantity;
