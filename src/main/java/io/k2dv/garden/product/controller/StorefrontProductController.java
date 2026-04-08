@@ -6,6 +6,8 @@ import io.k2dv.garden.product.dto.StorefrontProductFilterRequest;
 import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -15,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/products")
 @RequiredArgsConstructor
+@Tag(name = "Products", description = "Public storefront product catalog")
+@SecurityRequirements({})
 public class StorefrontProductController {
 
     private final ProductService productService;

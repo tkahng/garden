@@ -6,6 +6,8 @@ import io.k2dv.garden.collection.dto.response.CollectionSummaryResponse;
 import io.k2dv.garden.collection.service.CollectionService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -19,6 +21,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/v1/collections")
 @RequiredArgsConstructor
+@Tag(name = "Collections", description = "Public storefront collection catalog")
+@SecurityRequirements({})
 public class StorefrontCollectionController {
 
     private final CollectionService collectionService;
