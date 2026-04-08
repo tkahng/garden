@@ -167,6 +167,13 @@
 		<artifactId>stripe-java</artifactId>
 		<version>27.1.0</version>
 	</dependency>
+
+	<!-- OpenAPI / Swagger UI -->
+	<dependency>
+		<groupId>org.springdoc</groupId>
+		<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+		<version>3.0.2</version>
+	</dependency>
 	</dependencies>
 
 	<build>
