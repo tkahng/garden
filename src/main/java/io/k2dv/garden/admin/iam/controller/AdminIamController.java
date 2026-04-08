@@ -5,6 +5,7 @@ import io.k2dv.garden.admin.iam.service.AdminIamService;
 import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "Admin: IAM", description = "Admin roles and permissions")
 @RestController
 @RequestMapping("/api/v1/admin/iam")
 @RequiredArgsConstructor

@@ -7,10 +7,12 @@ import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
 import io.k2dv.garden.payment.service.PaymentService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+@Tag(name = "Payments", description = "Checkout and payment webhook endpoints")
 @RestController
 @RequestMapping("/api/v1/checkout")
 @RequiredArgsConstructor

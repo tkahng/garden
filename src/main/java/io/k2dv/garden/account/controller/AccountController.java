@@ -10,6 +10,7 @@ import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "Account", description = "User account and address management")
 @RestController
 @RequestMapping("/api/v1/account")
 @RequiredArgsConstructor

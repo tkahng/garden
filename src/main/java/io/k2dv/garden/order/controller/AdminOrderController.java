@@ -7,6 +7,7 @@ import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 import java.util.UUID;
 
+@Tag(name = "Orders", description = "Admin order management")
 @RestController
 @RequestMapping("/api/v1/admin/orders")
 @RequiredArgsConstructor
