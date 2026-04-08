@@ -72,9 +72,9 @@ class ProductServiceIT extends AbstractIntegrationTest {
         var active = productService.create(new CreateProductRequest("Active Product", null, null, null, null, List.of()));
         productService.changeStatus(active.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
 
-        var result = productService.listStorefront(null, PageRequest.of(0, 20));
-        assertThat(result.getContent()).hasSize(1);
-        assertThat(result.getContent().get(0).title()).isEqualTo("Active Product");
+        var result = productService.listStorefront(null, PageRequest.of(0, 100));
+        assertThat(result.getContent()).anyMatch(p -> p.title().equals("Active Product"));
+        assertThat(result.getContent()).noneMatch(p -> p.title().equals("Draft Product"));
     }
 
     @Test

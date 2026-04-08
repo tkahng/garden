@@ -16,9 +16,9 @@ class DevDataSeederIT extends AbstractIntegrationTest {
 
     @Test
     void seeder_populatesExpectedRowCounts() {
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(8L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(10L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(3L);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collection_products", Long.class)).isEqualTo(8L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collection_products", Long.class)).isEqualTo(10L);
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM content.pages WHERE handle = 'home'", Long.class)).isEqualTo(1L);
     }
@@ -26,7 +26,7 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     @Test
     void seeder_isIdempotent() throws Exception {
         seeder.run(null); // second run — should not insert duplicates
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(8L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(10L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(3L);
     }
 

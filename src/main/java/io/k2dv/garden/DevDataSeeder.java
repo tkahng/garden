@@ -9,7 +9,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -30,8 +32,9 @@ public class DevDataSeeder implements ApplicationRunner {
         log.info("DevDataSeeder: seeding dev data...");
         seedPage();
         List<UUID> productIds = seedProducts();
+        List<UUID> variantProductIds = seedVariantProducts();
         List<UUID> collectionIds = seedCollections();
-        seedCollectionProducts(collectionIds, productIds);
+        seedCollectionProducts(collectionIds, productIds, variantProductIds);
         log.info("DevDataSeeder: done.");
     }
 
@@ -251,21 +254,175 @@ public class DevDataSeeder implements ApplicationRunner {
         }).toList();
     }
 
-    private void seedCollectionProducts(List<UUID> collectionIds, List<UUID> productIds) {
-        // Seeds & Bulbs: products 0, 1, 2
-        // Tools & Supplies: products 3, 4, 5
-        // Pots & Planters: products 6, 7
-        int[][] assignments = { {0, 1, 2}, {3, 4, 5}, {6, 7} };
+    private List<UUID> seedVariantProducts() {
+        record OptionSeed(String name, List<String> values) {}
+        record VariantSeed(String sku, BigDecimal price, List<String> optionValues) {}
+        record VariantProductSeed(String title, String handle, String vendor, String type,
+                                   String description, List<OptionSeed> options, List<VariantSeed> variants) {}
 
-        for (int ci = 0; ci < collectionIds.size(); ci++) {
-            UUID collectionId = collectionIds.get(ci);
-            int[] productIndices = assignments[ci];
-            for (int pos = 0; pos < productIndices.length; pos++) {
+        var variantProducts = List.of(
+            new VariantProductSeed(
+                "Gardening Gloves", "gardening-gloves", "Tools Co", "Tools",
+                """
+                ## Gardening Gloves
+
+                Protect your hands without sacrificing dexterity. These lightweight, flexible gloves \
+                feature a breathable mesh back and a nitrile-coated palm for a firm grip on tools, \
+                pots, and thorny stems. Available in four sizes and two classic colorways.
+
+                ### Highlights
+                - **Palm coating:** micro-foam nitrile for grip and puncture resistance
+                - **Back:** breathable stretch mesh keeps hands cool
+                - **Cuff:** extended 2-inch cuff guards against soil and debris
+                - **Machine washable:** air dry after washing
+
+                ### Size Guide
+                | Size | Hand Circumference |
+                |------|--------------------|
+                | S    | 6.5–7 inches       |
+                | M    | 7–8 inches         |
+                | L    | 8–9 inches         |
+                | XL   | 9–10 inches        |
+
+                ### Best For
+                - Weeding and planting
+                - Pruning roses and thorny shrubs
+                - Handling potting mix and mulch
+                - Light digging and transplanting
+                """,
+                List.of(
+                    new OptionSeed("Size",  List.of("S", "M", "L", "XL")),
+                    new OptionSeed("Color", List.of("Forest Green", "Charcoal"))
+                ),
+                List.of(
+                    new VariantSeed("SKU-G-S-GRN",  new BigDecimal("14.99"), List.of("S",  "Forest Green")),
+                    new VariantSeed("SKU-G-S-CHR",  new BigDecimal("14.99"), List.of("S",  "Charcoal")),
+                    new VariantSeed("SKU-G-M-GRN",  new BigDecimal("14.99"), List.of("M",  "Forest Green")),
+                    new VariantSeed("SKU-G-M-CHR",  new BigDecimal("14.99"), List.of("M",  "Charcoal")),
+                    new VariantSeed("SKU-G-L-GRN",  new BigDecimal("14.99"), List.of("L",  "Forest Green")),
+                    new VariantSeed("SKU-G-L-CHR",  new BigDecimal("14.99"), List.of("L",  "Charcoal")),
+                    new VariantSeed("SKU-G-XL-GRN", new BigDecimal("14.99"), List.of("XL", "Forest Green")),
+                    new VariantSeed("SKU-G-XL-CHR", new BigDecimal("14.99"), List.of("XL", "Charcoal"))
+                )
+            ),
+            new VariantProductSeed(
+                "Ceramic Planter", "ceramic-planter", "Pots Co", "Pots",
+                """
+                ## Ceramic Planter
+
+                A versatile, minimalist ceramic planter that works as beautifully on a windowsill \
+                as it does on a patio table. Each piece is hand-finished with a matte glaze in a \
+                curated palette of botanically-inspired hues. Available in three sizes and three colors.
+
+                ### Highlights
+                - **Material:** high-fired stoneware ceramic
+                - **Glaze:** matte, food-safe, frost-resistant finish
+                - **Drainage:** pre-drilled hole with matching saucer included
+                - **Colors:** White, Sage Green, Dusty Rose
+
+                ### Size Guide
+                | Size   | Diameter  | Height | Best For                         |
+                |--------|-----------|--------|----------------------------------|
+                | Small  | 4 inches  | 3.5 in | Succulents, herbs, propagation   |
+                | Medium | 6 inches  | 5.5 in | Ferns, pothos, peace lily        |
+                | Large  | 9 inches  | 8 in   | Fiddle-leaf figs, citrus, palms  |
+
+                ### Care
+                Wipe clean with a damp cloth. Avoid abrasive cleaners to preserve the glaze finish.
+                """,
+                List.of(
+                    new OptionSeed("Color", List.of("White", "Sage Green", "Dusty Rose")),
+                    new OptionSeed("Size",  List.of("Small", "Medium", "Large"))
+                ),
+                List.of(
+                    new VariantSeed("SKU-CP-WHT-S",  new BigDecimal("19.99"), List.of("White",      "Small")),
+                    new VariantSeed("SKU-CP-WHT-M",  new BigDecimal("29.99"), List.of("White",      "Medium")),
+                    new VariantSeed("SKU-CP-WHT-L",  new BigDecimal("44.99"), List.of("White",      "Large")),
+                    new VariantSeed("SKU-CP-SGE-S",  new BigDecimal("19.99"), List.of("Sage Green", "Small")),
+                    new VariantSeed("SKU-CP-SGE-M",  new BigDecimal("29.99"), List.of("Sage Green", "Medium")),
+                    new VariantSeed("SKU-CP-SGE-L",  new BigDecimal("44.99"), List.of("Sage Green", "Large")),
+                    new VariantSeed("SKU-CP-DRS-S",  new BigDecimal("19.99"), List.of("Dusty Rose", "Small")),
+                    new VariantSeed("SKU-CP-DRS-M",  new BigDecimal("29.99"), List.of("Dusty Rose", "Medium")),
+                    new VariantSeed("SKU-CP-DRS-L",  new BigDecimal("44.99"), List.of("Dusty Rose", "Large"))
+                )
+            )
+        );
+
+        return variantProducts.stream().map(p -> {
+            UUID productId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO catalog.products (id, title, handle, vendor, product_type, description, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
+                """, productId, p.title(), p.handle(), p.vendor(), p.type(), p.description());
+
+            // Insert options and track option-value UUIDs keyed by "optionName:label"
+            Map<String, UUID> optionValueIds = new HashMap<>();
+            for (int oi = 0; oi < p.options().size(); oi++) {
+                OptionSeed opt = p.options().get(oi);
+                UUID optionId = UUID.randomUUID();
                 jdbc.update("""
-                    INSERT INTO catalog.collection_products (id, collection_id, product_id, position)
+                    INSERT INTO catalog.product_options (id, product_id, name, position)
                     VALUES (?, ?, ?, ?)
-                    """, UUID.randomUUID(), collectionId, productIds.get(productIndices[pos]), pos + 1);
+                    """, optionId, productId, opt.name(), oi + 1);
+
+                for (int vi = 0; vi < opt.values().size(); vi++) {
+                    UUID valueId = UUID.randomUUID();
+                    String label = opt.values().get(vi);
+                    jdbc.update("""
+                        INSERT INTO catalog.product_option_values (id, option_id, label, position)
+                        VALUES (?, ?, ?, ?)
+                        """, valueId, optionId, label, vi + 1);
+                    optionValueIds.put(opt.name() + ":" + label, valueId);
+                }
             }
+
+            // Insert variants and link to option values
+            for (VariantSeed v : p.variants()) {
+                UUID variantId = UUID.randomUUID();
+                String variantTitle = String.join(" / ", v.optionValues());
+                jdbc.update("""
+                    INSERT INTO catalog.product_variants
+                      (id, product_id, title, sku, price, fulfillment_type, inventory_policy, lead_time_days)
+                    VALUES (?, ?, ?, ?, ?, 'IN_STOCK', 'DENY', 0)
+                    """, variantId, productId, variantTitle, v.sku(), v.price());
+
+                for (int oi = 0; oi < p.options().size(); oi++) {
+                    String optionName = p.options().get(oi).name();
+                    UUID valueId = optionValueIds.get(optionName + ":" + v.optionValues().get(oi));
+                    jdbc.update("""
+                        INSERT INTO catalog.variant_option_values (variant_id, option_value_id)
+                        VALUES (?, ?)
+                        """, variantId, valueId);
+                }
+
+                jdbc.update("""
+                    INSERT INTO inventory.inventory_items (id, variant_id, requires_shipping)
+                    VALUES (?, ?, true)
+                    """, UUID.randomUUID(), variantId);
+            }
+
+            return productId;
+        }).toList();
+    }
+
+    private void seedCollectionProducts(List<UUID> collectionIds, List<UUID> productIds, List<UUID> variantProductIds) {
+        // Seeds & Bulbs (0):     Tomato, Lavender, Sunflower
+        // Tools & Supplies (1):  Trowel, Shears, Watering Can, Gardening Gloves
+        // Pots & Planters (2):   Terracotta Pot, Glazed Planter, Ceramic Planter
+        assignToCollection(collectionIds.get(0), List.of(
+            productIds.get(0), productIds.get(1), productIds.get(2)));
+        assignToCollection(collectionIds.get(1), List.of(
+            productIds.get(3), productIds.get(4), productIds.get(5), variantProductIds.get(0)));
+        assignToCollection(collectionIds.get(2), List.of(
+            productIds.get(6), productIds.get(7), variantProductIds.get(1)));
+    }
+
+    private void assignToCollection(UUID collectionId, List<UUID> pids) {
+        for (int pos = 0; pos < pids.size(); pos++) {
+            jdbc.update("""
+                INSERT INTO catalog.collection_products (id, collection_id, product_id, position)
+                VALUES (?, ?, ?, ?)
+                """, UUID.randomUUID(), collectionId, pids.get(pos), pos + 1);
         }
     }
 }

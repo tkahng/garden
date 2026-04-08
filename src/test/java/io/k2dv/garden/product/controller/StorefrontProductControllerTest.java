@@ -32,7 +32,7 @@ class StorefrontProductControllerTest {
 
     @Test
     void listProducts_returns200WithPageMeta() throws Exception {
-        var items = List.of(new ProductSummaryResponse(UUID.randomUUID(), "Shirt", "shirt", null));
+        var items = List.of(new ProductSummaryResponse(UUID.randomUUID(), "Shirt", "shirt", null, null, new java.math.BigDecimal("19.99"), new java.math.BigDecimal("19.99"), null, null));
         var meta = PageMeta.builder().page(0).pageSize(20).total(1L).build();
         when(productService.listStorefront(any(), any())).thenReturn(new PagedResult<>(items, meta));
 
