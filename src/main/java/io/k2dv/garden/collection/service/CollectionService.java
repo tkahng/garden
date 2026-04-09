@@ -1,5 +1,7 @@
 package io.k2dv.garden.collection.service;
 
+import io.k2dv.garden.blob.repository.BlobObjectRepository;
+import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.collection.dto.request.AddCollectionProductRequest;
 import io.k2dv.garden.collection.dto.request.CollectionFilterRequest;
 import io.k2dv.garden.collection.dto.request.CollectionStatusRequest;
@@ -23,6 +25,8 @@ import io.k2dv.garden.collection.repository.CollectionRepository;
 import io.k2dv.garden.collection.repository.CollectionRuleRepository;
 import io.k2dv.garden.collection.specification.CollectionSpecification;
 import io.k2dv.garden.product.model.Product;
+import io.k2dv.garden.product.model.ProductImage;
+import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -37,7 +41,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -48,6 +55,9 @@ public class CollectionService {
     private final CollectionProductRepository cpRepo;
     private final ProductRepository productRepo;
     private final CollectionMembershipService membershipService;
+    private final ProductImageRepository imageRepo;
+    private final BlobObjectRepository blobRepo;
+    private final StorageService storageService;
 
     // --- Collection CRUD ---
 
@@ -222,15 +232,22 @@ public class CollectionService {
     @Transactional(readOnly = true)
     public PagedResult<CollectionSummaryResponse> listStorefront(Pageable pageable) {
         Page<Collection> page = collectionRepo.findAll(CollectionSpecification.storefrontSpec(), pageable);
-        return PagedResult.of(page, c -> new CollectionSummaryResponse(c.getId(), c.getTitle(), c.getHandle()));
+        Map<UUID, String> imageUrls = resolveFeaturedImageUrls(
+                page.getContent().stream().map(Collection::getFeaturedImageId).filter(Objects::nonNull).collect(Collectors.toSet()));
+        return PagedResult.of(page, c -> new CollectionSummaryResponse(c.getId(), c.getTitle(), c.getHandle(),
+                c.getFeaturedImageId() != null ? imageUrls.get(c.getFeaturedImageId()) : null));
     }
 
     @Transactional(readOnly = true)
     public CollectionDetailResponse getByHandle(String handle) {
         Collection c = collectionRepo.findByHandleAndDeletedAtIsNullAndStatus(handle, CollectionStatus.ACTIVE)
                 .orElseThrow(() -> new NotFoundException("COLLECTION_NOT_FOUND", "Collection not found"));
-        return new CollectionDetailResponse(c.getId(), c.getTitle(), c.getHandle(),
-                c.getDescription(), c.getFeaturedImageId());
+        String imageUrl = null;
+        if (c.getFeaturedImageId() != null) {
+            Map<UUID, String> imageUrls = resolveFeaturedImageUrls(Set.of(c.getFeaturedImageId()));
+            imageUrl = imageUrls.get(c.getFeaturedImageId());
+        }
+        return new CollectionDetailResponse(c.getId(), c.getTitle(), c.getHandle(), c.getDescription(), imageUrl);
     }
 
     @Transactional(readOnly = true)
@@ -249,6 +266,19 @@ public class CollectionService {
     }
 
     // --- Helpers ---
+
+    private Map<UUID, String> resolveFeaturedImageUrls(Set<UUID> imageIds) {
+        if (imageIds.isEmpty()) return Map.of();
+        Map<UUID, ProductImage> imagesById = imageRepo.findAllById(imageIds).stream()
+                .collect(Collectors.toMap(ProductImage::getId, img -> img));
+        Set<UUID> blobIds = imagesById.values().stream()
+                .map(ProductImage::getBlobId).collect(Collectors.toSet());
+        Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+                .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
+        return imagesById.entrySet().stream()
+                .filter(e -> blobUrls.containsKey(e.getValue().getBlobId()))
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> blobUrls.get(e.getValue().getBlobId())));
+    }
 
     private Collection findActiveOrThrow(UUID id) {
         return collectionRepo.findByIdAndDeletedAtIsNull(id)
