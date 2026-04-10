@@ -2,6 +2,7 @@ package io.k2dv.garden.cart.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
+import io.k2dv.garden.cart.dto.CartItemProductInfo;
 import io.k2dv.garden.cart.dto.CartItemResponse;
 import io.k2dv.garden.cart.dto.CartResponse;
 import io.k2dv.garden.cart.dto.UpdateCartItemRequest;
@@ -38,8 +39,11 @@ class CartControllerTest {
     @MockitoBean CartService cartService;
 
     private CartResponse stubCart(UUID id) {
+        UUID productId = UUID.randomUUID();
+        CartItemProductInfo productInfo = new CartItemProductInfo(
+            productId, "Test Product", "Default Title", null);
         return new CartResponse(id, CartStatus.ACTIVE,
-            List.of(new CartItemResponse(UUID.randomUUID(), UUID.randomUUID(), 2, new BigDecimal("49.99"))),
+            List.of(new CartItemResponse(UUID.randomUUID(), UUID.randomUUID(), 2, new BigDecimal("49.99"), productInfo)),
             /* createdAt */ null);
     }
 
@@ -52,7 +56,9 @@ class CartControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.id").value(cartId.toString()))
             .andExpect(jsonPath("$.data.status").value("ACTIVE"))
-            .andExpect(jsonPath("$.data.items").isArray());
+            .andExpect(jsonPath("$.data.items").isArray())
+            .andExpect(jsonPath("$.data.items[0].product.productTitle").value("Test Product"))
+            .andExpect(jsonPath("$.data.items[0].product.variantTitle").value("Default Title"));
     }
 
     @Test

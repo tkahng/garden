@@ -1,6 +1,9 @@
 package io.k2dv.garden.cart.service;
 
+import io.k2dv.garden.blob.repository.BlobObjectRepository;
+import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
+import io.k2dv.garden.cart.dto.CartItemProductInfo;
 import io.k2dv.garden.cart.dto.CartItemResponse;
 import io.k2dv.garden.cart.dto.CartResponse;
 import io.k2dv.garden.cart.dto.UpdateCartItemRequest;
@@ -10,8 +13,10 @@ import io.k2dv.garden.cart.model.CartStatus;
 import io.k2dv.garden.cart.repository.CartItemRepository;
 import io.k2dv.garden.cart.repository.CartRepository;
 import io.k2dv.garden.product.model.Product;
+import io.k2dv.garden.product.model.ProductImage;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
+import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
@@ -21,7 +26,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -31,6 +40,9 @@ public class CartService {
     private final CartItemRepository cartItemRepo;
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
+    private final ProductImageRepository imageRepo;
+    private final BlobObjectRepository blobRepo;
+    private final StorageService storageService;
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
@@ -123,9 +135,58 @@ public class CartService {
     // --- Helpers ---
 
     private CartResponse toResponse(Cart cart) {
-        List<CartItemResponse> items = cartItemRepo.findByCartId(cart.getId()).stream()
-            .map(i -> new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice()))
-            .toList();
+        List<CartItem> cartItems = cartItemRepo.findByCartId(cart.getId());
+
+        // Batch-load variants
+        Set<UUID> variantIds = cartItems.stream().map(CartItem::getVariantId).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+            .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
+        // Batch-load products
+        Set<UUID> productIds = variantsById.values().stream()
+            .map(ProductVariant::getProductId).collect(Collectors.toSet());
+        Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, p -> p));
+
+        // Batch-load featured images → resolve blob URLs
+        Set<UUID> featuredImageIds = productsById.values().stream()
+            .map(Product::getFeaturedImageId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<UUID, String> imageUrlByProductId = Map.of();
+        if (!featuredImageIds.isEmpty()) {
+            Map<UUID, ProductImage> imagesById = imageRepo.findAllById(featuredImageIds).stream()
+                .collect(Collectors.toMap(ProductImage::getId, img -> img));
+            Set<UUID> blobIds = imagesById.values().stream()
+                .map(ProductImage::getBlobId).collect(Collectors.toSet());
+            Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+                .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
+            imageUrlByProductId = productsById.entrySet().stream()
+                .filter(e -> e.getValue().getFeaturedImageId() != null)
+                .filter(e -> imagesById.containsKey(e.getValue().getFeaturedImageId()))
+                .filter(e -> blobUrls.containsKey(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId()))
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    e -> blobUrls.get(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId())));
+        }
+        final Map<UUID, String> resolvedImageUrls = imageUrlByProductId;
+
+        List<CartItemResponse> items = cartItems.stream().map(i -> {
+            ProductVariant variant = variantsById.get(i.getVariantId());
+            CartItemProductInfo productInfo = null;
+            if (variant != null) {
+                Product product = productsById.get(variant.getProductId());
+                if (product != null) {
+                    productInfo = new CartItemProductInfo(
+                        product.getId(),
+                        product.getTitle(),
+                        variant.getTitle(),
+                        resolvedImageUrls.get(product.getId()));
+                }
+            }
+            return new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
+        }).toList();
+
         return new CartResponse(cart.getId(), cart.getStatus(), items, cart.getCreatedAt());
     }
 }

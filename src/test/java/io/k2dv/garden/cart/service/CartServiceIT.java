@@ -92,6 +92,27 @@ class CartServiceIT extends AbstractIntegrationTest {
   }
 
   @Test
+  void addItem_productInfoPopulated() {
+    UUID userId = createUserId();
+    AdminProductResponse product = productService.create(
+        new CreateProductRequest("Garden Hose", null, null, null, null, List.of()));
+    productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
+    AdminVariantResponse variant = variantService.create(product.id(),
+        new CreateVariantRequest(new BigDecimal("19.99"), null, null, null, null, null, List.of()));
+    cartService.getOrCreateActiveCart(userId);
+
+    CartResponse cart = cartService.addItem(userId, new AddCartItemRequest(variant.id(), 1));
+
+    assertThat(cart.items()).hasSize(1);
+    var productInfo = cart.items().get(0).product();
+    assertThat(productInfo).isNotNull();
+    assertThat(productInfo.productId()).isEqualTo(product.id());
+    assertThat(productInfo.productTitle()).isEqualTo("Garden Hose");
+    assertThat(productInfo.variantTitle()).isNotNull();
+    assertThat(productInfo.imageUrl()).isNull(); // no image attached
+  }
+
+  @Test
   void addItem_sameVariantTwice_mergesQuantity() {
     UUID userId = createUserId();
     AdminVariantResponse variant = createActiveVariant(new BigDecimal("10.00"));
