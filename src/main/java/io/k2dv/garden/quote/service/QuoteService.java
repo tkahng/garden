@@ -169,7 +169,7 @@ public class QuoteService {
         quote.setStatus(QuoteStatus.ACCEPTED);
         quoteRepo.save(quote);
 
-        CheckoutResponse checkout = paymentService.createCheckoutSessionFromQuote(order, items);
+        CheckoutResponse checkout = paymentService.createCheckoutSessionFromQuote(order, items, quote);
         return new QuoteAcceptResponse(checkout.checkoutUrl(), order.getId());
     }
 

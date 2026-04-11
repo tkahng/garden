@@ -101,8 +101,13 @@
                 <td th:text="${#numbers.formatDecimal(item.unitPrice * item.quantity, 1, 2)}">0.00</td>
             </tr>
             <tr class="total-row">
-                <td colspan="3">Grand Total</td>
+                <td colspan="3">Subtotal</td>
                 <td th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}">0.00</td>
+            </tr>
+            <tr>
+                <td colspan="4" style="font-style: italic; color: #7f8c8d; padding-top: 6px;">
+                    Taxes will be calculated at checkout
+                </td>
             </tr>
         </tbody>
     </table>

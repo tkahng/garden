@@ -19,6 +19,7 @@ import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.quote.model.QuoteItem;
+import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -102,7 +103,7 @@ public class PaymentService {
   }
 
   // NOT @Transactional — Stripe call is outside transaction
-  public CheckoutResponse createCheckoutSessionFromQuote(Order order, List<QuoteItem> items) {
+  public CheckoutResponse createCheckoutSessionFromQuote(Order order, List<QuoteItem> items, QuoteRequest quote) {
     try {
       String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
 
@@ -112,7 +113,21 @@ public class PaymentService {
               + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
           .setCancelUrl(appProperties.getFrontendUrl()
               + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
-          .putMetadata("orderId", order.getId() != null ? order.getId().toString() : "");
+          .putMetadata("orderId", order.getId() != null ? order.getId().toString() : "")
+          .setAutomaticTax(SessionCreateParams.AutomaticTax.builder()
+              .setEnabled(true)
+              .build())
+          .setCustomerDetails(SessionCreateParams.CustomerDetails.builder()
+              .setAddress(SessionCreateParams.CustomerDetails.Address.builder()
+                  .setLine1(quote.getDeliveryAddressLine1())
+                  .setLine2(quote.getDeliveryAddressLine2())
+                  .setCity(quote.getDeliveryCity())
+                  .setState(quote.getDeliveryState())
+                  .setPostalCode(quote.getDeliveryPostalCode())
+                  .setCountry(quote.getDeliveryCountry())
+                  .build())
+              .setAddressSource(SessionCreateParams.CustomerDetails.AddressSource.SHIPPING)
+              .build());
 
       for (QuoteItem item : items) {
         if (item.getUnitPrice() == null) continue;
