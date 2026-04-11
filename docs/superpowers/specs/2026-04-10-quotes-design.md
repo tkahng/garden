@@ -201,6 +201,9 @@ GET    /api/v1/quotes/{id}                      — get quote detail + line item
 
 POST   /api/v1/quotes/{id}/accept               — accept quote → creates Order → returns { checkoutUrl, orderId }
 POST   /api/v1/quotes/{id}/reject               — reject quote
+
+GET    /api/v1/quotes/{id}/pdf                  — download quote PDF as attachment (only if pdfBlobId set)
+                                                  returns 404 PDF_NOT_AVAILABLE if PDF not yet generated
 ```
 
 ### Quote Requests — Admin/Staff
@@ -273,11 +276,40 @@ byte[] generate(QuoteRequest quote, List<QuoteItem> items, Company company);
 - Expiry date
 - Delivery address and shipping requirements
 - Line items table: description, quantity, unit price, line total
-- Grand total
+- Subtotal (sum of line totals)
+- Tax note: "Taxes will be calculated at checkout" — no tax amount on the PDF (see Taxes section)
 - Staff notes (if present, shown as "Notes from our team")
 - Branding / logo (URL from `AppProperties`)
 
 **Email:** Existing `EmailService`. Quote email uses a dedicated template; PDF attached as `quote-{id}.pdf`.
+
+**PDF download:** After the PDF has been generated and sent, the customer can re-download it at any time via `GET /api/v1/quotes/{id}/pdf`. `QuoteService.downloadPdf()` verifies ownership, guards on `pdfBlobId != null`, fetches bytes from `StorageService.fetch(key)`, and returns them. `StorageService` interface exposes `InputStream fetch(String key)` implemented by `S3StorageService` via `GetObjectRequest`.
+
+---
+
+## Taxes
+
+**Approach:** Stripe Tax (external engine). The quote PDF shows pre-tax prices only. Tax is calculated and collected by Stripe at checkout time.
+
+**Rationale:** Tax rates vary by delivery jurisdiction and product type. Storing tax on the quote would require maintaining a tax rule engine. Stripe Tax handles this automatically using the delivery address and product tax codes already provided at Checkout Session creation.
+
+**How it works:**
+
+1. The PDF shows a subtotal and the note "Taxes will be calculated at checkout." No tax line on the PDF.
+2. When the user accepts the quote, `PaymentService.createCheckoutSessionFromQuote()` creates the Stripe Checkout Session with:
+   ```json
+   {
+     "automatic_tax": { "enabled": true },
+     "customer_details": {
+       "address": { ... delivery address from QuoteRequest ... },
+       "address_source": "shipping"
+     }
+   }
+   ```
+3. Stripe computes and displays the applicable tax on its hosted checkout page.
+4. The Stripe webhook `checkout.session.completed` event contains `total_details.amount_tax` — this can be stored on the `Order` if a tax audit trail is needed (optional, tracked separately).
+
+**No schema changes required** for the quote domain. Tax amount storage on `Order` is a separate concern.
 
 ---
 
@@ -312,9 +344,13 @@ The `staff` role is created via the existing IAM system. Only a superuser can as
 
 - **CompanyService** — integration tests with Testcontainers PostgreSQL, `@Transactional` + `@Rollback`
 - **QuoteCartService, QuoteService** — integration tests; cover submission, send validation (null price guard), accept (expiry check, order creation), reject, cancel
-- **QuotePdfService** — unit test: render a known fixture quote, assert PDF bytes non-empty
+- **QuotePdfService** — integration test with real Thymeleaf context:
+  - Assert PDF bytes start with `%PDF` (valid PDF)
+  - Assert PDF bytes non-empty for null expiry case
+  - **Content correctness:** build a quote with two line items where staff has set unit prices. Extract text from PDF bytes using Apache PDFBox `PDFTextStripper`. Assert that item descriptions, quantities, formatted unit prices, formatted line totals, and grand total all appear in the extracted text.
 - **OrderService** — existing tests extended to cover `createFromQuote()` path
 - **Controller slice tests** — `@WebMvcTest` for `CompanyController`, `QuoteCartController`, `QuoteController`, `AdminQuoteController`
+  - `QuoteController`: add cases for `GET /{id}/pdf` — happy path (200 + `application/pdf` content type + `Content-Disposition: attachment`), PDF not yet generated (404 `PDF_NOT_AVAILABLE`), wrong owner (403)
 
 ---
 
@@ -328,5 +364,6 @@ The `staff` role is created via the existing IAM system. Only a superuser can as
 | Staff role | IAM role (`staff`) with `quote:read/write/assign` permissions; superuser-assigned |
 | Quote → payment | Accept creates a real `Order` via `OrderService.createFromQuote()` → existing Stripe path |
 | Expiry | Staff-set `expiresAt`; lazy check at accept time; no background job |
-| PDF | OpenHTMLtoPDF from Thymeleaf HTML template; stored in blob storage; emailed as attachment |
+| PDF | OpenHTMLtoPDF from Thymeleaf HTML template; stored in blob storage; emailed as attachment; re-downloadable via `GET /api/v1/quotes/{id}/pdf` |
+| Taxes | Stripe Tax (`automatic_tax: enabled`) at Checkout Session creation; PDF shows subtotal + note; no tax stored on quote |
 | Webhook | No changes — existing webhook handles the `Order` as normal |
