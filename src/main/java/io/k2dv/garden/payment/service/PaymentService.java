@@ -18,6 +18,7 @@ import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -90,6 +91,53 @@ public class PaymentService {
       Session session = stripeGateway.createCheckoutSession(builder.build());
       orderService.setStripeSession(order.getId(), session.getId());
       cartService.markCheckedOut(cart.getId());
+
+      return new CheckoutResponse(session.getUrl(), order.getId());
+
+    } catch (StripeException e) {
+      orderService.cancelOrder(order.getId());
+      throw new PaymentException("STRIPE_ERROR",
+          "Failed to create checkout session: " + e.getMessage());
+    }
+  }
+
+  // NOT @Transactional — Stripe call is outside transaction
+  public CheckoutResponse createCheckoutSessionFromQuote(Order order, List<QuoteItem> items) {
+    try {
+      String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
+
+      SessionCreateParams.Builder builder = SessionCreateParams.builder()
+          .setMode(SessionCreateParams.Mode.PAYMENT)
+          .setSuccessUrl(appProperties.getFrontendUrl()
+              + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
+          .setCancelUrl(appProperties.getFrontendUrl()
+              + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
+          .putMetadata("orderId", order.getId() != null ? order.getId().toString() : "");
+
+      for (QuoteItem item : items) {
+        if (item.getUnitPrice() == null) continue;
+        long unitAmountCents = item.getUnitPrice()
+            .multiply(BigDecimal.valueOf(100))
+            .setScale(0, RoundingMode.HALF_UP)
+            .longValueExact();
+
+        builder.addLineItem(
+            SessionCreateParams.LineItem.builder()
+                .setQuantity((long) item.getQuantity())
+                .setPriceData(
+                    SessionCreateParams.LineItem.PriceData.builder()
+                        .setCurrency(currency)
+                        .setUnitAmount(unitAmountCents)
+                        .setProductData(
+                            SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                .setName(item.getDescription())
+                                .build())
+                        .build())
+                .build());
+      }
+
+      Session session = stripeGateway.createCheckoutSession(builder.build());
+      orderService.setStripeSession(order.getId(), session.getId());
 
       return new CheckoutResponse(session.getUrl(), order.getId());
 

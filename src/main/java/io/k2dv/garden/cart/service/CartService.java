@@ -65,6 +65,10 @@ public class CartService {
         if (product.getStatus() != ProductStatus.ACTIVE) {
             throw new ValidationException("PRODUCT_NOT_ACTIVE", "Product is not available for purchase");
         }
+        if (variant.getPrice() == null) {
+            throw new ValidationException("QUOTE_ONLY_VARIANT",
+                "This variant is quote-only and cannot be added to the regular cart");
+        }
 
         CartItem item = cartItemRepo.findByCartIdAndVariantId(cart.getId(), req.variantId())
             .orElseGet(() -> {

@@ -34,7 +34,7 @@ public class ProductVariant extends BaseEntity {
 
     @Column(name = "lead_time_days", nullable = false)
     private int leadTimeDays = 0;
-    @Column(nullable = false, precision = 19, scale = 4)
+    @Column(precision = 19, scale = 4)
     private BigDecimal price;
     @Column(name = "compare_at_price", precision = 19, scale = 4)
     private BigDecimal compareAtPrice;
