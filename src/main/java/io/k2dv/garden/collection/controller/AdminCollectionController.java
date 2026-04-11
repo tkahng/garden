@@ -17,6 +17,7 @@ import io.k2dv.garden.collection.model.CollectionType;
 import io.k2dv.garden.collection.service.CollectionService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
@@ -36,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "Collections", description = "Admin collection management")
 @RestController
 @RequestMapping("/api/v1/admin/collections")
 @RequiredArgsConstructor

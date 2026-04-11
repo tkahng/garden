@@ -27,7 +27,7 @@
 		<url/>
 	</scm>
 	<properties>
-		<java.version>25</java.version>
+		<java.version>26</java.version>
 	</properties>
 	<dependencyManagement>
 		<dependencies>
@@ -166,6 +166,13 @@
 		<groupId>com.stripe</groupId>
 		<artifactId>stripe-java</artifactId>
 		<version>27.1.0</version>
+	</dependency>
+
+	<!-- OpenAPI / Swagger UI -->
+	<dependency>
+		<groupId>org.springdoc</groupId>
+		<artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+		<version>3.0.2</version>
 	</dependency>
 	</dependencies>
 

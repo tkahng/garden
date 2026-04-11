@@ -4,6 +4,8 @@ import io.k2dv.garden.content.dto.*;
 import io.k2dv.garden.content.service.ArticleService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -13,6 +15,8 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/blogs")
 @RequiredArgsConstructor
+@Tag(name = "Content", description = "Public storefront blog and page content")
+@SecurityRequirements({})
 public class StorefrontBlogController {
 
     private final ArticleService articleService;

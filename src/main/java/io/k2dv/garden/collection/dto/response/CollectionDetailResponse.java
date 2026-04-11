@@ -3,5 +3,5 @@ package io.k2dv.garden.collection.dto.response;
 import java.util.UUID;
 
 public record CollectionDetailResponse(
-    UUID id, String title, String handle, String description, UUID featuredImageId
+    UUID id, String title, String handle, String description, String featuredImageUrl
 ) {}

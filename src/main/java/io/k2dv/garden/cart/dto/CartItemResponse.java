@@ -7,5 +7,6 @@ public record CartItemResponse(
     UUID id,
     UUID variantId,
     int quantity,
-    BigDecimal unitPrice
+    BigDecimal unitPrice,
+    CartItemProductInfo product
 ) {}

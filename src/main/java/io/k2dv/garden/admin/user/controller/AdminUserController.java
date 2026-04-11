@@ -10,6 +10,7 @@ import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.user.model.UserStatus;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
+@Tag(name = "Admin: Users", description = "Admin user management")
 @RestController
 @RequestMapping("/api/v1/admin/users")
 @RequiredArgsConstructor

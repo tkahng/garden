@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.blob.dto.BlobResponse;
 import io.k2dv.garden.blob.service.BlobService;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -17,6 +18,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
+@Tag(name = "Blobs", description = "File upload and storage")
 @RestController
 @RequestMapping("/api/v1/admin/blobs")
 @RequiredArgsConstructor

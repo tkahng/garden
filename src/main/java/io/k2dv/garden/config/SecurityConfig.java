@@ -12,9 +12,13 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import javax.crypto.spec.SecretKeySpec;
 import java.util.Base64;
+import java.util.List;
 
 @Configuration
 @EnableWebSecurity
@@ -29,6 +33,7 @@ public class SecurityConfig {
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
                 // Auth endpoints — public
                 .requestMatchers("/api/v1/auth/**").permitAll()
@@ -39,6 +44,10 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/blogs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/menus/**").permitAll()
                 .requestMatchers("/api/v1/webhooks/**").permitAll()
+                // Swagger UI / OpenAPI spec — non-prod only (disabled in prod via properties)
+                .requestMatchers("/swagger-ui/**").permitAll()
+                .requestMatchers("/swagger-ui.html").permitAll()
+                .requestMatchers("/v3/api-docs/**").permitAll()
                 // Everything else requires authentication
                 .anyRequest().authenticated()
             )
@@ -55,6 +64,18 @@ public class SecurityConfig {
             .csrf(csrf -> csrf.disable());
 
         return http.build();
+    }
+
+    @Bean
+    CorsConfigurationSource corsConfigurationSource() {
+        var cors = new CorsConfiguration();
+        cors.setAllowedOrigins(List.of(props.getFrontendUrl()));
+        cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
+        cors.setAllowedHeaders(List.of("*"));
+        cors.setAllowCredentials(true);
+        var source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration("/api/**", cors);
+        return source;
     }
 
     @Bean

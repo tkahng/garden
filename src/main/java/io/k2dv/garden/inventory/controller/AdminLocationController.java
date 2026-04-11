@@ -7,6 +7,7 @@ import io.k2dv.garden.inventory.service.LocationService;
 import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import jakarta.validation.Valid;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "Inventory", description = "Admin warehouse location management")
 @RestController
 @RequestMapping("/api/v1/admin/locations")
 @RequiredArgsConstructor

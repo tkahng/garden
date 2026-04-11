@@ -17,9 +17,12 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -123,7 +126,50 @@ public class ProductService {
     @Transactional(readOnly = true)
     public PagedResult<ProductSummaryResponse> listStorefront(StorefrontProductFilterRequest filter, Pageable pageable) {
         Page<Product> page = productRepo.findAll(ProductSpecification.storefrontSpec(filter), pageable);
-        return PagedResult.of(page, p -> new ProductSummaryResponse(p.getId(), p.getTitle(), p.getHandle(), p.getVendor()));
+        List<Product> products = page.getContent();
+
+        // Batch-load variants → price ranges per product
+        Set<UUID> productIds = products.stream().map(Product::getId).collect(Collectors.toSet());
+        Map<UUID, List<ProductVariant>> variantsByProduct = variantRepo
+            .findByProductIdInAndDeletedAtIsNull(productIds)
+            .stream()
+            .collect(Collectors.groupingBy(ProductVariant::getProductId));
+
+        // Batch-load featured image URLs
+        Set<UUID> featuredImageIds = products.stream()
+            .map(Product::getFeaturedImageId)
+            .filter(Objects::nonNull)
+            .collect(Collectors.toSet());
+        Map<UUID, String> featuredImageUrls = Map.of();
+        if (!featuredImageIds.isEmpty()) {
+            Map<UUID, ProductImage> imagesById = imageRepo.findAllById(featuredImageIds).stream()
+                .collect(Collectors.toMap(ProductImage::getId, img -> img));
+            Set<UUID> blobIds = imagesById.values().stream()
+                .map(ProductImage::getBlobId).collect(Collectors.toSet());
+            Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+                .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
+            featuredImageUrls = imagesById.entrySet().stream()
+                .filter(e -> blobUrls.containsKey(e.getValue().getBlobId()))
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> blobUrls.get(e.getValue().getBlobId())));
+        }
+        final Map<UUID, String> resolvedImageUrls = featuredImageUrls;
+
+        return PagedResult.of(page, p -> {
+            List<ProductVariant> variants = variantsByProduct.getOrDefault(p.getId(), List.of());
+            BigDecimal priceMin = variants.stream().map(ProductVariant::getPrice)
+                .min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
+            BigDecimal priceMax = variants.stream().map(ProductVariant::getPrice)
+                .max(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
+            BigDecimal compareAtPriceMin = variants.stream().map(ProductVariant::getCompareAtPrice)
+                .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
+            BigDecimal compareAtPriceMax = variants.stream().map(ProductVariant::getCompareAtPrice)
+                .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+            String imageUrl = p.getFeaturedImageId() != null
+                ? resolvedImageUrls.get(p.getFeaturedImageId()) : null;
+            return new ProductSummaryResponse(
+                p.getId(), p.getTitle(), p.getHandle(), p.getVendor(),
+                imageUrl, priceMin, priceMax, compareAtPriceMin, compareAtPriceMax);
+        });
     }
 
     @Transactional(readOnly = true)

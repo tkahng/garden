@@ -6,6 +6,9 @@ import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.auth.service.AuthService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +17,8 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
+@Tag(name = "Auth", description = "Registration, login, token refresh, and password management")
+@SecurityRequirements({})
 public class AuthController {
 
     private final AuthService authService;
@@ -66,6 +71,7 @@ public class AuthController {
     }
 
     @Authenticated
+    @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/update-password")
     public ResponseEntity<Void> updatePassword(
             @CurrentUser User user,
