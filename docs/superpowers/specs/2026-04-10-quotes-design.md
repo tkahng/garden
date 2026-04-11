@@ -109,7 +109,7 @@ QuoteRequest
   ├─ userId (UUID — the requestor)
   ├─ companyId (UUID, FK → Company)
   ├─ assignedStaffId (UUID, nullable — user with staff role)
-  ├─ status: PENDING | ASSIGNED | DRAFT | SENT | ACCEPTED | REJECTED | EXPIRED | CANCELLED
+  ├─ status: PENDING | ASSIGNED | DRAFT | SENT | ACCEPTED | PAID | REJECTED | EXPIRED | CANCELLED
   ├─ deliveryAddressLine1 (String, not null)
   ├─ deliveryAddressLine2 (String, nullable)
   ├─ deliveryCity (String, not null)
@@ -142,20 +142,22 @@ PENDING
   └─(staff assigns)──────────► ASSIGNED
        └─(staff edits/drafts)─► DRAFT
             └─(staff sends)────► SENT
-                 ├─(user accepts)─► ACCEPTED ──(Stripe webhook: PAID)──► Order.status = PAID
+                 ├─(user accepts)─► ACCEPTED ──(Stripe webhook: checkout.session.completed)──► PAID
                  ├─(user rejects)─► REJECTED
                  ├─(expiresAt passes, lazy)──► EXPIRED
-                 └─(staff cancels)─► CANCELLED
+                 └─(staff/user cancels)─► CANCELLED
 
-PENDING / ASSIGNED / DRAFT
-  └─(staff cancels)──────────► CANCELLED
+PENDING / ASSIGNED / DRAFT / SENT
+  └─(staff/user cancels)──────► CANCELLED
 ```
 
 **Rules:**
 - `ACCEPTED` is set the moment the user calls accept and a Stripe Checkout Session is created. `QuoteRequest.orderId` is populated at this point.
+- `PAID` is set by the Stripe webhook handler (`checkout.session.completed`) after successful payment. `PaymentService` looks up the quote by `orderId` from session metadata and transitions it from `ACCEPTED` → `PAID`. The linked `Order` is also set to `PAID` by the same webhook.
 - Expiry is **lazy**: checked at accept time. No background scheduler. If `expiresAt` is in the past, the quote transitions to `EXPIRED` and the accept returns `409 Conflict`.
 - Payment confirmation flows through the existing Stripe webhook — the created `Order` is handled identically to a cart-originated order.
 - All unit prices on `QuoteItem`s must be non-null before staff can call the send endpoint (`422 Unprocessable Entity` otherwise).
+- `ACCEPTED`, `PAID`, `REJECTED`, `EXPIRED`, and `CANCELLED` are terminal — no further mutations allowed.
 
 ---
 
@@ -234,7 +236,8 @@ POST   /api/v1/admin/quotes/{id}/cancel             — cancel quote [quote:writ
 3. `QuoteCartItem`s are copied to `QuoteItem`s (all `unitPrice` null).
 4. `QuoteCart` transitions to `SUBMITTED`. A new `ACTIVE` QuoteCart is created lazily on next access.
 5. `QuoteRequest` created with status `PENDING`.
-6. Confirmation email sent to the user.
+6. Confirmation email sent to the user (`sendQuoteSubmitted`).
+7. If `app.adminNotificationEmail` is configured, a notification email is sent to that address (`sendQuoteNewRequest`).
 
 ### Quote Send (Staff)
 
@@ -252,9 +255,19 @@ POST   /api/v1/admin/quotes/{id}/cancel             — cancel quote [quote:writ
 3. `QuoteService` calls `OrderService.createFromQuote(quoteRequest)`:
    - Creates `Order` (status `PENDING_PAYMENT`) with `OrderItem`s from `QuoteItem`s.
    - Reserves inventory for each item.
-4. `QuoteService` calls `PaymentService.createCheckoutSession(order)` — same as cart checkout path.
+4. `QuoteService` calls `PaymentService.createCheckoutSessionFromQuote(order, items, quote)` — sets `automatic_tax`, delivery address, and stores `orderId` in Stripe session metadata.
 5. `QuoteRequest.orderId` set; status → `ACCEPTED`.
 6. Returns `{ checkoutUrl, orderId }`.
+
+### Quote Payment (Stripe Webhook → PAID)
+
+1. User completes payment on Stripe hosted checkout page.
+2. Stripe fires `checkout.session.completed` webhook to `POST /api/v1/webhooks/stripe`.
+3. `PaymentService.handleWebhook` processes the event:
+   - Calls `orderService.confirmPayment(sessionId, paymentIntentId)` → `Order.status = PAID`, inventory reservations released.
+   - Reads `orderId` from session metadata; looks up quote via `QuoteRequestRepository.findByOrderId`.
+   - If quote is in `ACCEPTED` status, transitions it to `PAID`.
+4. User's quote detail page now shows status `PAID` with a link to the order.
 
 ---
 

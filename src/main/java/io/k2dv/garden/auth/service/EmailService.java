@@ -6,5 +6,6 @@ public interface EmailService {
     void sendEmailVerification(String to, String token);
     void sendPasswordReset(String to, String token);
     void sendQuoteSubmitted(String to, UUID quoteId);
+    void sendQuoteNewRequest(String to, UUID quoteId);
     void sendQuotePdf(String to, UUID quoteId, byte[] pdfBytes);
 }

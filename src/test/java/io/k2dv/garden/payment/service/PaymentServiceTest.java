@@ -20,6 +20,7 @@ import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import org.junit.jupiter.api.BeforeEach;
@@ -53,13 +54,15 @@ class PaymentServiceTest {
   ProductVariantRepository variantRepo;
   @Mock
   AppProperties appProperties;
+  @Mock
+  QuoteRequestRepository quoteRequestRepo;
 
   PaymentService paymentService;
 
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo);
   }
 
   private Cart stubCart(UUID userId) {

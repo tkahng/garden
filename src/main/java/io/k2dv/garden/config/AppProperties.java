@@ -24,6 +24,9 @@ public class AppProperties {
     @NotBlank
     private String frontendUrl = "http://localhost:3000";
 
+    // Optional: if set, new quote submissions send a notification to this address
+    private String adminNotificationEmail;
+
     @Getter
     @Setter
     public static class Jwt {

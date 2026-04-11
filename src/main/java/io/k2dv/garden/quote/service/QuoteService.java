@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.model.Company;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.blob.model.BlobObject;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.blob.service.StorageService;
@@ -53,6 +54,7 @@ public class QuoteService {
     private final UserRepository userRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
+    private final AppProperties appProperties;
 
     @Transactional
     public QuoteRequestResponse submit(UUID userId, SubmitQuoteRequest req) {
@@ -99,10 +101,16 @@ public class QuoteService {
         // Submit the cart
         cartService.markSubmitted(cart.getId());
 
-        // Send confirmation email
+        // Send confirmation email to user
         User user = userRepo.findById(userId).orElse(null);
         if (user != null) {
             emailService.sendQuoteSubmitted(user.getEmail(), quote.getId());
+        }
+
+        // Notify admin if configured
+        String adminEmail = appProperties.getAdminNotificationEmail();
+        if (adminEmail != null && !adminEmail.isBlank()) {
+            emailService.sendQuoteNewRequest(adminEmail, quote.getId());
         }
 
         return toResponse(quote);
@@ -313,7 +321,8 @@ public class QuoteService {
     public QuoteRequestResponse cancel(UUID quoteId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
-        if (quote.getStatus() == QuoteStatus.ACCEPTED || quote.getStatus() == QuoteStatus.REJECTED
+        if (quote.getStatus() == QuoteStatus.ACCEPTED || quote.getStatus() == QuoteStatus.PAID
+            || quote.getStatus() == QuoteStatus.REJECTED
             || quote.getStatus() == QuoteStatus.EXPIRED || quote.getStatus() == QuoteStatus.CANCELLED) {
             throw new ConflictException("INVALID_QUOTE_STATUS",
                 "Cannot cancel quote in status: " + quote.getStatus());
@@ -329,7 +338,8 @@ public class QuoteService {
         if (!quote.getUserId().equals(userId)) {
             throw new ForbiddenException("NOT_YOUR_QUOTE", "This quote does not belong to you");
         }
-        if (quote.getStatus() == QuoteStatus.ACCEPTED || quote.getStatus() == QuoteStatus.REJECTED
+        if (quote.getStatus() == QuoteStatus.ACCEPTED || quote.getStatus() == QuoteStatus.PAID
+            || quote.getStatus() == QuoteStatus.REJECTED
             || quote.getStatus() == QuoteStatus.EXPIRED || quote.getStatus() == QuoteStatus.CANCELLED) {
             throw new ConflictException("INVALID_QUOTE_STATUS",
                 "Cannot cancel quote in status: " + quote.getStatus());
@@ -344,8 +354,8 @@ public class QuoteService {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
         if (quote.getStatus() == QuoteStatus.SENT || quote.getStatus() == QuoteStatus.ACCEPTED
-            || quote.getStatus() == QuoteStatus.REJECTED || quote.getStatus() == QuoteStatus.EXPIRED
-            || quote.getStatus() == QuoteStatus.CANCELLED) {
+            || quote.getStatus() == QuoteStatus.PAID || quote.getStatus() == QuoteStatus.REJECTED
+            || quote.getStatus() == QuoteStatus.EXPIRED || quote.getStatus() == QuoteStatus.CANCELLED) {
             throw new ConflictException("INVALID_QUOTE_STATUS",
                 "Cannot edit items on quote in status: " + quote.getStatus());
         }

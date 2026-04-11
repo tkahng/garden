@@ -47,6 +47,16 @@ public class SmtpEmailService implements EmailService {
     }
 
     @Override
+    public void sendQuoteNewRequest(String to, UUID quoteId) {
+        var msg = new SimpleMailMessage();
+        msg.setTo(to);
+        msg.setSubject("New quote request received — #" + quoteId);
+        msg.setText("A new quote request has been submitted (ID: " + quoteId + "). "
+            + "Log in to the admin portal to review and assign it.");
+        mailSender.send(msg);
+    }
+
+    @Override
     public void sendQuotePdf(String to, UUID quoteId, byte[] pdfBytes) {
         try {
             MimeMessage mimeMessage = mailSender.createMimeMessage();

@@ -20,6 +20,8 @@ import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
+import io.k2dv.garden.quote.model.QuoteStatus;
+import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -39,6 +41,7 @@ public class PaymentService {
   private final StripeGateway stripeGateway;
   private final ProductVariantRepository variantRepo;
   private final AppProperties appProperties;
+  private final QuoteRequestRepository quoteRequestRepo;
 
   // NOT @Transactional — Stripe call is outside transaction; each sub-call
   // manages its own tx
@@ -199,6 +202,15 @@ public class PaymentService {
             .orElseThrow(() -> new PaymentException("STRIPE_DESERIALIZE_ERROR",
                 "Cannot deserialize Stripe session"));
         orderService.confirmPayment(session.getId(), session.getPaymentIntent());
+        String orderIdStr = session.getMetadata() != null ? session.getMetadata().get("orderId") : null;
+        if (orderIdStr != null && !orderIdStr.isBlank()) {
+          quoteRequestRepo.findByOrderId(UUID.fromString(orderIdStr)).ifPresent(quote -> {
+            if (quote.getStatus() == QuoteStatus.ACCEPTED) {
+              quote.setStatus(QuoteStatus.PAID);
+              quoteRequestRepo.save(quote);
+            }
+          });
+        }
       }
       case "checkout.session.expired" -> {
         Session session = (Session) event.getDataObjectDeserializer()
