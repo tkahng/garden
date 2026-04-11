@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -27,15 +28,18 @@ public class QuotePdfService {
     private final TemplateEngine templateEngine;
 
     public byte[] generate(QuoteRequest quote, List<QuoteItem> items, Company company) {
-        BigDecimal grandTotal = items.stream()
-            .filter(i -> i.getUnitPrice() != null)
-            .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
-            .reduce(BigDecimal.ZERO, BigDecimal::add);
+        List<BigDecimal> lineTotals = items.stream()
+            .map(i -> i.getUnitPrice() != null
+                ? i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity()))
+                : BigDecimal.ZERO)
+            .collect(Collectors.toList());
+        BigDecimal grandTotal = lineTotals.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
 
         Context ctx = new Context();
         ctx.setVariable("quote", quote);
         ctx.setVariable("items", items);
         ctx.setVariable("company", company);
+        ctx.setVariable("lineTotals", lineTotals);
         ctx.setVariable("grandTotal", grandTotal);
         ctx.setVariable("issuedDate", DATE_FMT.format(Instant.now()));
         ctx.setVariable("expiryDate",

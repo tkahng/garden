@@ -94,11 +94,11 @@
             </tr>
         </thead>
         <tbody>
-            <tr th:each="item : ${items}">
+            <tr th:each="item, iterStat : ${items}">
                 <td th:text="${item.description}">Item</td>
                 <td th:text="${item.quantity}">1</td>
                 <td th:text="${#numbers.formatDecimal(item.unitPrice, 1, 2)}">0.00</td>
-                <td th:text="${#numbers.formatDecimal(item.unitPrice * item.quantity, 1, 2)}">0.00</td>
+                <td th:text="${#numbers.formatDecimal(lineTotals[iterStat.index], 1, 2)}">0.00</td>
             </tr>
             <tr class="total-row">
                 <td colspan="3">Subtotal</td>

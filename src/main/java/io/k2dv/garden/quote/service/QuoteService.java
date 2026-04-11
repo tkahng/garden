@@ -56,12 +56,12 @@ public class QuoteService {
 
     @Transactional
     public QuoteRequestResponse submit(UUID userId, SubmitQuoteRequest req) {
-        // Verify company membership
+        // Verify company exists, then membership
+        companyRepo.findById(req.companyId())
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
         if (!membershipRepo.existsByCompanyIdAndUserId(req.companyId(), userId)) {
             throw new ForbiddenException("NOT_A_MEMBER", "You are not a member of this company");
         }
-        companyRepo.findById(req.companyId())
-            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
 
         QuoteCart cart = cartService.requireActiveCart(userId);
         List<io.k2dv.garden.quote.model.QuoteCartItem> cartItems = cartService.getCartItems(cart.getId());
@@ -145,6 +145,7 @@ public class QuoteService {
     }
 
     // Accept: creates Order + Stripe session, transitions to ACCEPTED
+    @Transactional
     public QuoteAcceptResponse accept(UUID quoteId, UUID userId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
@@ -262,6 +263,7 @@ public class QuoteService {
     }
 
     // Send: generate PDF, email user, transition to SENT
+    @Transactional
     public QuoteRequestResponse send(UUID quoteId, SendQuoteRequest req) {
         QuoteRequest quote = loadForSend(quoteId);
         List<QuoteItem> items = itemRepo.findByQuoteRequestId(quoteId);
@@ -311,6 +313,22 @@ public class QuoteService {
     public QuoteRequestResponse cancel(UUID quoteId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (quote.getStatus() == QuoteStatus.ACCEPTED || quote.getStatus() == QuoteStatus.REJECTED
+            || quote.getStatus() == QuoteStatus.EXPIRED || quote.getStatus() == QuoteStatus.CANCELLED) {
+            throw new ConflictException("INVALID_QUOTE_STATUS",
+                "Cannot cancel quote in status: " + quote.getStatus());
+        }
+        quote.setStatus(QuoteStatus.CANCELLED);
+        return toResponse(quoteRepo.save(quote));
+    }
+
+    @Transactional
+    public QuoteRequestResponse cancelForUser(UUID quoteId, UUID userId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (!quote.getUserId().equals(userId)) {
+            throw new ForbiddenException("NOT_YOUR_QUOTE", "This quote does not belong to you");
+        }
         if (quote.getStatus() == QuoteStatus.ACCEPTED || quote.getStatus() == QuoteStatus.REJECTED
             || quote.getStatus() == QuoteStatus.EXPIRED || quote.getStatus() == QuoteStatus.CANCELLED) {
             throw new ConflictException("INVALID_QUOTE_STATUS",

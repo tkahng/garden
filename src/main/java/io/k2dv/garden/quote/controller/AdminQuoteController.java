@@ -42,7 +42,7 @@ public class AdminQuoteController {
         return ResponseEntity.ok(ApiResponse.of(quoteService.getAdmin(id)));
     }
 
-    @PutMapping("/{id}/assign")
+    @PostMapping("/{id}/assign")
     @HasPermission("quote:write")
     public ResponseEntity<ApiResponse<QuoteRequestResponse>> assign(
         @PathVariable UUID id,

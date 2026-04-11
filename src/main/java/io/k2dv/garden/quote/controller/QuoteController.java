@@ -64,6 +64,13 @@ public class QuoteController {
         return ResponseEntity.ok(ApiResponse.of(quoteService.reject(id, user.getId())));
     }
 
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<ApiResponse<QuoteRequestResponse>> cancel(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(quoteService.cancelForUser(id, user.getId())));
+    }
+
     @GetMapping("/{id}/pdf")
     public ResponseEntity<byte[]> downloadPdf(
         @CurrentUser User user,

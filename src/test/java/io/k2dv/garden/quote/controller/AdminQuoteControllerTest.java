@@ -87,7 +87,7 @@ class AdminQuoteControllerTest {
         UUID staffId = UUID.randomUUID();
         when(quoteService.assign(any(), any())).thenReturn(stubQuote(id, QuoteStatus.ASSIGNED));
 
-        mvc.perform(put("/api/v1/admin/quotes/{id}/assign", id)
+        mvc.perform(post("/api/v1/admin/quotes/{id}/assign", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(new AssignStaffRequest(staffId))))
             .andExpect(status().isOk())

@@ -13,6 +13,7 @@ import io.k2dv.garden.inventory.model.Location;
 import io.k2dv.garden.inventory.repository.InventoryItemRepository;
 import io.k2dv.garden.inventory.repository.InventoryLevelRepository;
 import io.k2dv.garden.inventory.repository.LocationRepository;
+import io.k2dv.garden.payment.service.PaymentService;
 import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.service.ProductService;
@@ -59,6 +60,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
     @MockitoBean EmailService emailService;
     @MockitoBean StorageService storageService;
     @MockitoBean QuotePdfService pdfService;
+    @MockitoBean PaymentService paymentService;
 
     private static final AtomicInteger counter = new AtomicInteger(0);
 
@@ -237,5 +239,27 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         QuoteRequestResponse updated = quoteService.updateNotes(quote.id(),
             new UpdateStaffNotesRequest("Internal note for team"));
         assertThat(updated.staffNotes()).isEqualTo("Internal note for team");
+    }
+
+    @Test
+    void cancelForUser_fromPending_succeeds() {
+        QuoteRequestResponse quote = submitQuote();
+        QuoteRequestResponse cancelled = quoteService.cancelForUser(quote.id(), userId);
+        assertThat(cancelled.status()).isEqualTo(QuoteStatus.CANCELLED);
+    }
+
+    @Test
+    void cancelForUser_wrongUser_throwsForbidden() {
+        QuoteRequestResponse quote = submitQuote();
+        assertThatThrownBy(() -> quoteService.cancelForUser(quote.id(), UUID.randomUUID()))
+            .isInstanceOf(io.k2dv.garden.shared.exception.ForbiddenException.class);
+    }
+
+    @Test
+    void cancelForUser_alreadyCancelled_throwsConflict() {
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.cancelForUser(quote.id(), userId);
+        assertThatThrownBy(() -> quoteService.cancelForUser(quote.id(), userId))
+            .isInstanceOf(ConflictException.class);
     }
 }
