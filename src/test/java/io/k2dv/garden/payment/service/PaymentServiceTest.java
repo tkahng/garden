@@ -20,6 +20,8 @@ import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.quote.model.QuoteRequest;
+import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
@@ -257,6 +259,7 @@ class PaymentServiceTest {
     Session session = mock(Session.class);
     when(session.getId()).thenReturn("cs_test_123");
     when(session.getPaymentIntent()).thenReturn("pi_test_456");
+    when(session.getMetadata()).thenReturn(java.util.Map.of());
     when(deserializer.getObject()).thenReturn(Optional.of(session));
     when(event.getDataObjectDeserializer()).thenReturn(deserializer);
     when(stripeGateway.constructEvent(any(), any(), any())).thenReturn(event);
@@ -264,6 +267,50 @@ class PaymentServiceTest {
     paymentService.handleWebhook("payload", "sig", "secret");
 
     verify(orderService).confirmPayment("cs_test_123", "pi_test_456");
+  }
+
+  @Test
+  void handleWebhook_sessionCompleted_withQuoteOrderId_transitionsQuoteToPaid() throws SignatureVerificationException {
+    UUID orderId = UUID.randomUUID();
+    QuoteRequest quote = new QuoteRequest();
+    quote.setStatus(QuoteStatus.ACCEPTED);
+
+    Event event = mock(Event.class);
+    when(event.getType()).thenReturn("checkout.session.completed");
+
+    EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_test_123");
+    when(session.getPaymentIntent()).thenReturn("pi_test_456");
+    when(session.getMetadata()).thenReturn(java.util.Map.of("orderId", orderId.toString()));
+    when(deserializer.getObject()).thenReturn(Optional.of(session));
+    when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+    when(stripeGateway.constructEvent(any(), any(), any())).thenReturn(event);
+    when(quoteRequestRepo.findByOrderId(orderId)).thenReturn(Optional.of(quote));
+
+    paymentService.handleWebhook("payload", "sig", "secret");
+
+    verify(quoteRequestRepo).save(quote);
+    assertThat(quote.getStatus()).isEqualTo(QuoteStatus.PAID);
+  }
+
+  @Test
+  void handleWebhook_sessionCompleted_noOrderIdInMetadata_doesNotTouchQuoteRepo() throws SignatureVerificationException {
+    Event event = mock(Event.class);
+    when(event.getType()).thenReturn("checkout.session.completed");
+
+    EventDataObjectDeserializer deserializer = mock(EventDataObjectDeserializer.class);
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_test_123");
+    when(session.getPaymentIntent()).thenReturn("pi_test_456");
+    when(session.getMetadata()).thenReturn(java.util.Map.of());
+    when(deserializer.getObject()).thenReturn(Optional.of(session));
+    when(event.getDataObjectDeserializer()).thenReturn(deserializer);
+    when(stripeGateway.constructEvent(any(), any(), any())).thenReturn(event);
+
+    paymentService.handleWebhook("payload", "sig", "secret");
+
+    verifyNoInteractions(quoteRequestRepo);
   }
 
   @Test

@@ -124,6 +124,38 @@ class QuoteControllerTest {
     }
 
     @Test
+    void cancelQuote_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        QuoteRequestResponse cancelled = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
+            null, QuoteStatus.CANCELLED, "123 Main", null, "City", null, "12345", "US",
+            null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+        when(quoteService.cancelForUser(any(), any())).thenReturn(cancelled);
+
+        mvc.perform(post("/api/v1/quotes/{id}/cancel", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+    }
+
+    @Test
+    void cancelQuote_alreadyAccepted_returns409() throws Exception {
+        when(quoteService.cancelForUser(any(), any()))
+            .thenThrow(new ConflictException("INVALID_QUOTE_STATUS", "Cannot cancel accepted quote"));
+
+        mvc.perform(post("/api/v1/quotes/{id}/cancel", UUID.randomUUID()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value("INVALID_QUOTE_STATUS"));
+    }
+
+    @Test
+    void cancelQuote_wrongOwner_returns403() throws Exception {
+        when(quoteService.cancelForUser(any(), any()))
+            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("NOT_YOUR_QUOTE", "Not yours"));
+
+        mvc.perform(post("/api/v1/quotes/{id}/cancel", UUID.randomUUID()))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
     void downloadPdf_returnsPdfBytes() throws Exception {
         UUID id = UUID.randomUUID();
         byte[] pdfBytes = "%PDF-1.4 fake content".getBytes();

@@ -13,6 +13,7 @@ import io.k2dv.garden.inventory.model.Location;
 import io.k2dv.garden.inventory.repository.InventoryItemRepository;
 import io.k2dv.garden.inventory.repository.InventoryLevelRepository;
 import io.k2dv.garden.inventory.repository.LocationRepository;
+import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.service.PaymentService;
 import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
@@ -22,6 +23,8 @@ import io.k2dv.garden.quote.dto.*;
 import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
+import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -95,10 +98,13 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         levelRepo.save(level);
 
         doNothing().when(emailService).sendQuoteSubmitted(any(), any());
+        doNothing().when(emailService).sendQuoteNewRequest(any(), any());
         doNothing().when(emailService).sendQuotePdf(any(), any(), any());
         doNothing().when(storageService).store(any(), any(), any(), anyLong());
         doNothing().when(storageService).delete(any());
         when(pdfService.generate(any(), any(), any())).thenReturn(new byte[]{1, 2, 3});
+        when(paymentService.createCheckoutSessionFromQuote(any(), any(), any()))
+            .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID()));
     }
 
     private QuoteRequestResponse submitQuote() {
@@ -261,5 +267,78 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         quoteService.cancelForUser(quote.id(), userId);
         assertThatThrownBy(() -> quoteService.cancelForUser(quote.id(), userId))
             .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void accept_fromSentStatus_returnsCheckoutUrl() {
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("150.00")));
+        sendQuote(quote.id());
+
+        QuoteAcceptResponse response = quoteService.accept(quote.id(), userId);
+
+        assertThat(response.checkoutUrl()).isNotBlank();
+        assertThat(response.orderId()).isNotNull();
+
+        QuoteRequestResponse reloaded = quoteService.getAdmin(quote.id());
+        assertThat(reloaded.status()).isEqualTo(QuoteStatus.ACCEPTED);
+        assertThat(reloaded.orderId()).isNotNull();
+    }
+
+    @Test
+    void accept_expiredQuote_transitionsToExpiredAndThrows() {
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("150.00")));
+        // Send with already-past expiry
+        quoteService.send(quote.id(), new SendQuoteRequest(Instant.now().minus(1, ChronoUnit.DAYS)));
+
+        assertThatThrownBy(() -> quoteService.accept(quote.id(), userId))
+            .isInstanceOf(ConflictException.class)
+            .extracting("errorCode").isEqualTo("QUOTE_EXPIRED");
+
+        assertThat(quoteService.getAdmin(quote.id()).status()).isEqualTo(QuoteStatus.EXPIRED);
+    }
+
+    @Test
+    void getForUser_wrongOwner_throwsForbidden() {
+        QuoteRequestResponse quote = submitQuote();
+        assertThatThrownBy(() -> quoteService.getForUser(quote.id(), UUID.randomUUID()))
+            .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void submit_nonExistentCompany_throwsNotFound() {
+        quoteCartService.getOrCreateActiveCart(userId);
+        quoteCartService.addItem(userId, new AddQuoteCartItemRequest(variant.id(), 1, null));
+        assertThatThrownBy(() -> quoteService.submit(userId, new SubmitQuoteRequest(
+            UUID.randomUUID(), "123 Main", null, "City", null, "12345", "US", null, null)))
+            .isInstanceOf(NotFoundException.class)
+            .extracting("errorCode").isEqualTo("COMPANY_NOT_FOUND");
+    }
+
+    @Test
+    void submit_nonMember_throwsForbidden() {
+        int n = counter.incrementAndGet();
+        String otherEmail = "other-" + n + "@example.com";
+        authService.register(new RegisterRequest(otherEmail, "pass", "Other", "User"));
+        UUID otherId = userRepo.findByEmail(otherEmail).orElseThrow().getId();
+
+        quoteCartService.getOrCreateActiveCart(otherId);
+        quoteCartService.addItem(otherId, new AddQuoteCartItemRequest(variant.id(), 1, null));
+        assertThatThrownBy(() -> quoteService.submit(otherId, new SubmitQuoteRequest(
+            companyId, "123 Main", null, "City", null, "12345", "US", null, null)))
+            .isInstanceOf(ForbiddenException.class)
+            .extracting("errorCode").isEqualTo("NOT_A_MEMBER");
+    }
+
+    @Test
+    void send_setsPdfBlobId() {
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("150.00")));
+        QuoteRequestResponse sent = sendQuote(quote.id());
+        assertThat(sent.pdfBlobId()).isNotNull();
     }
 }
