@@ -6,8 +6,10 @@ import org.springframework.stereotype.Service;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
+import java.io.IOException;
 import java.io.InputStream;
 
 @Service
@@ -26,6 +28,15 @@ public class S3StorageService implements StorageService {
             .contentLength(contentLength)
             .build();
         s3Client.putObject(request, RequestBody.fromInputStream(data, contentLength));
+    }
+
+    @Override
+    public InputStream fetch(String key) {
+        GetObjectRequest request = GetObjectRequest.builder()
+            .bucket(properties.getBucket())
+            .key(key)
+            .build();
+        return s3Client.getObject(request);
     }
 
     @Override

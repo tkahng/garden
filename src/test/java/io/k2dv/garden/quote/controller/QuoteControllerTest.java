@@ -27,6 +27,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.hamcrest.Matchers.containsString;
 
 @WebMvcTest(controllers = QuoteController.class)
 @Import({TestSecurityConfig.class, TestCurrentUserConfig.class, GlobalExceptionHandler.class})
@@ -120,5 +121,37 @@ class QuoteControllerTest {
         mvc.perform(post("/api/v1/quotes/{id}/reject", id))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("REJECTED"));
+    }
+
+    @Test
+    void downloadPdf_returnsPdfBytes() throws Exception {
+        UUID id = UUID.randomUUID();
+        byte[] pdfBytes = "%PDF-1.4 fake content".getBytes();
+        when(quoteService.downloadPdf(any(), any())).thenReturn(pdfBytes);
+
+        mvc.perform(get("/api/v1/quotes/{id}/pdf", id))
+            .andExpect(status().isOk())
+            .andExpect(content().contentType(org.springframework.http.MediaType.APPLICATION_PDF))
+            .andExpect(header().string("Content-Disposition", containsString("attachment")))
+            .andExpect(header().string("Content-Disposition", containsString(id.toString())));
+    }
+
+    @Test
+    void downloadPdf_notGenerated_returns404() throws Exception {
+        when(quoteService.downloadPdf(any(), any()))
+            .thenThrow(new NotFoundException("PDF_NOT_AVAILABLE", "Quote PDF has not been generated yet"));
+
+        mvc.perform(get("/api/v1/quotes/{id}/pdf", UUID.randomUUID()))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("PDF_NOT_AVAILABLE"));
+    }
+
+    @Test
+    void downloadPdf_wrongOwner_returns403() throws Exception {
+        when(quoteService.downloadPdf(any(), any()))
+            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("NOT_YOUR_QUOTE", "This quote does not belong to you"));
+
+        mvc.perform(get("/api/v1/quotes/{id}/pdf", UUID.randomUUID()))
+            .andExpect(status().isForbidden());
     }
 }

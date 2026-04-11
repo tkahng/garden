@@ -11,6 +11,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -60,5 +62,16 @@ public class QuoteController {
         @CurrentUser User user,
         @PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.of(quoteService.reject(id, user.getId())));
+    }
+
+    @GetMapping("/{id}/pdf")
+    public ResponseEntity<byte[]> downloadPdf(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        byte[] pdf = quoteService.downloadPdf(id, user.getId());
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"quote-" + id + ".pdf\"")
+            .body(pdf);
     }
 }

@@ -125,6 +125,25 @@ public class QuoteService {
         return toResponse(quote);
     }
 
+    @Transactional(readOnly = true)
+    public byte[] downloadPdf(UUID quoteId, UUID userId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (!quote.getUserId().equals(userId)) {
+            throw new ForbiddenException("NOT_YOUR_QUOTE", "This quote does not belong to you");
+        }
+        if (quote.getPdfBlobId() == null) {
+            throw new NotFoundException("PDF_NOT_AVAILABLE", "Quote PDF has not been generated yet");
+        }
+        BlobObject blob = blobRepo.findById(quote.getPdfBlobId())
+            .orElseThrow(() -> new NotFoundException("PDF_NOT_FOUND", "Quote PDF not found"));
+        try (java.io.InputStream stream = storageService.fetch(blob.getKey())) {
+            return stream.readAllBytes();
+        } catch (java.io.IOException e) {
+            throw new RuntimeException("Failed to retrieve quote PDF", e);
+        }
+    }
+
     // Accept: creates Order + Stripe session, transitions to ACCEPTED
     public QuoteAcceptResponse accept(UUID quoteId, UUID userId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)

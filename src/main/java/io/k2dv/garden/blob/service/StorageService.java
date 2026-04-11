@@ -13,6 +13,9 @@ public interface StorageService {
     /** Delete the object at the given key. Idempotent — no error if key absent. */
     void delete(String key);
 
+    /** Fetch the object at the given key as an InputStream. Caller must close the stream. */
+    InputStream fetch(String key);
+
     /** Compute the public URL for a key: baseUrl + "/" + key. */
     String resolveUrl(String key);
 }
