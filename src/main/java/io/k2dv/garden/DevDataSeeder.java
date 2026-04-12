@@ -1,5 +1,6 @@
 package io.k2dv.garden;
 
+import io.k2dv.garden.blob.service.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -8,7 +9,13 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -22,6 +29,7 @@ import java.util.UUID;
 public class DevDataSeeder implements ApplicationRunner {
 
     private final JdbcTemplate jdbc;
+    private final StorageService storageService;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -650,6 +658,10 @@ public class DevDataSeeder implements ApplicationRunner {
             "Cast stone fountain water detail",
             "Fountain installed in formal garden courtyard"));
 
+        HttpClient http = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.ALWAYS)
+            .build();
+
         for (var entry : imagesByHandle.entrySet()) {
             String handle = entry.getKey();
             List<String> altTexts = entry.getValue();
@@ -659,14 +671,19 @@ public class DevDataSeeder implements ApplicationRunner {
 
             UUID featuredImageId = null;
             for (int i = 0; i < altTexts.size(); i++) {
-                String key = "https://picsum.photos/seed/" + handle + "-" + (i + 1) + "/800/600";
                 String filename = handle + "-" + (i + 1) + ".jpg";
+                String objectKey = "products/" + filename;
+                String picsumUrl = "https://picsum.photos/seed/" + handle + "-" + (i + 1) + "/800/600";
+
+                byte[] imageBytes = downloadImage(http, picsumUrl, handle, i);
+                storageService.store(objectKey, "image/jpeg",
+                    new ByteArrayInputStream(imageBytes), imageBytes.length);
 
                 UUID blobId = UUID.randomUUID();
                 jdbc.update("""
                     INSERT INTO storage.blob_objects (id, key, filename, content_type, size)
-                    VALUES (?, ?, ?, 'image/jpeg', 150000)
-                    """, blobId, key, filename);
+                    VALUES (?, ?, ?, 'image/jpeg', ?)
+                    """, blobId, objectKey, filename, imageBytes.length);
 
                 UUID imageId = UUID.randomUUID();
                 jdbc.update("""
@@ -681,6 +698,24 @@ public class DevDataSeeder implements ApplicationRunner {
 
             jdbc.update("UPDATE catalog.products SET featured_image_id = ? WHERE id = ?",
                 featuredImageId, productId);
+        }
+    }
+
+    private byte[] downloadImage(HttpClient http, String url, String handle, int index) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .GET()
+                .build();
+            HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Failed to download image for " + handle + "-" + (index + 1)
+                    + ": HTTP " + response.statusCode());
+            }
+            return response.body();
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Failed to download image for " + handle + "-" + (index + 1), e);
         }
     }
 
