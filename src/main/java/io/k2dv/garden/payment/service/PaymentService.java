@@ -177,6 +177,18 @@ public class PaymentService {
     return new CheckoutReturnResponse(order.getId(), status);
   }
 
+  private Session deserializeSession(Event event) {
+    var deserializer = event.getDataObjectDeserializer();
+    if (deserializer.getObject().isPresent()) {
+      return (Session) deserializer.getObject().get();
+    }
+    try {
+      return (Session) deserializer.deserializeUnsafe();
+    } catch (Exception e) {
+      throw new PaymentException("STRIPE_DESERIALIZE_ERROR", "Cannot deserialize Stripe session");
+    }
+  }
+
   public void handleWebhook(String payload, String sigHeader, String webhookSecret) {
     Event event;
     try {
@@ -187,10 +199,7 @@ public class PaymentService {
 
     switch (event.getType()) {
       case "checkout.session.completed" -> {
-        Session session = (Session) event.getDataObjectDeserializer()
-            .getObject()
-            .orElseThrow(() -> new PaymentException("STRIPE_DESERIALIZE_ERROR",
-                "Cannot deserialize Stripe session"));
+        Session session = deserializeSession(event);
         orderService.confirmPayment(session.getId(), session.getPaymentIntent());
         String orderIdStr = session.getMetadata() != null ? session.getMetadata().get("orderId") : null;
         if (orderIdStr != null && !orderIdStr.isBlank()) {
@@ -203,10 +212,7 @@ public class PaymentService {
         }
       }
       case "checkout.session.expired" -> {
-        Session session = (Session) event.getDataObjectDeserializer()
-            .getObject()
-            .orElseThrow(() -> new PaymentException("STRIPE_DESERIALIZE_ERROR",
-                "Cannot deserialize Stripe session"));
+        Session session = deserializeSession(event);
         orderService.cancelBySession(session.getId());
       }
       default -> {
