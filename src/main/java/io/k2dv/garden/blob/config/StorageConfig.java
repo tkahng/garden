@@ -30,17 +30,21 @@ public class StorageConfig {
                 .build())
             .build();
 
-        initBucket(client, props.getBucket());
+        createBucket(client, props.getBucket());
+        createBucket(client, props.getPrivateBucket());
+        applyPublicReadPolicy(client, props.getBucket());
         return client;
     }
 
-    private void initBucket(S3Client client, String bucket) {
+    private void createBucket(S3Client client, String bucket) {
         try {
             client.createBucket(CreateBucketRequest.builder().bucket(bucket).build());
         } catch (BucketAlreadyOwnedByYouException ignored) {
             // already exists — that's fine
         }
+    }
 
+    private void applyPublicReadPolicy(S3Client client, String bucket) {
         String policy = """
             {
               "Version": "2012-10-17",

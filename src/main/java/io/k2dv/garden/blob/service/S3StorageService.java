@@ -20,9 +20,9 @@ public class S3StorageService implements StorageService {
     private final StorageProperties properties;
 
     @Override
-    public void store(String key, String contentType, InputStream data, long contentLength) {
+    public void store(String bucket, String key, String contentType, InputStream data, long contentLength) {
         PutObjectRequest request = PutObjectRequest.builder()
-            .bucket(properties.getBucket())
+            .bucket(bucket)
             .key(key)
             .contentType(contentType)
             .contentLength(contentLength)
@@ -31,21 +31,41 @@ public class S3StorageService implements StorageService {
     }
 
     @Override
-    public InputStream fetch(String key) {
+    public void store(String key, String contentType, InputStream data, long contentLength) {
+        store(properties.getBucket(), key, contentType, data, contentLength);
+    }
+
+    @Override
+    public InputStream fetch(String bucket, String key) {
         GetObjectRequest request = GetObjectRequest.builder()
-            .bucket(properties.getBucket())
+            .bucket(bucket)
             .key(key)
             .build();
         return s3Client.getObject(request);
     }
 
     @Override
-    public void delete(String key) {
+    public InputStream fetch(String key) {
+        return fetch(properties.getBucket(), key);
+    }
+
+    @Override
+    public void delete(String bucket, String key) {
         DeleteObjectRequest request = DeleteObjectRequest.builder()
-            .bucket(properties.getBucket())
+            .bucket(bucket)
             .key(key)
             .build();
         s3Client.deleteObject(request);
+    }
+
+    @Override
+    public void delete(String key) {
+        delete(properties.getBucket(), key);
+    }
+
+    @Override
+    public String resolveUrl(String bucket, String key) {
+        return properties.getBaseUrl().replace("/" + properties.getBucket(), "/" + bucket) + "/" + key;
     }
 
     @Override

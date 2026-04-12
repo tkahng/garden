@@ -7,6 +7,7 @@ import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.blob.model.BlobObject;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
+import io.k2dv.garden.blob.config.StorageProperties;
 import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.order.model.Order;
 import io.k2dv.garden.order.service.OrderService;
@@ -54,6 +55,7 @@ public class QuoteService {
     private final UserRepository userRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
+    private final StorageProperties storageProperties;
     private final AppProperties appProperties;
 
     @Transactional
@@ -145,7 +147,7 @@ public class QuoteService {
         }
         BlobObject blob = blobRepo.findById(quote.getPdfBlobId())
             .orElseThrow(() -> new NotFoundException("PDF_NOT_FOUND", "Quote PDF not found"));
-        try (java.io.InputStream stream = storageService.fetch(blob.getKey())) {
+        try (java.io.InputStream stream = storageService.fetch(storageProperties.getPrivateBucket(), blob.getKey())) {
             return stream.readAllBytes();
         } catch (java.io.IOException e) {
             throw new RuntimeException("Failed to retrieve quote PDF", e);
@@ -294,9 +296,10 @@ public class QuoteService {
         // Generate PDF
         byte[] pdfBytes = pdfService.generate(quote, items, company);
 
-        // Upload PDF to blob storage
+        // Upload PDF to private blob storage
         String key = "quotes/quote-" + quoteId + ".pdf";
-        storageService.store(key, "application/pdf", new ByteArrayInputStream(pdfBytes), pdfBytes.length);
+        storageService.store(storageProperties.getPrivateBucket(), key, "application/pdf",
+            new ByteArrayInputStream(pdfBytes), pdfBytes.length);
         BlobObject blob = new BlobObject();
         blob.setKey(key);
         blob.setFilename("quote-" + quoteId + ".pdf");
