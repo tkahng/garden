@@ -33,8 +33,9 @@ public class DevDataSeeder implements ApplicationRunner {
         seedPage();
         List<UUID> productIds = seedProducts();
         List<UUID> variantProductIds = seedVariantProducts();
+        List<UUID> quoteOnlyProductIds = seedQuoteOnlyProducts();
         List<UUID> collectionIds = seedCollections();
-        seedCollectionProducts(collectionIds, productIds, variantProductIds);
+        seedCollectionProducts(collectionIds, productIds, variantProductIds, quoteOnlyProductIds);
         log.info("DevDataSeeder: done.");
     }
 
@@ -235,13 +236,182 @@ public class DevDataSeeder implements ApplicationRunner {
         }).toList();
     }
 
+    private List<UUID> seedQuoteOnlyProducts() {
+        record QuoteProductSeed(String title, String handle, String vendor, String type, String sku, String description) {}
+
+        var products = List.of(
+            new QuoteProductSeed(
+                "GFRC Trough Planter",
+                "gfrc-trough-planter",
+                "Stone & Form Co",
+                "Planters",
+                "SKU-QO-001",
+                """
+                ## GFRC Trough Planter
+
+                Cast from Glass Fiber Reinforced Concrete, these trough planters bring an \
+                architectural presence to any outdoor space — courtyards, rooftop terraces, \
+                commercial lobbies, and estate gardens alike. Each piece is made to order \
+                in your chosen dimensions, wall thickness, and finish.
+
+                ### Material
+                GFRC (Glass Fiber Reinforced Concrete) is significantly lighter than solid \
+                precast concrete while retaining its structural integrity and weather resistance. \
+                Suitable for year-round outdoor installation in all climates.
+
+                ### Customization Options
+                - **Size:** available from 24 in up to 96 in length; custom widths and heights on request
+                - **Wall thickness:** standard 1.5 in or heavy-duty 2 in
+                - **Finish:** smooth trowel, sand-blasted, acid-washed, or exposed aggregate
+                - **Color:** natural grey, charcoal, warm white, or custom pigment match
+                - **Drainage:** pre-drilled drainage holes included as standard
+
+                ### Lead Time
+                8–12 weeks from confirmed order. Freight delivery required; local placement \
+                and installation quoted separately.
+
+                > **Quote required.** Pricing depends on dimensions, finish, and quantity. \
+                Submit a quote request with your preferred size and finish details.
+                """
+            ),
+            new QuoteProductSeed(
+                "Bluestone Outdoor Pavers",
+                "bluestone-outdoor-pavers",
+                "Stone & Form Co",
+                "Hardscape",
+                "SKU-QO-002",
+                """
+                ## Bluestone Outdoor Pavers
+
+                Natural Pennsylvania bluestone for patios, pool surrounds, garden paths, \
+                and outdoor living areas. Renowned for its dense, slip-resistant surface \
+                and the cool blue-grey tones that deepen beautifully when wet.
+
+                ### Available Cuts
+                - **Sawn** — precise, uniform edges; ideal for formal or contemporary layouts
+                - **Natural Cleft** — split along the stone's natural grain; classic, textured surface
+                - **Tumbled** — softened edges and a worn, antique feel; suits rustic or cottage gardens
+
+                ### Sizing
+                Supplied in irregular flagging, select pattern sets (12×12, 18×18, 24×24 in), \
+                or custom-cut to your project plan. Thickness: ¾ in (pedestrian) or 1.5 in (driveway-rated).
+
+                ### Coverage
+                Pricing and quantities are project-specific. Submit a quote request with your \
+                approximate square footage, preferred cut, and thickness, and we will provide \
+                a delivered price to your site.
+
+                ### Notes
+                - Natural stone varies in tone — sample slabs available on request
+                - Freight delivery only; curbside or tailgate delivery included, offloading by others
+                - Sealing recommended; we can supply penetrating stone sealer as an add-on
+
+                > **Quote required.** Priced per project based on square footage, cut, and delivery location.
+                """
+            ),
+            new QuoteProductSeed(
+                "Custom Cedar Raised Garden Bed",
+                "custom-cedar-raised-garden-bed",
+                "Timber & Bloom Co",
+                "Garden Beds",
+                "SKU-QO-003",
+                """
+                ## Custom Cedar Raised Garden Bed
+
+                Built to your exact footprint from select-grade Western Red Cedar — \
+                naturally rot-resistant, aromatic, and beautiful without any treatment or staining. \
+                Ideal for vegetable gardens, cut-flower beds, herb gardens, and accessible growing \
+                setups with elevated heights.
+
+                ### Why Cedar?
+                Western Red Cedar contains natural oils that repel insects and resist moisture \
+                without the need for chemical preservatives. Untreated cedar is safe for edible \
+                crops and meets organic gardening standards.
+
+                ### Customization Options
+                - **Footprint:** any rectangular or L-shaped dimension up to 16 ft long
+                - **Height:** standard 12 in, tall 24 in, or accessible 32 in
+                - **Wall thickness:** 2×6 (standard) or 2×8 (heavy-duty)
+                - **Corners:** traditional butt-joint or mortised corner posts
+                - **Add-ons:** hardware cloth liner (gopher protection), trellis uprights, cover frame
+
+                ### Delivery & Assembly
+                Beds ship flat-packed with pre-drilled hardware. Assembly typically takes \
+                30–60 minutes with two people and a drill. White-glove delivery and on-site \
+                assembly available in select areas — ask when requesting your quote.
+
+                > **Quote required.** Pricing depends on dimensions and selected options. \
+                Typical beds range from 4×4 ft starter sizes to full 4×16 ft production rows.
+                """
+            ),
+            new QuoteProductSeed(
+                "Cast Stone Fountain",
+                "cast-stone-fountain",
+                "Stone & Form Co",
+                "Water Features",
+                "SKU-QO-004",
+                """
+                ## Cast Stone Fountain
+
+                A centerpiece for formal gardens, courtyards, and estate landscapes. \
+                Our cast stone fountains are hand-finished to replicate the look and feel of \
+                natural limestone or sandstone, at a fraction of the weight of solid carved stone. \
+                Each fountain is made to order and can be customized in size, basin depth, \
+                and surface texture.
+
+                ### Standard Models (all quote-to-order)
+                - **Tiered Classic** — two or three-tier stacked basin; traditional garden aesthetic
+                - **Millstone** — flat, horizontal millstone-style with center spout; contemporary and low-profile
+                - **Wall-Mount** — projects from a wall or fence; ideal for smaller courtyard spaces
+                - **Urn** — tall urn with continuous overflow; suits formal symmetrical layouts
+
+                ### Material
+                Cast stone aggregate with an integral pigment — will not chip, peel, or fade. \
+                Frost-resistant to −20°F. Ships with submersible pump, tubing, and installation guide.
+
+                ### Customization
+                - Basin diameter: 18 in to 60 in
+                - Finish: natural limestone, weathered sandstone, or charcoal
+                - Pump specification: matched to basin size and head height
+
+                > **Quote required.** Pricing varies by model, size, and finish. \
+                Lead time 6–10 weeks. Freight delivery only.
+                """
+            )
+        );
+
+        return products.stream().map(p -> {
+            UUID productId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO catalog.products (id, title, handle, vendor, product_type, description, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
+                """, productId, p.title(), p.handle(), p.vendor(), p.type(), p.description());
+
+            UUID variantId = UUID.randomUUID();
+            // price is intentionally NULL — these are quote-only products
+            jdbc.update("""
+                INSERT INTO catalog.product_variants
+                  (id, product_id, title, sku, price, fulfillment_type, inventory_policy, lead_time_days)
+                VALUES (?, ?, 'Default', ?, NULL, 'IN_STOCK', 'DENY', 0)
+                """, variantId, productId, p.sku());
+
+            jdbc.update("""
+                INSERT INTO inventory.inventory_items (id, variant_id, requires_shipping)
+                VALUES (?, ?, true)
+                """, UUID.randomUUID(), variantId);
+
+            return productId;
+        }).toList();
+    }
+
     private List<UUID> seedCollections() {
         record CollectionSeed(String title, String handle) {}
 
         var collections = List.of(
-            new CollectionSeed("Seeds & Bulbs",     "seeds-bulbs"),
-            new CollectionSeed("Tools & Supplies",  "tools-supplies"),
-            new CollectionSeed("Pots & Planters",   "pots-planters")
+            new CollectionSeed("Seeds & Bulbs",       "seeds-bulbs"),
+            new CollectionSeed("Tools & Supplies",    "tools-supplies"),
+            new CollectionSeed("Pots & Planters",     "pots-planters"),
+            new CollectionSeed("Outdoor & Custom",    "outdoor-custom")
         );
 
         return collections.stream().map(c -> {
@@ -405,16 +575,19 @@ public class DevDataSeeder implements ApplicationRunner {
         }).toList();
     }
 
-    private void seedCollectionProducts(List<UUID> collectionIds, List<UUID> productIds, List<UUID> variantProductIds) {
+    private void seedCollectionProducts(List<UUID> collectionIds, List<UUID> productIds,
+                                         List<UUID> variantProductIds, List<UUID> quoteOnlyProductIds) {
         // Seeds & Bulbs (0):     Tomato, Lavender, Sunflower
         // Tools & Supplies (1):  Trowel, Shears, Watering Can, Gardening Gloves
         // Pots & Planters (2):   Terracotta Pot, Glazed Planter, Ceramic Planter
+        // Outdoor & Custom (3):  GFRC Trough Planter, Bluestone Pavers, Custom Cedar Raised Bed, Cast Stone Fountain
         assignToCollection(collectionIds.get(0), List.of(
             productIds.get(0), productIds.get(1), productIds.get(2)));
         assignToCollection(collectionIds.get(1), List.of(
             productIds.get(3), productIds.get(4), productIds.get(5), variantProductIds.get(0)));
         assignToCollection(collectionIds.get(2), List.of(
             productIds.get(6), productIds.get(7), variantProductIds.get(1)));
+        assignToCollection(collectionIds.get(3), quoteOnlyProductIds);
     }
 
     private void assignToCollection(UUID collectionId, List<UUID> pids) {

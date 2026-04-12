@@ -16,9 +16,9 @@ class DevDataSeederIT extends AbstractIntegrationTest {
 
     @Test
     void seeder_populatesExpectedRowCounts() {
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(10L);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(3L);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collection_products", Long.class)).isEqualTo(10L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(14L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(4L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collection_products", Long.class)).isEqualTo(14L);
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM content.pages WHERE handle = 'home'", Long.class)).isEqualTo(1L);
     }
@@ -26,8 +26,8 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     @Test
     void seeder_isIdempotent() throws Exception {
         seeder.run(null); // second run — should not insert duplicates
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(10L);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(3L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(14L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(4L);
     }
 
     @Test
@@ -49,5 +49,12 @@ class DevDataSeederIT extends AbstractIntegrationTest {
         Long published = jdbc.queryForObject(
             "SELECT COUNT(*) FROM content.pages WHERE handle = 'home' AND status = 'PUBLISHED'", Long.class);
         assertThat(published).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_quoteOnlyVariantsHaveNullPrice() {
+        Long nullPriceCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.product_variants WHERE price IS NULL", Long.class);
+        assertThat(nullPriceCount).isEqualTo(4L); // GFRC Planter, Bluestone Pavers, Cedar Raised Bed, Cast Stone Fountain
     }
 }
