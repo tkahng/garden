@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,6 +37,7 @@ public class DevDataSeeder implements ApplicationRunner {
         List<UUID> quoteOnlyProductIds = seedQuoteOnlyProducts();
         List<UUID> collectionIds = seedCollections();
         seedCollectionProducts(collectionIds, productIds, variantProductIds, quoteOnlyProductIds);
+        seedImages();
         log.info("DevDataSeeder: done.");
     }
 
@@ -588,6 +590,98 @@ public class DevDataSeeder implements ApplicationRunner {
         assignToCollection(collectionIds.get(2), List.of(
             productIds.get(6), productIds.get(7), variantProductIds.get(1)));
         assignToCollection(collectionIds.get(3), quoteOnlyProductIds);
+    }
+
+    private void seedImages() {
+        // Maps product handle → ordered list of alt texts (1 entry = 1 image).
+        // Picsum URLs are deterministic: https://picsum.photos/seed/{handle}-{n}/800/600
+        Map<String, List<String>> imagesByHandle = new LinkedHashMap<>();
+
+        // Seeds & Bulbs
+        imagesByHandle.put("heirloom-tomato-seeds", List.of(
+            "Heirloom tomato seeds packet",
+            "Ripe heirloom tomatoes on the vine"));
+        imagesByHandle.put("lavender-starter-pack", List.of(
+            "Lavender seed packet",
+            "Lavender in full bloom"));
+        imagesByHandle.put("sunflower-mix", List.of(
+            "Sunflower seed mix packet",
+            "Sunflower field in full bloom"));
+
+        // Tools & Supplies
+        imagesByHandle.put("garden-trowel", List.of(
+            "Stainless steel garden trowel",
+            "Trowel in use planting seedlings"));
+        imagesByHandle.put("pruning-shears", List.of(
+            "Bypass pruning shears",
+            "Pruning shears trimming a rose stem"));
+        imagesByHandle.put("watering-can-2l", List.of(
+            "2L watering can with detachable rose head"));
+        imagesByHandle.put("gardening-gloves", List.of(
+            "Gardening gloves in forest green",
+            "Gardening gloves in charcoal",
+            "Gloves worn during planting"));
+
+        // Pots & Planters
+        imagesByHandle.put("terracotta-pot-6in", List.of(
+            "6 inch terracotta pot",
+            "Terracotta pot planted with succulents"));
+        imagesByHandle.put("glazed-planter-large", List.of(
+            "Large glazed deep forest green planter",
+            "Glazed planter with ornamental grass"));
+        imagesByHandle.put("ceramic-planter", List.of(
+            "White ceramic planter on windowsill",
+            "Sage green ceramic planter outdoors",
+            "Dusty rose ceramic planter with fern"));
+
+        // Outdoor & Custom (quote-only)
+        imagesByHandle.put("gfrc-trough-planter", List.of(
+            "GFRC trough planter in natural grey finish",
+            "Close-up of GFRC trough surface texture",
+            "GFRC trough planter installed on a rooftop terrace"));
+        imagesByHandle.put("bluestone-outdoor-pavers", List.of(
+            "Natural cleft bluestone paver surface",
+            "Bluestone patio installation around pool"));
+        imagesByHandle.put("custom-cedar-raised-garden-bed", List.of(
+            "Custom cedar raised garden bed with vegetables",
+            "Cedar raised bed corner joinery detail"));
+        imagesByHandle.put("cast-stone-fountain", List.of(
+            "Tiered cast stone garden fountain",
+            "Cast stone fountain water detail",
+            "Fountain installed in formal garden courtyard"));
+
+        for (var entry : imagesByHandle.entrySet()) {
+            String handle = entry.getKey();
+            List<String> altTexts = entry.getValue();
+
+            UUID productId = jdbc.queryForObject(
+                "SELECT id FROM catalog.products WHERE handle = ?", UUID.class, handle);
+
+            UUID featuredImageId = null;
+            for (int i = 0; i < altTexts.size(); i++) {
+                String key = "https://picsum.photos/seed/" + handle + "-" + (i + 1) + "/800/600";
+                String filename = handle + "-" + (i + 1) + ".jpg";
+
+                UUID blobId = UUID.randomUUID();
+                jdbc.update("""
+                    INSERT INTO storage.blob_objects (id, key, filename, content_type, size)
+                    VALUES (?, ?, ?, 'image/jpeg', 150000)
+                    """, blobId, key, filename);
+
+                UUID imageId = UUID.randomUUID();
+                jdbc.update("""
+                    INSERT INTO catalog.product_images (id, product_id, blob_id, alt_text, position)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, imageId, productId, blobId, altTexts.get(i), i + 1);
+
+                if (i == 0) {
+                    featuredImageId = imageId;
+                }
+            }
+
+            jdbc.update("UPDATE catalog.products SET featured_image_id = ? WHERE id = ?",
+                featuredImageId, productId);
+        }
     }
 
     private void assignToCollection(UUID collectionId, List<UUID> pids) {

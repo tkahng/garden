@@ -57,4 +57,22 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             "SELECT COUNT(*) FROM catalog.product_variants WHERE price IS NULL", Long.class);
         assertThat(nullPriceCount).isEqualTo(4L); // GFRC Planter, Bluestone Pavers, Cedar Raised Bed, Cast Stone Fountain
     }
+
+    @Test
+    void seeder_allProductsHaveFeaturedImage() {
+        Long withoutImage = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.products WHERE featured_image_id IS NULL", Long.class);
+        assertThat(withoutImage).isEqualTo(0L);
+    }
+
+    @Test
+    void seeder_imageCountsAreCorrect() {
+        Long blobCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM storage.blob_objects", Long.class);
+        assertThat(blobCount).isEqualTo(31L);
+
+        Long imageCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.product_images", Long.class);
+        assertThat(imageCount).isEqualTo(31L);
+    }
 }

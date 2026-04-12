@@ -120,17 +120,7 @@ public class PaymentService {
           .setAutomaticTax(SessionCreateParams.AutomaticTax.builder()
               .setEnabled(true)
               .build())
-          .setCustomerDetails(SessionCreateParams.CustomerDetails.builder()
-              .setAddress(SessionCreateParams.CustomerDetails.Address.builder()
-                  .setLine1(quote.getDeliveryAddressLine1())
-                  .setLine2(quote.getDeliveryAddressLine2())
-                  .setCity(quote.getDeliveryCity())
-                  .setState(quote.getDeliveryState())
-                  .setPostalCode(quote.getDeliveryPostalCode())
-                  .setCountry(quote.getDeliveryCountry())
-                  .build())
-              .setAddressSource(SessionCreateParams.CustomerDetails.AddressSource.SHIPPING)
-              .build());
+          .setBillingAddressCollection(SessionCreateParams.BillingAddressCollection.REQUIRED);
 
       for (QuoteItem item : items) {
         if (item.getUnitPrice() == null) continue;

@@ -50,6 +50,9 @@ public class S3StorageService implements StorageService {
 
     @Override
     public String resolveUrl(String key) {
+        if (key.startsWith("http://") || key.startsWith("https://")) {
+            return key;
+        }
         return properties.getBaseUrl() + "/" + key;
     }
 }
