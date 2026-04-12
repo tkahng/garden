@@ -1,15 +1,19 @@
 package io.k2dv.garden;
 
+import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ActiveProfiles({"test", "local"})
 class DevDataSeederIT extends AbstractIntegrationTest {
+
+    @MockitoBean StorageService storageService;
 
     @Autowired JdbcTemplate jdbc;
     @Autowired DevDataSeeder seeder;
