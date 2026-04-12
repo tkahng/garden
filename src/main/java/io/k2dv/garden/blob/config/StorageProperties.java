@@ -19,6 +19,9 @@ public class StorageProperties {
     private String bucket;
 
     @NotBlank
+    private String privateBucket;
+
+    @NotBlank
     private String accessKey;
 
     @NotBlank

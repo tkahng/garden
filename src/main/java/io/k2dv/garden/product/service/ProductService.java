@@ -157,9 +157,9 @@ public class ProductService {
         return PagedResult.of(page, p -> {
             List<ProductVariant> variants = variantsByProduct.getOrDefault(p.getId(), List.of());
             BigDecimal priceMin = variants.stream().map(ProductVariant::getPrice)
-                .min(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
+                .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
             BigDecimal priceMax = variants.stream().map(ProductVariant::getPrice)
-                .max(Comparator.naturalOrder()).orElse(BigDecimal.ZERO);
+                .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
             BigDecimal compareAtPriceMin = variants.stream().map(ProductVariant::getCompareAtPrice)
                 .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
             BigDecimal compareAtPriceMax = variants.stream().map(ProductVariant::getCompareAtPrice)

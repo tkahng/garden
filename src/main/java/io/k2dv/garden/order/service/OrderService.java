@@ -1,6 +1,8 @@
 package io.k2dv.garden.order.service;
 
 import io.k2dv.garden.cart.model.CartItem;
+import io.k2dv.garden.quote.model.QuoteItem;
+import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.inventory.service.InventoryService;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderItemResponse;
@@ -87,6 +89,41 @@ public class OrderService {
     }
 
     @Transactional
+    public Order createFromQuote(QuoteRequest quoteRequest, List<QuoteItem> quoteItems) {
+        if (quoteItems.isEmpty()) {
+            throw new ValidationException("EMPTY_QUOTE", "Quote has no items");
+        }
+
+        // Reserve inventory for items that are linked to a variant
+        for (QuoteItem item : quoteItems) {
+            if (item.getVariantId() != null) {
+                inventoryService.reserveStock(item.getVariantId(), item.getQuantity());
+            }
+        }
+
+        BigDecimal total = quoteItems.stream()
+            .filter(i -> i.getUnitPrice() != null)
+            .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Order order = new Order();
+        order.setUserId(quoteRequest.getUserId());
+        order.setTotalAmount(total);
+        order = orderRepo.save(order);
+
+        for (QuoteItem item : quoteItems) {
+            OrderItem orderItem = new OrderItem();
+            orderItem.setOrderId(order.getId());
+            orderItem.setVariantId(item.getVariantId());
+            orderItem.setQuantity(item.getQuantity());
+            orderItem.setUnitPrice(item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO);
+            orderItemRepo.save(orderItem);
+        }
+
+        return order;
+    }
+
+    @Transactional
     public void setStripeSession(UUID orderId, String stripeSessionId) {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
@@ -102,7 +139,8 @@ public class OrderService {
             order.setStatus(OrderStatus.PAID);
             orderRepo.save(order);
 
-            orderItemRepo.findByOrderId(order.getId())
+            orderItemRepo.findByOrderId(order.getId()).stream()
+                .filter(item -> item.getVariantId() != null)
                 .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
         });
     }
@@ -114,7 +152,8 @@ public class OrderService {
             order.setStatus(OrderStatus.CANCELLED);
             orderRepo.save(order);
 
-            orderItemRepo.findByOrderId(order.getId())
+            orderItemRepo.findByOrderId(order.getId()).stream()
+                .filter(item -> item.getVariantId() != null)
                 .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
         });
     }
@@ -131,7 +170,8 @@ public class OrderService {
         order.setStatus(OrderStatus.CANCELLED);
         orderRepo.save(order);
 
-        orderItemRepo.findByOrderId(orderId)
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
     }
 
@@ -148,7 +188,8 @@ public class OrderService {
         }
         order.setStatus(OrderStatus.CANCELLED);
         orderRepo.save(order);
-        orderItemRepo.findByOrderId(orderId)
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
         return toResponse(order);
     }

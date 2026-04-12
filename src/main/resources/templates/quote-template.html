@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Quote</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #333; margin: 40px; }
+        h1 { color: #2c3e50; font-size: 24px; margin-bottom: 4px; }
+        .subtitle { color: #7f8c8d; font-size: 13px; margin-bottom: 30px; }
+        .section { margin-bottom: 20px; }
+        .section-title { font-weight: bold; font-size: 13px; color: #2c3e50; border-bottom: 1px solid #bdc3c7; padding-bottom: 4px; margin-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #2c3e50; color: #fff; padding: 8px; text-align: left; font-size: 11px; }
+        td { padding: 7px 8px; border-bottom: 1px solid #ecf0f1; font-size: 11px; }
+        tr:nth-child(even) td { background: #f9f9f9; }
+        .total-row td { font-weight: bold; border-top: 2px solid #2c3e50; }
+        .notes-box { background: #f0f4f8; border-left: 4px solid #3498db; padding: 10px 14px; margin-top: 10px; font-size: 11px; }
+        .meta-table td { padding: 3px 8px; }
+        .meta-label { font-weight: bold; width: 140px; }
+        .footer { margin-top: 40px; font-size: 10px; color: #95a5a6; text-align: center; }
+    </style>
+</head>
+<body>
+
+<h1>Quote</h1>
+<p class="subtitle">Reference: <strong th:text="${quote.id}">QUOTE-ID</strong></p>
+
+<div class="section">
+    <table class="meta-table">
+        <tr>
+            <td class="meta-label">Issue Date:</td>
+            <td th:text="${issuedDate}">2026-01-01</td>
+            <td class="meta-label">Expiry Date:</td>
+            <td th:text="${expiryDate}">2026-02-01</td>
+        </tr>
+    </table>
+</div>
+
+<div class="section">
+    <div class="section-title">Company</div>
+    <table class="meta-table">
+        <tr>
+            <td class="meta-label">Name:</td>
+            <td th:text="${company.name}">Acme Corp</td>
+        </tr>
+        <tr th:if="${company.taxId != null}">
+            <td class="meta-label">Tax ID:</td>
+            <td th:text="${company.taxId}"></td>
+        </tr>
+        <tr th:if="${company.billingAddressLine1 != null}">
+            <td class="meta-label">Billing Address:</td>
+            <td>
+                <span th:text="${company.billingAddressLine1}"></span>
+                <span th:if="${company.billingAddressLine2 != null}" th:text="', ' + ${company.billingAddressLine2}"></span><br/>
+                <span th:text="${company.billingCity}"></span>
+                <span th:if="${company.billingState != null}" th:text="', ' + ${company.billingState}"></span>
+                <span th:text="' ' + ${company.billingPostalCode}"></span><br/>
+                <span th:text="${company.billingCountry}"></span>
+            </td>
+        </tr>
+    </table>
+</div>
+
+<div class="section">
+    <div class="section-title">Delivery Address</div>
+    <table class="meta-table">
+        <tr>
+            <td class="meta-label">Address:</td>
+            <td>
+                <span th:text="${quote.deliveryAddressLine1}"></span>
+                <span th:if="${quote.deliveryAddressLine2 != null}" th:text="', ' + ${quote.deliveryAddressLine2}"></span><br/>
+                <span th:text="${quote.deliveryCity}"></span>
+                <span th:if="${quote.deliveryState != null}" th:text="', ' + ${quote.deliveryState}"></span>
+                <span th:text="' ' + ${quote.deliveryPostalCode}"></span><br/>
+                <span th:text="${quote.deliveryCountry}"></span>
+            </td>
+        </tr>
+        <tr th:if="${quote.shippingRequirements != null}">
+            <td class="meta-label">Shipping Notes:</td>
+            <td th:text="${quote.shippingRequirements}"></td>
+        </tr>
+    </table>
+</div>
+
+<div class="section">
+    <div class="section-title">Line Items</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="item, iterStat : ${items}">
+                <td th:text="${item.description}">Item</td>
+                <td th:text="${item.quantity}">1</td>
+                <td th:text="${#numbers.formatDecimal(item.unitPrice, 1, 2)}">0.00</td>
+                <td th:text="${#numbers.formatDecimal(lineTotals[iterStat.index], 1, 2)}">0.00</td>
+            </tr>
+            <tr class="total-row">
+                <td colspan="3">Subtotal</td>
+                <td th:text="${#numbers.formatDecimal(grandTotal, 1, 2)}">0.00</td>
+            </tr>
+            <tr>
+                <td colspan="4" style="font-style: italic; color: #7f8c8d; padding-top: 6px;">
+                    Taxes will be calculated at checkout
+                </td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="section" th:if="${quote.staffNotes != null}">
+    <div class="section-title">Notes from our team</div>
+    <div class="notes-box" th:text="${quote.staffNotes}"></div>
+</div>
+
+<div class="footer">
+    Generated by Garden
+</div>
+
+</body>
+</html>

@@ -1,5 +1,7 @@
 package io.k2dv.garden.collection.service;
 
+import io.k2dv.garden.blob.model.BlobObject;
+import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.collection.dto.request.*;
 import io.k2dv.garden.collection.dto.response.AdminCollectionResponse;
 import io.k2dv.garden.collection.model.*;
@@ -7,6 +9,7 @@ import io.k2dv.garden.collection.repository.CollectionProductRepository;
 import io.k2dv.garden.collection.repository.CollectionRuleRepository;
 import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
+import io.k2dv.garden.product.service.ProductImageService;
 import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -26,8 +29,10 @@ class CollectionServiceIT extends AbstractIntegrationTest {
 
     @Autowired CollectionService collectionService;
     @Autowired ProductService productService;
+    @Autowired ProductImageService imageService;
     @Autowired CollectionProductRepository cpRepo;
     @Autowired CollectionRuleRepository ruleRepo;
+    @Autowired BlobObjectRepository blobRepo;
 
     private AdminCollectionResponse createManual(String title) {
         return collectionService.create(new CreateCollectionRequest(
@@ -292,6 +297,27 @@ class CollectionServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void storefrontList_populatesFeaturedImageUrl() {
+        BlobObject blob = new BlobObject();
+        blob.setKey("collections/test-banner.jpg");
+        blob.setFilename("test-banner.jpg");
+        blob.setContentType("image/jpeg");
+        blob.setSize(50000L);
+        UUID blobId = blobRepo.save(blob).getId();
+
+        var c = collectionService.create(new CreateCollectionRequest(
+                "With Image", null, null, CollectionType.MANUAL, false, blobId));
+        collectionService.changeStatus(c.id(), new CollectionStatusRequest(CollectionStatus.ACTIVE));
+
+        var result = collectionService.listStorefront(PageRequest.of(0, 20));
+        var match = result.getContent().stream()
+                .filter(r -> r.id().equals(c.id()))
+                .findFirst().orElseThrow();
+        assertThat(match.featuredImageUrl()).isNotNull();
+        assertThat(match.featuredImageUrl()).contains("test-banner.jpg");
+    }
+
+    @Test
     void storefrontProducts_returnsOnlyActiveProducts() {
         var c = createManual("Tops");
         collectionService.changeStatus(c.id(), new CollectionStatusRequest(CollectionStatus.ACTIVE));
@@ -303,5 +329,28 @@ class CollectionServiceIT extends AbstractIntegrationTest {
         var result = collectionService.listProductsStorefront(c.handle(), PageRequest.of(0, 20));
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).title()).isEqualTo("Active Tee");
+    }
+
+    @Test
+    void storefrontProducts_populatesFeaturedImageUrl() {
+        BlobObject blob = new BlobObject();
+        blob.setKey("products/tee-1.jpg");
+        blob.setFilename("tee-1.jpg");
+        blob.setContentType("image/jpeg");
+        blob.setSize(50000L);
+        UUID blobId = blobRepo.save(blob).getId();
+
+        var c = createManual("Tops With Images");
+        collectionService.changeStatus(c.id(), new CollectionStatusRequest(CollectionStatus.ACTIVE));
+        var product = createProduct("Image Tee");
+        imageService.addImage(product.id(), new CreateImageRequest(blobId, "alt"));
+        productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
+        collectionService.addProduct(c.id(), new AddCollectionProductRequest(product.id()));
+
+        var result = collectionService.listProductsStorefront(c.handle(), PageRequest.of(0, 20));
+        assertThat(result.getContent()).hasSize(1);
+        var item = result.getContent().get(0);
+        assertThat(item.featuredImageUrl()).isNotNull();
+        assertThat(item.featuredImageUrl()).contains("tee-1.jpg");
     }
 }

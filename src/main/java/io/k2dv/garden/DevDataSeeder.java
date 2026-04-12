@@ -1,5 +1,6 @@
 package io.k2dv.garden;
 
+import io.k2dv.garden.blob.service.StorageService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.ApplicationArguments;
@@ -8,8 +9,15 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -21,6 +29,7 @@ import java.util.UUID;
 public class DevDataSeeder implements ApplicationRunner {
 
     private final JdbcTemplate jdbc;
+    private final StorageService storageService;
 
     @Override
     public void run(ApplicationArguments args) {
@@ -33,8 +42,12 @@ public class DevDataSeeder implements ApplicationRunner {
         seedPage();
         List<UUID> productIds = seedProducts();
         List<UUID> variantProductIds = seedVariantProducts();
+        List<UUID> quoteOnlyProductIds = seedQuoteOnlyProducts();
         List<UUID> collectionIds = seedCollections();
-        seedCollectionProducts(collectionIds, productIds, variantProductIds);
+        seedCollectionProducts(collectionIds, productIds, variantProductIds, quoteOnlyProductIds);
+        seedImages();
+        seedCollectionImages();
+        seedInventory(productIds, variantProductIds);
         log.info("DevDataSeeder: done.");
     }
 
@@ -235,13 +248,182 @@ public class DevDataSeeder implements ApplicationRunner {
         }).toList();
     }
 
+    private List<UUID> seedQuoteOnlyProducts() {
+        record QuoteProductSeed(String title, String handle, String vendor, String type, String sku, String description) {}
+
+        var products = List.of(
+            new QuoteProductSeed(
+                "GFRC Trough Planter",
+                "gfrc-trough-planter",
+                "Stone & Form Co",
+                "Planters",
+                "SKU-QO-001",
+                """
+                ## GFRC Trough Planter
+
+                Cast from Glass Fiber Reinforced Concrete, these trough planters bring an \
+                architectural presence to any outdoor space — courtyards, rooftop terraces, \
+                commercial lobbies, and estate gardens alike. Each piece is made to order \
+                in your chosen dimensions, wall thickness, and finish.
+
+                ### Material
+                GFRC (Glass Fiber Reinforced Concrete) is significantly lighter than solid \
+                precast concrete while retaining its structural integrity and weather resistance. \
+                Suitable for year-round outdoor installation in all climates.
+
+                ### Customization Options
+                - **Size:** available from 24 in up to 96 in length; custom widths and heights on request
+                - **Wall thickness:** standard 1.5 in or heavy-duty 2 in
+                - **Finish:** smooth trowel, sand-blasted, acid-washed, or exposed aggregate
+                - **Color:** natural grey, charcoal, warm white, or custom pigment match
+                - **Drainage:** pre-drilled drainage holes included as standard
+
+                ### Lead Time
+                8–12 weeks from confirmed order. Freight delivery required; local placement \
+                and installation quoted separately.
+
+                > **Quote required.** Pricing depends on dimensions, finish, and quantity. \
+                Submit a quote request with your preferred size and finish details.
+                """
+            ),
+            new QuoteProductSeed(
+                "Bluestone Outdoor Pavers",
+                "bluestone-outdoor-pavers",
+                "Stone & Form Co",
+                "Hardscape",
+                "SKU-QO-002",
+                """
+                ## Bluestone Outdoor Pavers
+
+                Natural Pennsylvania bluestone for patios, pool surrounds, garden paths, \
+                and outdoor living areas. Renowned for its dense, slip-resistant surface \
+                and the cool blue-grey tones that deepen beautifully when wet.
+
+                ### Available Cuts
+                - **Sawn** — precise, uniform edges; ideal for formal or contemporary layouts
+                - **Natural Cleft** — split along the stone's natural grain; classic, textured surface
+                - **Tumbled** — softened edges and a worn, antique feel; suits rustic or cottage gardens
+
+                ### Sizing
+                Supplied in irregular flagging, select pattern sets (12×12, 18×18, 24×24 in), \
+                or custom-cut to your project plan. Thickness: ¾ in (pedestrian) or 1.5 in (driveway-rated).
+
+                ### Coverage
+                Pricing and quantities are project-specific. Submit a quote request with your \
+                approximate square footage, preferred cut, and thickness, and we will provide \
+                a delivered price to your site.
+
+                ### Notes
+                - Natural stone varies in tone — sample slabs available on request
+                - Freight delivery only; curbside or tailgate delivery included, offloading by others
+                - Sealing recommended; we can supply penetrating stone sealer as an add-on
+
+                > **Quote required.** Priced per project based on square footage, cut, and delivery location.
+                """
+            ),
+            new QuoteProductSeed(
+                "Custom Cedar Raised Garden Bed",
+                "custom-cedar-raised-garden-bed",
+                "Timber & Bloom Co",
+                "Garden Beds",
+                "SKU-QO-003",
+                """
+                ## Custom Cedar Raised Garden Bed
+
+                Built to your exact footprint from select-grade Western Red Cedar — \
+                naturally rot-resistant, aromatic, and beautiful without any treatment or staining. \
+                Ideal for vegetable gardens, cut-flower beds, herb gardens, and accessible growing \
+                setups with elevated heights.
+
+                ### Why Cedar?
+                Western Red Cedar contains natural oils that repel insects and resist moisture \
+                without the need for chemical preservatives. Untreated cedar is safe for edible \
+                crops and meets organic gardening standards.
+
+                ### Customization Options
+                - **Footprint:** any rectangular or L-shaped dimension up to 16 ft long
+                - **Height:** standard 12 in, tall 24 in, or accessible 32 in
+                - **Wall thickness:** 2×6 (standard) or 2×8 (heavy-duty)
+                - **Corners:** traditional butt-joint or mortised corner posts
+                - **Add-ons:** hardware cloth liner (gopher protection), trellis uprights, cover frame
+
+                ### Delivery & Assembly
+                Beds ship flat-packed with pre-drilled hardware. Assembly typically takes \
+                30–60 minutes with two people and a drill. White-glove delivery and on-site \
+                assembly available in select areas — ask when requesting your quote.
+
+                > **Quote required.** Pricing depends on dimensions and selected options. \
+                Typical beds range from 4×4 ft starter sizes to full 4×16 ft production rows.
+                """
+            ),
+            new QuoteProductSeed(
+                "Cast Stone Fountain",
+                "cast-stone-fountain",
+                "Stone & Form Co",
+                "Water Features",
+                "SKU-QO-004",
+                """
+                ## Cast Stone Fountain
+
+                A centerpiece for formal gardens, courtyards, and estate landscapes. \
+                Our cast stone fountains are hand-finished to replicate the look and feel of \
+                natural limestone or sandstone, at a fraction of the weight of solid carved stone. \
+                Each fountain is made to order and can be customized in size, basin depth, \
+                and surface texture.
+
+                ### Standard Models (all quote-to-order)
+                - **Tiered Classic** — two or three-tier stacked basin; traditional garden aesthetic
+                - **Millstone** — flat, horizontal millstone-style with center spout; contemporary and low-profile
+                - **Wall-Mount** — projects from a wall or fence; ideal for smaller courtyard spaces
+                - **Urn** — tall urn with continuous overflow; suits formal symmetrical layouts
+
+                ### Material
+                Cast stone aggregate with an integral pigment — will not chip, peel, or fade. \
+                Frost-resistant to −20°F. Ships with submersible pump, tubing, and installation guide.
+
+                ### Customization
+                - Basin diameter: 18 in to 60 in
+                - Finish: natural limestone, weathered sandstone, or charcoal
+                - Pump specification: matched to basin size and head height
+
+                > **Quote required.** Pricing varies by model, size, and finish. \
+                Lead time 6–10 weeks. Freight delivery only.
+                """
+            )
+        );
+
+        return products.stream().map(p -> {
+            UUID productId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO catalog.products (id, title, handle, vendor, product_type, description, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'ACTIVE')
+                """, productId, p.title(), p.handle(), p.vendor(), p.type(), p.description());
+
+            UUID variantId = UUID.randomUUID();
+            // price is intentionally NULL — these are quote-only products
+            jdbc.update("""
+                INSERT INTO catalog.product_variants
+                  (id, product_id, title, sku, price, fulfillment_type, inventory_policy, lead_time_days)
+                VALUES (?, ?, 'Default', ?, NULL, 'IN_STOCK', 'DENY', 0)
+                """, variantId, productId, p.sku());
+
+            jdbc.update("""
+                INSERT INTO inventory.inventory_items (id, variant_id, requires_shipping)
+                VALUES (?, ?, true)
+                """, UUID.randomUUID(), variantId);
+
+            return productId;
+        }).toList();
+    }
+
     private List<UUID> seedCollections() {
         record CollectionSeed(String title, String handle) {}
 
         var collections = List.of(
-            new CollectionSeed("Seeds & Bulbs",     "seeds-bulbs"),
-            new CollectionSeed("Tools & Supplies",  "tools-supplies"),
-            new CollectionSeed("Pots & Planters",   "pots-planters")
+            new CollectionSeed("Seeds & Bulbs",       "seeds-bulbs"),
+            new CollectionSeed("Tools & Supplies",    "tools-supplies"),
+            new CollectionSeed("Pots & Planters",     "pots-planters"),
+            new CollectionSeed("Outdoor & Custom",    "outdoor-custom")
         );
 
         return collections.stream().map(c -> {
@@ -405,16 +587,205 @@ public class DevDataSeeder implements ApplicationRunner {
         }).toList();
     }
 
-    private void seedCollectionProducts(List<UUID> collectionIds, List<UUID> productIds, List<UUID> variantProductIds) {
+    private void seedCollectionProducts(List<UUID> collectionIds, List<UUID> productIds,
+                                         List<UUID> variantProductIds, List<UUID> quoteOnlyProductIds) {
         // Seeds & Bulbs (0):     Tomato, Lavender, Sunflower
         // Tools & Supplies (1):  Trowel, Shears, Watering Can, Gardening Gloves
         // Pots & Planters (2):   Terracotta Pot, Glazed Planter, Ceramic Planter
+        // Outdoor & Custom (3):  GFRC Trough Planter, Bluestone Pavers, Custom Cedar Raised Bed, Cast Stone Fountain
         assignToCollection(collectionIds.get(0), List.of(
             productIds.get(0), productIds.get(1), productIds.get(2)));
         assignToCollection(collectionIds.get(1), List.of(
             productIds.get(3), productIds.get(4), productIds.get(5), variantProductIds.get(0)));
         assignToCollection(collectionIds.get(2), List.of(
             productIds.get(6), productIds.get(7), variantProductIds.get(1)));
+        assignToCollection(collectionIds.get(3), quoteOnlyProductIds);
+    }
+
+    private void seedImages() {
+        // Maps product handle → ordered list of alt texts (1 entry = 1 image).
+        // Picsum URLs are deterministic: https://picsum.photos/seed/{handle}-{n}/800/600
+        Map<String, List<String>> imagesByHandle = new LinkedHashMap<>();
+
+        // Seeds & Bulbs
+        imagesByHandle.put("heirloom-tomato-seeds", List.of(
+            "Heirloom tomato seeds packet",
+            "Ripe heirloom tomatoes on the vine"));
+        imagesByHandle.put("lavender-starter-pack", List.of(
+            "Lavender seed packet",
+            "Lavender in full bloom"));
+        imagesByHandle.put("sunflower-mix", List.of(
+            "Sunflower seed mix packet",
+            "Sunflower field in full bloom"));
+
+        // Tools & Supplies
+        imagesByHandle.put("garden-trowel", List.of(
+            "Stainless steel garden trowel",
+            "Trowel in use planting seedlings"));
+        imagesByHandle.put("pruning-shears", List.of(
+            "Bypass pruning shears",
+            "Pruning shears trimming a rose stem"));
+        imagesByHandle.put("watering-can-2l", List.of(
+            "2L watering can with detachable rose head"));
+        imagesByHandle.put("gardening-gloves", List.of(
+            "Gardening gloves in forest green",
+            "Gardening gloves in charcoal",
+            "Gloves worn during planting"));
+
+        // Pots & Planters
+        imagesByHandle.put("terracotta-pot-6in", List.of(
+            "6 inch terracotta pot",
+            "Terracotta pot planted with succulents"));
+        imagesByHandle.put("glazed-planter-large", List.of(
+            "Large glazed deep forest green planter",
+            "Glazed planter with ornamental grass"));
+        imagesByHandle.put("ceramic-planter", List.of(
+            "White ceramic planter on windowsill",
+            "Sage green ceramic planter outdoors",
+            "Dusty rose ceramic planter with fern"));
+
+        // Outdoor & Custom (quote-only)
+        imagesByHandle.put("gfrc-trough-planter", List.of(
+            "GFRC trough planter in natural grey finish",
+            "Close-up of GFRC trough surface texture",
+            "GFRC trough planter installed on a rooftop terrace"));
+        imagesByHandle.put("bluestone-outdoor-pavers", List.of(
+            "Natural cleft bluestone paver surface",
+            "Bluestone patio installation around pool"));
+        imagesByHandle.put("custom-cedar-raised-garden-bed", List.of(
+            "Custom cedar raised garden bed with vegetables",
+            "Cedar raised bed corner joinery detail"));
+        imagesByHandle.put("cast-stone-fountain", List.of(
+            "Tiered cast stone garden fountain",
+            "Cast stone fountain water detail",
+            "Fountain installed in formal garden courtyard"));
+
+        HttpClient http = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.ALWAYS)
+            .build();
+
+        for (var entry : imagesByHandle.entrySet()) {
+            String handle = entry.getKey();
+            List<String> altTexts = entry.getValue();
+
+            UUID productId = jdbc.queryForObject(
+                "SELECT id FROM catalog.products WHERE handle = ?", UUID.class, handle);
+
+            UUID featuredImageId = null;
+            for (int i = 0; i < altTexts.size(); i++) {
+                String filename = handle + "-" + (i + 1) + ".jpg";
+                String objectKey = "products/" + filename;
+                String picsumUrl = "https://picsum.photos/seed/" + handle + "-" + (i + 1) + "/800/600";
+
+                byte[] imageBytes = downloadImage(http, picsumUrl, handle, i);
+                storageService.store(objectKey, "image/jpeg",
+                    new ByteArrayInputStream(imageBytes), imageBytes.length);
+
+                UUID blobId = UUID.randomUUID();
+                jdbc.update("""
+                    INSERT INTO storage.blob_objects (id, key, filename, content_type, size)
+                    VALUES (?, ?, ?, 'image/jpeg', ?)
+                    """, blobId, objectKey, filename, imageBytes.length);
+
+                UUID imageId = UUID.randomUUID();
+                jdbc.update("""
+                    INSERT INTO catalog.product_images (id, product_id, blob_id, alt_text, position)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, imageId, productId, blobId, altTexts.get(i), i + 1);
+
+                if (i == 0) {
+                    featuredImageId = imageId;
+                }
+            }
+
+            jdbc.update("UPDATE catalog.products SET featured_image_id = ? WHERE id = ?",
+                featuredImageId, productId);
+        }
+    }
+
+    private byte[] downloadImage(HttpClient http, String url, String handle, int index) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .GET()
+                .build();
+            HttpResponse<byte[]> response = http.send(request, HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() != 200) {
+                throw new RuntimeException("Failed to download image for " + handle + "-" + (index + 1)
+                    + ": HTTP " + response.statusCode());
+            }
+            return response.body();
+        } catch (IOException | InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("Failed to download image for " + handle + "-" + (index + 1), e);
+        }
+    }
+
+    private void seedCollectionImages() {
+        // handle → alt text
+        Map<String, String> collections = new LinkedHashMap<>();
+        collections.put("seeds-bulbs",    "Seeds and bulbs collection banner");
+        collections.put("tools-supplies", "Garden tools and supplies collection banner");
+        collections.put("pots-planters",  "Pots and planters collection banner");
+        collections.put("outdoor-custom", "Outdoor and custom products collection banner");
+
+        HttpClient http = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.ALWAYS)
+            .build();
+
+        for (var entry : collections.entrySet()) {
+            String handle = entry.getKey();
+            String altText = entry.getValue();
+
+            UUID collectionId = jdbc.queryForObject(
+                "SELECT id FROM catalog.collections WHERE handle = ?", UUID.class, handle);
+
+            String filename = "collection-" + handle + ".jpg";
+            String objectKey = "collections/" + filename;
+            String picsumUrl = "https://picsum.photos/seed/col-" + handle + "/1200/400";
+
+            byte[] imageBytes = downloadImage(http, picsumUrl, handle, 0);
+            storageService.store(objectKey, "image/jpeg",
+                new ByteArrayInputStream(imageBytes), imageBytes.length);
+
+            UUID blobId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO storage.blob_objects (id, key, filename, content_type, size)
+                VALUES (?, ?, ?, 'image/jpeg', ?)
+                """, blobId, objectKey, filename, imageBytes.length);
+
+            jdbc.update("UPDATE catalog.collections SET featured_image_id = ? WHERE id = ?",
+                blobId, collectionId);
+        }
+    }
+
+    private void seedInventory(List<UUID> productIds, List<UUID> variantProductIds) {
+        UUID locationId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO inventory.locations (id, name, is_active)
+            VALUES (?, 'Main Warehouse', true)
+            """, locationId);
+
+        List<UUID> stockableProductIds = new java.util.ArrayList<>();
+        stockableProductIds.addAll(productIds);
+        stockableProductIds.addAll(variantProductIds);
+
+        for (UUID productId : stockableProductIds) {
+            List<UUID> itemIds = jdbc.queryForList("""
+                SELECT ii.id
+                FROM inventory.inventory_items ii
+                JOIN catalog.product_variants pv ON pv.id = ii.variant_id
+                WHERE pv.product_id = ?
+                """, UUID.class, productId);
+
+            for (UUID itemId : itemIds) {
+                jdbc.update("""
+                    INSERT INTO inventory.inventory_levels
+                      (id, inventory_item_id, location_id, quantity_on_hand, quantity_committed)
+                    VALUES (?, ?, ?, 50, 0)
+                    """, UUID.randomUUID(), itemId, locationId);
+            }
+        }
     }
 
     private void assignToCollection(UUID collectionId, List<UUID> pids) {

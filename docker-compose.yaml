@@ -32,6 +32,20 @@ services:
       timeout: 5s
       retries: 5
 
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set local http://minio:9000 minioadmin minioadmin;
+        mc mb --ignore-existing local/garden;
+        mc mb --ignore-existing local/garden-private;
+        mc anonymous set download local/garden;
+      "
+    restart: on-failure
+
 volumes:
   postgres_data:
   minio_data:

@@ -18,6 +18,10 @@ import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.quote.model.QuoteItem;
+import io.k2dv.garden.quote.model.QuoteRequest;
+import io.k2dv.garden.quote.model.QuoteStatus;
+import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -37,6 +41,7 @@ public class PaymentService {
   private final StripeGateway stripeGateway;
   private final ProductVariantRepository variantRepo;
   private final AppProperties appProperties;
+  private final QuoteRequestRepository quoteRequestRepo;
 
   // NOT @Transactional — Stripe call is outside transaction; each sub-call
   // manages its own tx
@@ -100,6 +105,57 @@ public class PaymentService {
     }
   }
 
+  // NOT @Transactional — Stripe call is outside transaction
+  public CheckoutResponse createCheckoutSessionFromQuote(Order order, List<QuoteItem> items, QuoteRequest quote) {
+    try {
+      String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
+
+      SessionCreateParams.Builder builder = SessionCreateParams.builder()
+          .setMode(SessionCreateParams.Mode.PAYMENT)
+          .setSuccessUrl(appProperties.getFrontendUrl()
+              + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
+          .setCancelUrl(appProperties.getFrontendUrl()
+              + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
+          .putMetadata("orderId", order.getId() != null ? order.getId().toString() : "")
+          .setAutomaticTax(SessionCreateParams.AutomaticTax.builder()
+              .setEnabled(true)
+              .build())
+          .setBillingAddressCollection(SessionCreateParams.BillingAddressCollection.REQUIRED);
+
+      for (QuoteItem item : items) {
+        if (item.getUnitPrice() == null) continue;
+        long unitAmountCents = item.getUnitPrice()
+            .multiply(BigDecimal.valueOf(100))
+            .setScale(0, RoundingMode.HALF_UP)
+            .longValueExact();
+
+        builder.addLineItem(
+            SessionCreateParams.LineItem.builder()
+                .setQuantity((long) item.getQuantity())
+                .setPriceData(
+                    SessionCreateParams.LineItem.PriceData.builder()
+                        .setCurrency(currency)
+                        .setUnitAmount(unitAmountCents)
+                        .setProductData(
+                            SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                .setName(item.getDescription())
+                                .build())
+                        .build())
+                .build());
+      }
+
+      Session session = stripeGateway.createCheckoutSession(builder.build());
+      orderService.setStripeSession(order.getId(), session.getId());
+
+      return new CheckoutResponse(session.getUrl(), order.getId());
+
+    } catch (StripeException e) {
+      orderService.cancelOrder(order.getId());
+      throw new PaymentException("STRIPE_ERROR",
+          "Failed to create checkout session: " + e.getMessage());
+    }
+  }
+
   public CheckoutReturnResponse verifyReturn(String stripeSessionId, UUID userId) {
     Order order = orderService.findByStripeSessionId(stripeSessionId);
     if (!order.getUserId().equals(userId)) {
@@ -121,6 +177,18 @@ public class PaymentService {
     return new CheckoutReturnResponse(order.getId(), status);
   }
 
+  private Session deserializeSession(Event event) {
+    var deserializer = event.getDataObjectDeserializer();
+    if (deserializer.getObject().isPresent()) {
+      return (Session) deserializer.getObject().get();
+    }
+    try {
+      return (Session) deserializer.deserializeUnsafe();
+    } catch (Exception e) {
+      throw new PaymentException("STRIPE_DESERIALIZE_ERROR", "Cannot deserialize Stripe session");
+    }
+  }
+
   public void handleWebhook(String payload, String sigHeader, String webhookSecret) {
     Event event;
     try {
@@ -131,17 +199,20 @@ public class PaymentService {
 
     switch (event.getType()) {
       case "checkout.session.completed" -> {
-        Session session = (Session) event.getDataObjectDeserializer()
-            .getObject()
-            .orElseThrow(() -> new PaymentException("STRIPE_DESERIALIZE_ERROR",
-                "Cannot deserialize Stripe session"));
+        Session session = deserializeSession(event);
         orderService.confirmPayment(session.getId(), session.getPaymentIntent());
+        String orderIdStr = session.getMetadata() != null ? session.getMetadata().get("orderId") : null;
+        if (orderIdStr != null && !orderIdStr.isBlank()) {
+          quoteRequestRepo.findByOrderId(UUID.fromString(orderIdStr)).ifPresent(quote -> {
+            if (quote.getStatus() == QuoteStatus.ACCEPTED) {
+              quote.setStatus(QuoteStatus.PAID);
+              quoteRequestRepo.save(quote);
+            }
+          });
+        }
       }
       case "checkout.session.expired" -> {
-        Session session = (Session) event.getDataObjectDeserializer()
-            .getObject()
-            .orElseThrow(() -> new PaymentException("STRIPE_DESERIALIZE_ERROR",
-                "Cannot deserialize Stripe session"));
+        Session session = deserializeSession(event);
         orderService.cancelBySession(session.getId());
       }
       default -> {

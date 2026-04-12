@@ -1,5 +1,7 @@
 package io.k2dv.garden.product.service;
 
+import io.k2dv.garden.blob.model.BlobObject;
+import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.inventory.repository.InventoryItemRepository;
@@ -22,8 +24,10 @@ class ProductServiceIT extends AbstractIntegrationTest {
     @Autowired ProductRepository productRepo;
     @Autowired VariantService variantService;
     @Autowired OptionService optionService;
+    @Autowired ProductImageService imageService;
     @Autowired ProductVariantRepository variantRepo;
     @Autowired InventoryItemRepository inventoryRepo;
+    @Autowired BlobObjectRepository blobRepo;
 
     @Test
     void createProduct_persistsWithDraftStatusAndAutoHandle() {
@@ -64,6 +68,27 @@ class ProductServiceIT extends AbstractIntegrationTest {
         productService.changeStatus(resp.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         var updated = productService.getAdmin(resp.id());
         assertThat(updated.status()).isEqualTo(ProductStatus.ACTIVE);
+    }
+
+    @Test
+    void storefrontList_populatesFeaturedImageUrl() {
+        BlobObject blob = new BlobObject();
+        blob.setKey("products/test-product.jpg");
+        blob.setFilename("test-product.jpg");
+        blob.setContentType("image/jpeg");
+        blob.setSize(50000L);
+        var blobId = blobRepo.save(blob).getId();
+
+        var product = productService.create(new CreateProductRequest("Image Product", null, null, null, null, List.of()));
+        imageService.addImage(product.id(), new CreateImageRequest(blobId, "alt text"));
+        productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
+
+        var result = productService.listStorefront(null, PageRequest.of(0, 100));
+        var match = result.getContent().stream()
+                .filter(p -> p.id().equals(product.id()))
+                .findFirst().orElseThrow();
+        assertThat(match.featuredImageUrl()).isNotNull();
+        assertThat(match.featuredImageUrl()).contains("test-product.jpg");
     }
 
     @Test
