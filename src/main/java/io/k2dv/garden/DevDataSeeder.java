@@ -47,6 +47,7 @@ public class DevDataSeeder implements ApplicationRunner {
         seedCollectionProducts(collectionIds, productIds, variantProductIds, quoteOnlyProductIds);
         seedImages();
         seedCollectionImages();
+        seedInventory(productIds, variantProductIds);
         log.info("DevDataSeeder: done.");
     }
 
@@ -755,6 +756,35 @@ public class DevDataSeeder implements ApplicationRunner {
 
             jdbc.update("UPDATE catalog.collections SET featured_image_id = ? WHERE id = ?",
                 blobId, collectionId);
+        }
+    }
+
+    private void seedInventory(List<UUID> productIds, List<UUID> variantProductIds) {
+        UUID locationId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO inventory.locations (id, name, is_active)
+            VALUES (?, 'Main Warehouse', true)
+            """, locationId);
+
+        List<UUID> stockableProductIds = new java.util.ArrayList<>();
+        stockableProductIds.addAll(productIds);
+        stockableProductIds.addAll(variantProductIds);
+
+        for (UUID productId : stockableProductIds) {
+            List<UUID> itemIds = jdbc.queryForList("""
+                SELECT ii.id
+                FROM inventory.inventory_items ii
+                JOIN catalog.product_variants pv ON pv.id = ii.variant_id
+                WHERE pv.product_id = ?
+                """, UUID.class, productId);
+
+            for (UUID itemId : itemIds) {
+                jdbc.update("""
+                    INSERT INTO inventory.inventory_levels
+                      (id, inventory_item_id, location_id, quantity_on_hand, quantity_committed)
+                    VALUES (?, ?, ?, 50, 0)
+                    """, UUID.randomUUID(), itemId, locationId);
+            }
         }
     }
 
