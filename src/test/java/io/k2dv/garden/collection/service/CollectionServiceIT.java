@@ -1,5 +1,7 @@
 package io.k2dv.garden.collection.service;
 
+import io.k2dv.garden.blob.model.BlobObject;
+import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.collection.dto.request.*;
 import io.k2dv.garden.collection.dto.response.AdminCollectionResponse;
 import io.k2dv.garden.collection.model.*;
@@ -28,6 +30,7 @@ class CollectionServiceIT extends AbstractIntegrationTest {
     @Autowired ProductService productService;
     @Autowired CollectionProductRepository cpRepo;
     @Autowired CollectionRuleRepository ruleRepo;
+    @Autowired BlobObjectRepository blobRepo;
 
     private AdminCollectionResponse createManual(String title) {
         return collectionService.create(new CreateCollectionRequest(
@@ -289,6 +292,27 @@ class CollectionServiceIT extends AbstractIntegrationTest {
         var c = createManual("Draft");
         assertThatThrownBy(() -> collectionService.getByHandle(c.handle()))
                 .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void storefrontList_populatesFeaturedImageUrl() {
+        BlobObject blob = new BlobObject();
+        blob.setKey("collections/test-banner.jpg");
+        blob.setFilename("test-banner.jpg");
+        blob.setContentType("image/jpeg");
+        blob.setSize(50000L);
+        UUID blobId = blobRepo.save(blob).getId();
+
+        var c = collectionService.create(new CreateCollectionRequest(
+                "With Image", null, null, CollectionType.MANUAL, false, blobId));
+        collectionService.changeStatus(c.id(), new CollectionStatusRequest(CollectionStatus.ACTIVE));
+
+        var result = collectionService.listStorefront(PageRequest.of(0, 20));
+        var match = result.getContent().stream()
+                .filter(r -> r.id().equals(c.id()))
+                .findFirst().orElseThrow();
+        assertThat(match.featuredImageUrl()).isNotNull();
+        assertThat(match.featuredImageUrl()).contains("test-banner.jpg");
     }
 
     @Test

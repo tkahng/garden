@@ -25,8 +25,6 @@ import io.k2dv.garden.collection.repository.CollectionRepository;
 import io.k2dv.garden.collection.repository.CollectionRuleRepository;
 import io.k2dv.garden.collection.specification.CollectionSpecification;
 import io.k2dv.garden.product.model.Product;
-import io.k2dv.garden.product.model.ProductImage;
-import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -55,7 +53,6 @@ public class CollectionService {
     private final CollectionProductRepository cpRepo;
     private final ProductRepository productRepo;
     private final CollectionMembershipService membershipService;
-    private final ProductImageRepository imageRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
 
@@ -232,7 +229,7 @@ public class CollectionService {
     @Transactional(readOnly = true)
     public PagedResult<CollectionSummaryResponse> listStorefront(Pageable pageable) {
         Page<Collection> page = collectionRepo.findAll(CollectionSpecification.storefrontSpec(), pageable);
-        Map<UUID, String> imageUrls = resolveFeaturedImageUrls(
+        Map<UUID, String> imageUrls = resolveCollectionImageUrls(
                 page.getContent().stream().map(Collection::getFeaturedImageId).filter(Objects::nonNull).collect(Collectors.toSet()));
         return PagedResult.of(page, c -> new CollectionSummaryResponse(c.getId(), c.getTitle(), c.getHandle(),
                 c.getFeaturedImageId() != null ? imageUrls.get(c.getFeaturedImageId()) : null));
@@ -244,7 +241,7 @@ public class CollectionService {
                 .orElseThrow(() -> new NotFoundException("COLLECTION_NOT_FOUND", "Collection not found"));
         String imageUrl = null;
         if (c.getFeaturedImageId() != null) {
-            Map<UUID, String> imageUrls = resolveFeaturedImageUrls(Set.of(c.getFeaturedImageId()));
+            Map<UUID, String> imageUrls = resolveCollectionImageUrls(Set.of(c.getFeaturedImageId()));
             imageUrl = imageUrls.get(c.getFeaturedImageId());
         }
         return new CollectionDetailResponse(c.getId(), c.getTitle(), c.getHandle(), c.getDescription(), imageUrl);
@@ -267,17 +264,10 @@ public class CollectionService {
 
     // --- Helpers ---
 
-    private Map<UUID, String> resolveFeaturedImageUrls(Set<UUID> imageIds) {
-        if (imageIds.isEmpty()) return Map.of();
-        Map<UUID, ProductImage> imagesById = imageRepo.findAllById(imageIds).stream()
-                .collect(Collectors.toMap(ProductImage::getId, img -> img));
-        Set<UUID> blobIds = imagesById.values().stream()
-                .map(ProductImage::getBlobId).collect(Collectors.toSet());
-        Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+    private Map<UUID, String> resolveCollectionImageUrls(Set<UUID> blobIds) {
+        if (blobIds.isEmpty()) return Map.of();
+        return blobRepo.findAllById(blobIds).stream()
                 .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
-        return imagesById.entrySet().stream()
-                .filter(e -> blobUrls.containsKey(e.getValue().getBlobId()))
-                .collect(Collectors.toMap(Map.Entry::getKey, e -> blobUrls.get(e.getValue().getBlobId())));
     }
 
     private Collection findActiveOrThrow(UUID id) {
