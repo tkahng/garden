@@ -108,10 +108,17 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_imageCountsAreCorrect() {
         Long blobCount = jdbc.queryForObject(
             "SELECT COUNT(*) FROM storage.blob_objects", Long.class);
-        assertThat(blobCount).isEqualTo(31L);
+        assertThat(blobCount).isEqualTo(35L); // 31 product images + 4 collection images
 
         Long imageCount = jdbc.queryForObject(
             "SELECT COUNT(*) FROM catalog.product_images", Long.class);
         assertThat(imageCount).isEqualTo(31L);
+    }
+
+    @Test
+    void seeder_allCollectionsHaveFeaturedImage() {
+        Long withoutImage = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.collections WHERE featured_image_id IS NULL", Long.class);
+        assertThat(withoutImage).isEqualTo(0L);
     }
 }

@@ -46,6 +46,7 @@ public class DevDataSeeder implements ApplicationRunner {
         List<UUID> collectionIds = seedCollections();
         seedCollectionProducts(collectionIds, productIds, variantProductIds, quoteOnlyProductIds);
         seedImages();
+        seedCollectionImages();
         log.info("DevDataSeeder: done.");
     }
 
@@ -716,6 +717,44 @@ public class DevDataSeeder implements ApplicationRunner {
         } catch (IOException | InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new RuntimeException("Failed to download image for " + handle + "-" + (index + 1), e);
+        }
+    }
+
+    private void seedCollectionImages() {
+        // handle → alt text
+        Map<String, String> collections = new LinkedHashMap<>();
+        collections.put("seeds-bulbs",    "Seeds and bulbs collection banner");
+        collections.put("tools-supplies", "Garden tools and supplies collection banner");
+        collections.put("pots-planters",  "Pots and planters collection banner");
+        collections.put("outdoor-custom", "Outdoor and custom products collection banner");
+
+        HttpClient http = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.ALWAYS)
+            .build();
+
+        for (var entry : collections.entrySet()) {
+            String handle = entry.getKey();
+            String altText = entry.getValue();
+
+            UUID collectionId = jdbc.queryForObject(
+                "SELECT id FROM catalog.collections WHERE handle = ?", UUID.class, handle);
+
+            String filename = "collection-" + handle + ".jpg";
+            String objectKey = "collections/" + filename;
+            String picsumUrl = "https://picsum.photos/seed/col-" + handle + "/1200/400";
+
+            byte[] imageBytes = downloadImage(http, picsumUrl, handle, 0);
+            storageService.store(objectKey, "image/jpeg",
+                new ByteArrayInputStream(imageBytes), imageBytes.length);
+
+            UUID blobId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO storage.blob_objects (id, key, filename, content_type, size)
+                VALUES (?, ?, ?, 'image/jpeg', ?)
+                """, blobId, objectKey, filename, imageBytes.length);
+
+            jdbc.update("UPDATE catalog.collections SET featured_image_id = ? WHERE id = ?",
+                blobId, collectionId);
         }
     }
 
