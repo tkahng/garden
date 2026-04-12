@@ -25,6 +25,8 @@ import io.k2dv.garden.collection.repository.CollectionRepository;
 import io.k2dv.garden.collection.repository.CollectionRuleRepository;
 import io.k2dv.garden.collection.specification.CollectionSpecification;
 import io.k2dv.garden.product.model.Product;
+import io.k2dv.garden.product.model.ProductImage;
+import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -52,6 +54,7 @@ public class CollectionService {
     private final CollectionRuleRepository ruleRepo;
     private final CollectionProductRepository cpRepo;
     private final ProductRepository productRepo;
+    private final ProductImageRepository imageRepo;
     private final CollectionMembershipService membershipService;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
@@ -255,10 +258,11 @@ public class CollectionService {
         List<UUID> productIds = page.getContent().stream().map(CollectionProduct::getProductId).toList();
         Map<UUID, Product> productMap = productRepo.findAllById(productIds).stream()
                 .collect(java.util.stream.Collectors.toMap(Product::getId, p -> p));
+        Map<UUID, String> productImageUrls = resolveProductFeaturedImageUrls(productMap.values().stream().toList());
         return PagedResult.of(page, cp -> {
             Product p = productMap.get(cp.getProductId());
             if (p == null) throw new NotFoundException("PRODUCT_NOT_FOUND", "Product not found");
-            return toProductResponse(cp, p);
+            return toProductResponse(cp, p, productImageUrls.get(p.getFeaturedImageId()));
         });
     }
 
@@ -307,10 +311,29 @@ public class CollectionService {
     private CollectionProductResponse toProductResponse(CollectionProduct cp) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(cp.getProductId())
                 .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
-        return new CollectionProductResponse(cp.getId(), cp.getProductId(), p.getTitle(), p.getHandle(), cp.getPosition());
+        return new CollectionProductResponse(cp.getId(), cp.getProductId(), p.getTitle(), p.getHandle(), cp.getPosition(), null);
     }
 
     private CollectionProductResponse toProductResponse(CollectionProduct cp, Product p) {
-        return new CollectionProductResponse(cp.getId(), cp.getProductId(), p.getTitle(), p.getHandle(), cp.getPosition());
+        return new CollectionProductResponse(cp.getId(), cp.getProductId(), p.getTitle(), p.getHandle(), cp.getPosition(), null);
+    }
+
+    private CollectionProductResponse toProductResponse(CollectionProduct cp, Product p, String featuredImageUrl) {
+        return new CollectionProductResponse(cp.getId(), cp.getProductId(), p.getTitle(), p.getHandle(), cp.getPosition(), featuredImageUrl);
+    }
+
+    private Map<UUID, String> resolveProductFeaturedImageUrls(List<Product> products) {
+        Set<UUID> featuredImageIds = products.stream()
+                .map(Product::getFeaturedImageId).filter(Objects::nonNull).collect(Collectors.toSet());
+        if (featuredImageIds.isEmpty()) return Map.of();
+        Map<UUID, ProductImage> imagesById = imageRepo.findAllById(featuredImageIds).stream()
+                .collect(Collectors.toMap(ProductImage::getId, img -> img));
+        Set<UUID> blobIds = imagesById.values().stream()
+                .map(ProductImage::getBlobId).collect(Collectors.toSet());
+        Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+                .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
+        return imagesById.entrySet().stream()
+                .filter(e -> blobUrls.containsKey(e.getValue().getBlobId()))
+                .collect(Collectors.toMap(Map.Entry::getKey, e -> blobUrls.get(e.getValue().getBlobId())));
     }
 }
