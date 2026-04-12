@@ -1,19 +1,54 @@
 package io.k2dv.garden;
 
-import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.containers.MinIOContainer;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
+
+import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @ActiveProfiles({"test", "local"})
 class DevDataSeederIT extends AbstractIntegrationTest {
 
-    @MockitoBean StorageService storageService;
+    @SuppressWarnings("deprecation")
+    static final MinIOContainer minio = new MinIOContainer("minio/minio:RELEASE.2025-04-22T22-12-26Z");
+
+    static {
+        minio.start();
+        // Buckets must exist before the context starts — DevDataSeeder runs as an
+        // ApplicationRunner at startup and immediately uploads images to MinIO.
+        try (S3Client client = S3Client.builder()
+                .endpointOverride(URI.create(minio.getS3URL()))
+                .credentialsProvider(StaticCredentialsProvider.create(
+                    AwsBasicCredentials.create(minio.getUserName(), minio.getPassword())))
+                .region(Region.US_EAST_1)
+                .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
+                .build()) {
+            client.createBucket(b -> b.bucket("test"));
+            client.createBucket(b -> b.bucket("test-private"));
+        }
+    }
+
+    @DynamicPropertySource
+    static void minioProperties(DynamicPropertyRegistry registry) {
+        registry.add("storage.endpoint", minio::getS3URL);
+        registry.add("storage.access-key", minio::getUserName);
+        registry.add("storage.secret-key", minio::getPassword);
+        registry.add("storage.bucket", () -> "test");
+        registry.add("storage.private-bucket", () -> "test-private");
+        registry.add("storage.base-url", () -> minio.getS3URL() + "/test");
+    }
 
     @Autowired JdbcTemplate jdbc;
     @Autowired DevDataSeeder seeder;
