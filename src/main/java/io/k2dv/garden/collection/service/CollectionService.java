@@ -262,7 +262,8 @@ public class CollectionService {
         return PagedResult.of(page, cp -> {
             Product p = productMap.get(cp.getProductId());
             if (p == null) throw new NotFoundException("PRODUCT_NOT_FOUND", "Product not found");
-            return toProductResponse(cp, p, productImageUrls.get(p.getFeaturedImageId()));
+            String imgUrl = p.getFeaturedImageId() != null ? productImageUrls.get(p.getFeaturedImageId()) : null;
+            return toProductResponse(cp, p, imgUrl);
         });
     }
 
