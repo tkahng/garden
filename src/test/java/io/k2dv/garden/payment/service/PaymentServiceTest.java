@@ -25,6 +25,8 @@ import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.user.model.Address;
+import io.k2dv.garden.user.repository.AddressRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -58,13 +60,15 @@ class PaymentServiceTest {
   AppProperties appProperties;
   @Mock
   QuoteRequestRepository quoteRequestRepo;
+  @Mock
+  AddressRepository addressRepo;
 
   PaymentService paymentService;
 
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo);
   }
 
   private Cart stubCart(UUID userId) {
@@ -106,6 +110,7 @@ class PaymentServiceTest {
     when(session.getId()).thenReturn("cs_test_123");
     when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_123");
 
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
     when(orderService.createFromCart(eq(userId), any())).thenReturn(order);
@@ -132,6 +137,7 @@ class PaymentServiceTest {
     variant.setTitle("Large");
     variant.setPrice(new BigDecimal("20.00"));
 
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(stubCartItem(variantId)));
     when(orderService.createFromCart(eq(userId), any())).thenReturn(order);
@@ -161,6 +167,7 @@ class PaymentServiceTest {
     when(session.getId()).thenReturn("cs_test_456");
     when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_456");
 
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(item));
     when(orderService.createFromCart(eq(userId), any())).thenReturn(order);
@@ -181,6 +188,7 @@ class PaymentServiceTest {
     UUID userId = UUID.randomUUID();
     Cart cart = stubCart(userId);
 
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of());
 
@@ -188,6 +196,18 @@ class PaymentServiceTest {
         .isInstanceOf(ValidationException.class)
         .extracting("errorCode")
         .isEqualTo("EMPTY_CART");
+  }
+
+  @Test
+  void initiateCheckout_noDefaultShippingAddress_throwsValidation() {
+    UUID userId = UUID.randomUUID();
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.empty());
+
+    assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+        .isInstanceOf(ValidationException.class)
+        .extracting("errorCode")
+        .isEqualTo("NO_SHIPPING_ADDRESS");
   }
 
   @Test

@@ -1,10 +1,15 @@
 package io.k2dv.garden.order.service;
 
+import com.stripe.exception.StripeException;
+import com.stripe.param.RefundCreateParams;
+import io.k2dv.garden.blob.repository.BlobObjectRepository;
+import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.inventory.service.InventoryService;
 import io.k2dv.garden.order.dto.OrderFilter;
+import io.k2dv.garden.order.dto.OrderItemProductInfo;
 import io.k2dv.garden.order.dto.OrderItemResponse;
 import io.k2dv.garden.order.dto.OrderResponse;
 import io.k2dv.garden.order.model.Order;
@@ -12,9 +17,13 @@ import io.k2dv.garden.order.model.OrderItem;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.repository.OrderItemRepository;
 import io.k2dv.garden.order.repository.OrderRepository;
+import io.k2dv.garden.payment.exception.PaymentException;
+import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.Product;
+import io.k2dv.garden.product.model.ProductImage;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
+import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.shared.dto.PagedResult;
@@ -31,7 +40,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -41,7 +54,11 @@ public class OrderService {
     private final OrderItemRepository orderItemRepo;
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
+    private final ProductImageRepository imageRepo;
+    private final BlobObjectRepository blobRepo;
+    private final StorageService storageService;
     private final InventoryService inventoryService;
+    private final StripeGateway stripeGateway;
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
@@ -226,10 +243,87 @@ public class OrderService {
         return PagedResult.of(orderRepo.findAll(spec, pageable), this::toResponse);
     }
 
+    @Transactional
+    public OrderResponse refundOrder(UUID orderId, UUID requestingUserId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (!order.getUserId().equals(requestingUserId)) {
+            throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
+        }
+        if (order.getStatus() == OrderStatus.REFUNDED) {
+            return toResponse(order);
+        }
+        if (order.getStatus() != OrderStatus.PAID) {
+            throw new ConflictException("INVALID_ORDER_STATUS",
+                "Cannot refund order in status: " + order.getStatus());
+        }
+        if (order.getStripePaymentIntentId() == null) {
+            throw new ConflictException("NO_PAYMENT_INTENT", "Order has no payment intent to refund");
+        }
+        try {
+            RefundCreateParams params = RefundCreateParams.builder()
+                .setPaymentIntent(order.getStripePaymentIntentId())
+                .build();
+            stripeGateway.createRefund(params);
+        } catch (StripeException e) {
+            throw new PaymentException("STRIPE_REFUND_ERROR", "Failed to issue refund: " + e.getMessage());
+        }
+        order.setStatus(OrderStatus.REFUNDED);
+        orderRepo.save(order);
+        return toResponse(order);
+    }
+
     private OrderResponse toResponse(Order order) {
-        List<OrderItemResponse> items = orderItemRepo.findByOrderId(order.getId()).stream()
-            .map(i -> new OrderItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice()))
-            .toList();
+        List<OrderItem> orderItems = orderItemRepo.findByOrderId(order.getId());
+
+        Set<UUID> variantIds = orderItems.stream()
+            .map(OrderItem::getVariantId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+            .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
+        Set<UUID> productIds = variantsById.values().stream()
+            .map(ProductVariant::getProductId).collect(Collectors.toSet());
+        Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, p -> p));
+
+        Set<UUID> featuredImageIds = productsById.values().stream()
+            .map(Product::getFeaturedImageId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, String> imageUrlByProductId = Map.of();
+        if (!featuredImageIds.isEmpty()) {
+            Map<UUID, ProductImage> imagesById = imageRepo.findAllById(featuredImageIds).stream()
+                .collect(Collectors.toMap(ProductImage::getId, img -> img));
+            Set<UUID> blobIds = imagesById.values().stream()
+                .map(ProductImage::getBlobId).collect(Collectors.toSet());
+            Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
+                .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
+            imageUrlByProductId = productsById.entrySet().stream()
+                .filter(e -> e.getValue().getFeaturedImageId() != null)
+                .filter(e -> imagesById.containsKey(e.getValue().getFeaturedImageId()))
+                .filter(e -> blobUrls.containsKey(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId()))
+                .collect(Collectors.toMap(
+                    Map.Entry::getKey,
+                    e -> blobUrls.get(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId())));
+        }
+        final Map<UUID, String> resolvedImageUrls = imageUrlByProductId;
+
+        List<OrderItemResponse> items = orderItems.stream().map(i -> {
+            OrderItemProductInfo productInfo = null;
+            if (i.getVariantId() != null) {
+                ProductVariant variant = variantsById.get(i.getVariantId());
+                if (variant != null) {
+                    Product product = productsById.get(variant.getProductId());
+                    if (product != null) {
+                        productInfo = new OrderItemProductInfo(
+                            product.getId(),
+                            product.getTitle(),
+                            variant.getTitle(),
+                            resolvedImageUrls.get(product.getId()));
+                    }
+                }
+            }
+            return new OrderItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
+        }).toList();
+
         return new OrderResponse(order.getId(), order.getUserId(), order.getStatus(),
             order.getTotalAmount(), order.getCurrency(), order.getStripeSessionId(),
             items, order.getCreatedAt());

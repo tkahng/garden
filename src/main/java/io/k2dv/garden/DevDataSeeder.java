@@ -24,7 +24,7 @@ import java.util.UUID;
 
 @Slf4j
 @Component
-@Profile("local")
+@Profile({"local", "demo"})
 @RequiredArgsConstructor
 public class DevDataSeeder implements ApplicationRunner {
 

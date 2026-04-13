@@ -82,10 +82,12 @@ Order
   └─< OrderItem
         ├─ id (UUIDv7)
         ├─ orderId (FK → Order)
-        ├─ variantId (FK → ProductVariant)
+        ├─ variantId (FK → ProductVariant, nullable for quote-only items)
         ├─ quantity (int)
         ├─ unitPrice (BigDecimal — copied from CartItem snapshot)
         └─ createdAt, updatedAt
+
+`OrderItemResponse` includes a resolved `product` field (productId, productTitle, variantTitle, imageUrl) batch-loaded from the variant and product tables. `null` for quote-only items where variantId is absent.
 ```
 
 ---
@@ -134,6 +136,21 @@ POST   /api/v1/webhooks/stripe         — Stripe event delivery (public, Stripe
 ```
 
 No authentication — Stripe calls this directly. Verified via `Stripe-Signature` header using the webhook signing secret.
+
+### Storefront Orders
+
+All endpoints require `@Authenticated`. Users can only access their own orders.
+
+```
+GET    /api/v1/storefront/orders               — list the current user's orders (paged, newest first)
+GET    /api/v1/storefront/orders/{id}          — order detail with line items (ownership enforced)
+PUT    /api/v1/storefront/orders/{id}/cancel   — cancel a PENDING_PAYMENT order owned by the user
+POST   /api/v1/storefront/orders/{id}/refund   — request a refund on a PAID order owned by the user
+```
+
+**Cancel rules:** Only `PENDING_PAYMENT` orders can be cancelled. Releases inventory reservation.
+
+**Refund rules:** Only `PAID` orders can be refunded. Issues a full refund via Stripe's Refund API using the stored `stripePaymentIntentId`. Transitions order to `REFUNDED`. Inventory is **not** restocked automatically (admin handles that).
 
 ### Admin Orders
 
@@ -204,10 +221,11 @@ PUT    /api/v1/admin/orders/{id}/cancel        — cancel a PENDING_PAYMENT orde
 ## Order Status Transitions
 
 ```
-PENDING_PAYMENT ──(webhook: completed)──► PAID
-PENDING_PAYMENT ──(webhook: expired)────► CANCELLED
-PENDING_PAYMENT ──(admin cancel)────────► CANCELLED
-PAID ────────────(future)───────────────► REFUNDED
+PENDING_PAYMENT ──(webhook: completed)────────► PAID
+PENDING_PAYMENT ──(webhook: expired)──────────► CANCELLED
+PENDING_PAYMENT ──(admin cancel)──────────────► CANCELLED
+PENDING_PAYMENT ──(user cancel)───────────────► CANCELLED
+PAID ────────────(user refund / admin refund)──► REFUNDED
 ```
 
 Invalid transitions (e.g. cancelling a `PAID` order) are rejected with `ConflictException`.
