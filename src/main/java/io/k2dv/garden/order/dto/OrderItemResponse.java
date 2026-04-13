@@ -7,5 +7,6 @@ public record OrderItemResponse(
     UUID id,
     UUID variantId,
     int quantity,
-    BigDecimal unitPrice
+    BigDecimal unitPrice,
+    OrderItemProductInfo product
 ) {}
