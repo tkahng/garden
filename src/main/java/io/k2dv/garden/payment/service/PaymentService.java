@@ -24,6 +24,7 @@ import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.user.repository.AddressRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -42,10 +43,15 @@ public class PaymentService {
   private final ProductVariantRepository variantRepo;
   private final AppProperties appProperties;
   private final QuoteRequestRepository quoteRequestRepo;
+  private final AddressRepository addressRepo;
 
   // NOT @Transactional — Stripe call is outside transaction; each sub-call
   // manages its own tx
   public CheckoutResponse initiateCheckout(UUID userId) {
+    if (addressRepo.findByUserIdAndIsDefaultTrue(userId).isEmpty()) {
+      throw new ValidationException("NO_SHIPPING_ADDRESS", "A default shipping address is required before checkout");
+    }
+
     Cart cart = cartService.requireActiveCart(userId);
     List<CartItem> cartItems = cartService.getCartItems(cart.getId());
 
