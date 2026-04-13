@@ -82,10 +82,12 @@ Order
   └─< OrderItem
         ├─ id (UUIDv7)
         ├─ orderId (FK → Order)
-        ├─ variantId (FK → ProductVariant)
+        ├─ variantId (FK → ProductVariant, nullable for quote-only items)
         ├─ quantity (int)
         ├─ unitPrice (BigDecimal — copied from CartItem snapshot)
         └─ createdAt, updatedAt
+
+`OrderItemResponse` includes a resolved `product` field (productId, productTitle, variantTitle, imageUrl) batch-loaded from the variant and product tables. `null` for quote-only items where variantId is absent.
 ```
 
 ---
