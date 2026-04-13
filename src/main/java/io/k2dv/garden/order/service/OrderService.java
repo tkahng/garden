@@ -1,5 +1,7 @@
 package io.k2dv.garden.order.service;
 
+import com.stripe.exception.StripeException;
+import com.stripe.param.RefundCreateParams;
 import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
@@ -12,6 +14,8 @@ import io.k2dv.garden.order.model.OrderItem;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.repository.OrderItemRepository;
 import io.k2dv.garden.order.repository.OrderRepository;
+import io.k2dv.garden.payment.exception.PaymentException;
+import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.Product;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
@@ -42,6 +46,7 @@ public class OrderService {
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
     private final InventoryService inventoryService;
+    private final StripeGateway stripeGateway;
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
@@ -224,6 +229,36 @@ public class OrderService {
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return PagedResult.of(orderRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    @Transactional
+    public OrderResponse refundOrder(UUID orderId, UUID requestingUserId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (!order.getUserId().equals(requestingUserId)) {
+            throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
+        }
+        if (order.getStatus() == OrderStatus.REFUNDED) {
+            return toResponse(order);
+        }
+        if (order.getStatus() != OrderStatus.PAID) {
+            throw new ConflictException("INVALID_ORDER_STATUS",
+                "Cannot refund order in status: " + order.getStatus());
+        }
+        if (order.getStripePaymentIntentId() == null) {
+            throw new ConflictException("NO_PAYMENT_INTENT", "Order has no payment intent to refund");
+        }
+        try {
+            RefundCreateParams params = RefundCreateParams.builder()
+                .setPaymentIntent(order.getStripePaymentIntentId())
+                .build();
+            stripeGateway.createRefund(params);
+        } catch (StripeException e) {
+            throw new PaymentException("STRIPE_REFUND_ERROR", "Failed to issue refund: " + e.getMessage());
+        }
+        order.setStatus(OrderStatus.REFUNDED);
+        orderRepo.save(order);
+        return toResponse(order);
     }
 
     private OrderResponse toResponse(Order order) {
