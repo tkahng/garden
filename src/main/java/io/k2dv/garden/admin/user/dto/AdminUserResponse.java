@@ -16,7 +16,9 @@ public record AdminUserResponse(
     UserStatus status,
     Instant emailVerifiedAt,
     Instant createdAt,
-    List<String> roles
+    List<String> roles,
+    String adminNotes,
+    List<String> tags
 ) {
     public static AdminUserResponse from(User user, List<String> roles) {
         return new AdminUserResponse(
@@ -28,7 +30,9 @@ public record AdminUserResponse(
             user.getStatus(),
             user.getEmailVerifiedAt(),
             user.getCreatedAt(),
-            roles
+            roles,
+            user.getAdminNotes(),
+            user.getTags()
         );
     }
 }

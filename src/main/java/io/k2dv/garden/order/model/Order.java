@@ -32,4 +32,10 @@ public class Order extends BaseEntity {
 
     @Column(nullable = false)
     private String currency = "usd";
+
+    @Column(name = "discount_id")
+    private UUID discountId;
+
+    @Column(name = "discount_amount", precision = 19, scale = 4)
+    private BigDecimal discountAmount;
 }

@@ -17,6 +17,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
@@ -66,6 +67,22 @@ public class AdminUserService {
         User user = findUser(id);
         user.setStatus(UserStatus.ACTIVE);
         userRepo.save(user);
+    }
+
+    @Transactional
+    public AdminUserResponse updateNotes(UUID id, String adminNotes) {
+        User user = findUser(id);
+        user.setAdminNotes(adminNotes);
+        user = userRepo.save(user);
+        return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
+    }
+
+    @Transactional
+    public AdminUserResponse updateTags(UUID id, List<String> tags) {
+        User user = findUser(id);
+        user.setTags(tags != null ? tags : new ArrayList<>());
+        user = userRepo.save(user);
+        return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
     }
 
     @Transactional

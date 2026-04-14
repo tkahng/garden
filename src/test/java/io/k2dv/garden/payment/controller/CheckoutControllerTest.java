@@ -37,7 +37,7 @@ class CheckoutControllerTest {
   @Test
   void checkout_happyPath_returns200WithUrl() throws Exception {
     UUID orderId = UUID.randomUUID();
-    when(paymentService.initiateCheckout(any()))
+    when(paymentService.initiateCheckout(any(), any()))
         .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test_123", orderId));
 
     mvc.perform(post("/api/v1/checkout"))
@@ -48,7 +48,7 @@ class CheckoutControllerTest {
 
   @Test
   void checkout_emptyCart_returns400() throws Exception {
-    when(paymentService.initiateCheckout(any()))
+    when(paymentService.initiateCheckout(any(), any()))
         .thenThrow(new ValidationException("EMPTY_CART", "Cart is empty"));
 
     mvc.perform(post("/api/v1/checkout"))
@@ -58,7 +58,7 @@ class CheckoutControllerTest {
 
   @Test
   void checkout_stripeFailure_returns502() throws Exception {
-    when(paymentService.initiateCheckout(any()))
+    when(paymentService.initiateCheckout(any(), any()))
         .thenThrow(new PaymentException("STRIPE_ERROR", "Stripe failed"));
 
     mvc.perform(post("/api/v1/checkout"))

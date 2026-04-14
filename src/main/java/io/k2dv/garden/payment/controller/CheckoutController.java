@@ -2,6 +2,7 @@ package io.k2dv.garden.payment.controller;
 
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
+import io.k2dv.garden.payment.dto.CheckoutRequest;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
 import io.k2dv.garden.payment.service.PaymentService;
@@ -22,8 +23,11 @@ public class CheckoutController {
     private final PaymentService paymentService;
 
     @PostMapping
-    public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(@CurrentUser User user) {
-        return ResponseEntity.ok(ApiResponse.of(paymentService.initiateCheckout(user.getId())));
+    public ResponseEntity<ApiResponse<CheckoutResponse>> checkout(
+            @CurrentUser User user,
+            @RequestBody(required = false) CheckoutRequest req) {
+        String discountCode = req != null ? req.discountCode() : null;
+        return ResponseEntity.ok(ApiResponse.of(paymentService.initiateCheckout(user.getId(), discountCode)));
     }
 
     @GetMapping("/return")

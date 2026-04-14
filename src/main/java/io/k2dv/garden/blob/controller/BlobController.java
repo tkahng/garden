@@ -1,19 +1,17 @@
 package io.k2dv.garden.blob.controller;
 
 import io.k2dv.garden.auth.security.HasPermission;
+import io.k2dv.garden.blob.dto.BlobFilter;
 import io.k2dv.garden.blob.dto.BlobResponse;
 import io.k2dv.garden.blob.service.BlobService;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.shared.dto.PagedResult;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
@@ -25,6 +23,25 @@ import java.util.UUID;
 public class BlobController {
 
     private final BlobService blobService;
+
+    @GetMapping
+    @HasPermission("blob:read")
+    public ApiResponse<PagedResult<BlobResponse>> list(
+            @RequestParam(required = false) String contentType,
+            @RequestParam(required = false) String filenameContains,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size) {
+        int clampedSize = Math.min(size, 100);
+        return ApiResponse.of(blobService.list(
+            new BlobFilter(contentType, filenameContains),
+            PageRequest.of(page, clampedSize)));
+    }
+
+    @GetMapping("/{id}")
+    @HasPermission("blob:read")
+    public ApiResponse<BlobResponse> getById(@PathVariable UUID id) {
+        return ApiResponse.of(blobService.getById(id));
+    }
 
     @PostMapping(consumes = "multipart/form-data")
     @HasPermission("blob:upload")

@@ -62,13 +62,15 @@ class PaymentServiceTest {
   QuoteRequestRepository quoteRequestRepo;
   @Mock
   AddressRepository addressRepo;
+  @Mock
+  io.k2dv.garden.discount.service.DiscountService discountService;
 
   PaymentService paymentService;
 
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService);
   }
 
   private Cart stubCart(UUID userId) {
@@ -117,7 +119,7 @@ class PaymentServiceTest {
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
-    CheckoutResponse response = paymentService.initiateCheckout(userId);
+    CheckoutResponse response = paymentService.initiateCheckout(userId, null);
 
     assertThat(response.checkoutUrl()).isEqualTo("https://checkout.stripe.com/pay/cs_test_123");
     assertThat(response.orderId()).isEqualTo(order.getId());
@@ -145,7 +147,7 @@ class PaymentServiceTest {
     when(stripeGateway.createCheckoutSession(any()))
         .thenThrow(mock(StripeException.class));
 
-    assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+    assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null))
         .isInstanceOf(PaymentException.class);
 
     verify(orderService).cancelOrder(order.getId());
@@ -174,7 +176,7 @@ class PaymentServiceTest {
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
-    paymentService.initiateCheckout(userId);
+    paymentService.initiateCheckout(userId, null);
 
     ArgumentCaptor<SessionCreateParams> captor = ArgumentCaptor.forClass(SessionCreateParams.class);
     verify(stripeGateway).createCheckoutSession(captor.capture());
@@ -192,7 +194,7 @@ class PaymentServiceTest {
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of());
 
-    assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+    assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null))
         .isInstanceOf(ValidationException.class)
         .extracting("errorCode")
         .isEqualTo("EMPTY_CART");
@@ -204,7 +206,7 @@ class PaymentServiceTest {
 
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.empty());
 
-    assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+    assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null))
         .isInstanceOf(ValidationException.class)
         .extracting("errorCode")
         .isEqualTo("NO_SHIPPING_ADDRESS");

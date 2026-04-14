@@ -2,6 +2,8 @@ package io.k2dv.garden.admin.user.controller;
 
 import io.k2dv.garden.admin.user.dto.AdminUserResponse;
 import io.k2dv.garden.admin.user.dto.AssignRoleRequest;
+import io.k2dv.garden.admin.user.dto.UpdateNotesRequest;
+import io.k2dv.garden.admin.user.dto.UpdateTagsRequest;
 import io.k2dv.garden.admin.user.dto.UpdateUserRequest;
 import io.k2dv.garden.admin.user.dto.UserFilter;
 import io.k2dv.garden.admin.user.service.AdminUserService;
@@ -81,5 +83,21 @@ public class AdminUserController {
             @PathVariable String roleName) {
         adminUserService.removeRole(id, roleName);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/notes")
+    @HasPermission("user:write")
+    public ApiResponse<AdminUserResponse> updateNotes(
+            @PathVariable UUID id,
+            @RequestBody UpdateNotesRequest req) {
+        return ApiResponse.of(adminUserService.updateNotes(id, req.adminNotes()));
+    }
+
+    @PutMapping("/{id}/tags")
+    @HasPermission("user:write")
+    public ApiResponse<AdminUserResponse> updateTags(
+            @PathVariable UUID id,
+            @RequestBody UpdateTagsRequest req) {
+        return ApiResponse.of(adminUserService.updateTags(id, req.tags()));
     }
 }

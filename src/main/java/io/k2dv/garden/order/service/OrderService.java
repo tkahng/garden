@@ -141,6 +141,16 @@ public class OrderService {
     }
 
     @Transactional
+    public void applyDiscount(UUID orderId, UUID discountId, BigDecimal discountAmount) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setDiscountId(discountId);
+        order.setDiscountAmount(discountAmount);
+        order.setTotalAmount(order.getTotalAmount().subtract(discountAmount));
+        orderRepo.save(order);
+    }
+
+    @Transactional
     public void setStripeSession(UUID orderId, String stripeSessionId) {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
@@ -326,6 +336,7 @@ public class OrderService {
 
         return new OrderResponse(order.getId(), order.getUserId(), order.getStatus(),
             order.getTotalAmount(), order.getCurrency(), order.getStripeSessionId(),
+            order.getDiscountId(), order.getDiscountAmount(),
             items, order.getCreatedAt());
     }
 }

@@ -14,6 +14,8 @@ public record OrderResponse(
     BigDecimal totalAmount,
     String currency,
     String stripeSessionId,
+    UUID discountId,
+    BigDecimal discountAmount,
     List<OrderItemResponse> items,
     Instant createdAt
 ) {}
