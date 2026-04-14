@@ -8,4 +8,5 @@ import java.util.UUID;
 public interface ArticleImageRepository extends JpaRepository<ArticleImage, UUID> {
     int countByArticleId(UUID articleId);
     List<ArticleImage> findByArticleIdOrderByPositionAsc(UUID articleId);
+    List<ArticleImage> findByBlobId(UUID blobId);
 }

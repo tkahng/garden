@@ -71,8 +71,8 @@ class AdminIamServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void listPermissions_returns37() { // 26 base + 11 new (1 blob:read + 3 discount + 3 shipping + 3 gift_card + 1 stats from V19)
+    void listPermissions_returns38() { // 26 base + 12 new (2 blob + 3 discount + 3 shipping + 3 gift_card + 1 stats from V19)
         var perms = adminIamService.listPermissions();
-        assertThat(perms).hasSize(37);
+        assertThat(perms).hasSize(38);
     }
 }
