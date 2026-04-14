@@ -16,6 +16,8 @@ public record OrderResponse(
     String stripeSessionId,
     UUID discountId,
     BigDecimal discountAmount,
+    String adminNotes,
+    String shippingAddress,
     List<OrderItemResponse> items,
     Instant createdAt
 ) {}

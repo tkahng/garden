@@ -4,6 +4,8 @@ import io.k2dv.garden.shared.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -38,4 +40,11 @@ public class Order extends BaseEntity {
 
     @Column(name = "discount_amount", precision = 19, scale = 4)
     private BigDecimal discountAmount;
+
+    @Column(name = "admin_notes", columnDefinition = "text")
+    private String adminNotes;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "shipping_address", columnDefinition = "jsonb")
+    private String shippingAddress;
 }

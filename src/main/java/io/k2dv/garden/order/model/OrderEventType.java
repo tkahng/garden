@@ -1,0 +1,12 @@
+package io.k2dv.garden.order.model;
+
+public enum OrderEventType {
+    ORDER_PLACED,
+    PAYMENT_CONFIRMED,
+    ORDER_CANCELLED,
+    ORDER_REFUNDED,
+    ADMIN_REFUND_ISSUED,
+    FULFILLMENT_CREATED,
+    FULFILLMENT_UPDATED,
+    NOTE_ADDED
+}
