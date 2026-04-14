@@ -37,7 +37,7 @@ class StorefrontOrderControllerTest {
 
     private OrderResponse stubOrder(UUID id, UUID userId, OrderStatus status) {
         return new OrderResponse(id, userId, status,
-            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, List.of(), null);
+            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, List.of(), null);
     }
 
     @Test

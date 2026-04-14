@@ -27,7 +27,8 @@ public class CheckoutController {
             @CurrentUser User user,
             @RequestBody(required = false) CheckoutRequest req) {
         String discountCode = req != null ? req.discountCode() : null;
-        return ResponseEntity.ok(ApiResponse.of(paymentService.initiateCheckout(user.getId(), discountCode)));
+        String giftCardCode = req != null ? req.giftCardCode() : null;
+        return ResponseEntity.ok(ApiResponse.of(paymentService.initiateCheckout(user.getId(), discountCode, giftCardCode)));
     }
 
     @GetMapping("/return")

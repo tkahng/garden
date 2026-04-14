@@ -156,6 +156,29 @@ public class OrderService {
     }
 
     @Transactional
+    public void applyGiftCard(UUID orderId, UUID giftCardId, BigDecimal giftCardAmount) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setGiftCardId(giftCardId);
+        order.setGiftCardAmount(giftCardAmount);
+        order.setTotalAmount(order.getTotalAmount().subtract(giftCardAmount));
+        orderRepo.save(order);
+    }
+
+    @Transactional
+    public void markPaidDirectly(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setStatus(OrderStatus.PAID);
+        orderRepo.save(order);
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
+            .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
+        orderEventService.emit(orderId, OrderEventType.PAYMENT_CONFIRMED,
+            "Payment fulfilled via gift card", null, "system", null);
+    }
+
+    @Transactional
     public void setStripeSession(UUID orderId, String stripeSessionId) {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
@@ -389,6 +412,7 @@ public class OrderService {
         return new OrderResponse(order.getId(), order.getUserId(), order.getStatus(),
             order.getTotalAmount(), order.getCurrency(), order.getStripeSessionId(),
             order.getDiscountId(), order.getDiscountAmount(),
+            order.getGiftCardId(), order.getGiftCardAmount(),
             order.getAdminNotes(), order.getShippingAddress(),
             items, order.getCreatedAt());
     }
