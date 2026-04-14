@@ -683,9 +683,9 @@ public class DevDataSeeder implements ApplicationRunner {
 
                 UUID blobId = UUID.randomUUID();
                 jdbc.update("""
-                    INSERT INTO storage.blob_objects (id, key, filename, content_type, size)
-                    VALUES (?, ?, ?, 'image/jpeg', ?)
-                    """, blobId, objectKey, filename, imageBytes.length);
+                    INSERT INTO storage.blob_objects (id, key, filename, content_type, size, alt, width, height)
+                    VALUES (?, ?, ?, 'image/jpeg', ?, ?, 800, 600)
+                    """, blobId, objectKey, filename, imageBytes.length, altTexts.get(i));
 
                 UUID imageId = UUID.randomUUID();
                 jdbc.update("""
@@ -750,9 +750,9 @@ public class DevDataSeeder implements ApplicationRunner {
 
             UUID blobId = UUID.randomUUID();
             jdbc.update("""
-                INSERT INTO storage.blob_objects (id, key, filename, content_type, size)
-                VALUES (?, ?, ?, 'image/jpeg', ?)
-                """, blobId, objectKey, filename, imageBytes.length);
+                INSERT INTO storage.blob_objects (id, key, filename, content_type, size, alt, width, height)
+                VALUES (?, ?, ?, 'image/jpeg', ?, ?, 1200, 400)
+                """, blobId, objectKey, filename, imageBytes.length, altText);
 
             jdbc.update("UPDATE catalog.collections SET featured_image_id = ? WHERE id = ?",
                 blobId, collectionId);
