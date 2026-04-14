@@ -136,9 +136,14 @@ public class GiftCardService {
     }
 
     @Transactional
-    public GiftCardApplication redeem(String code, BigDecimal orderAmount, UUID orderId) {
+    public GiftCardApplication redeem(String code, BigDecimal orderAmount, UUID orderId, String orderCurrency) {
         GiftCard g = giftCardRepo.findByCodeIgnoreCase(code)
             .orElseThrow(() -> new ValidationException("GIFT_CARD_NOT_FOUND", "Gift card not found: " + code));
+
+        if (!g.getCurrency().equalsIgnoreCase(orderCurrency)) {
+            throw new ValidationException("CURRENCY_MISMATCH",
+                "Gift card currency '" + g.getCurrency() + "' does not match order currency '" + orderCurrency + "'");
+        }
 
         String reason = checkEligibility(g);
         if (reason != null) throw new ValidationException("GIFT_CARD_INELIGIBLE", reason);

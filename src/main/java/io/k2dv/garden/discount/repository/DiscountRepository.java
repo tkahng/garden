@@ -14,7 +14,7 @@ public interface DiscountRepository extends JpaRepository<Discount, UUID>, JpaSp
 
     Optional<Discount> findByCodeIgnoreCase(String code);
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("""
         UPDATE Discount d SET d.usedCount = d.usedCount + 1
         WHERE d.id = :id AND (d.maxUses IS NULL OR d.usedCount < d.maxUses)

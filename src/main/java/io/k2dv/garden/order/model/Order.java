@@ -47,4 +47,10 @@ public class Order extends BaseEntity {
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "shipping_address", columnDefinition = "jsonb")
     private String shippingAddress;
+
+    @Column(name = "gift_card_id")
+    private UUID giftCardId;
+
+    @Column(name = "gift_card_amount", precision = 19, scale = 4)
+    private BigDecimal giftCardAmount;
 }

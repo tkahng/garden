@@ -107,6 +107,9 @@ public class OrderService {
             orderItemRepo.save(item);
         }
 
+        orderEventService.emit(order.getId(), OrderEventType.ORDER_PLACED,
+            "Order placed", null, "system", null);
+
         return order;
     }
 
@@ -141,6 +144,9 @@ public class OrderService {
             orderItem.setUnitPrice(item.getUnitPrice() != null ? item.getUnitPrice() : BigDecimal.ZERO);
             orderItemRepo.save(orderItem);
         }
+
+        orderEventService.emit(order.getId(), OrderEventType.ORDER_PLACED,
+            "Order placed from quote", null, "system", null);
 
         return order;
     }
@@ -321,8 +327,19 @@ public class OrderService {
     public OrderResponse updateOrder(UUID orderId, UpdateOrderRequest req) {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
-        if (req.adminNotes() != null) order.setAdminNotes(req.adminNotes());
-        if (req.shippingAddress() != null) order.setShippingAddress(req.shippingAddress());
+        if (req.shippingAddress() != null) {
+            if (order.getStatus() == OrderStatus.PARTIALLY_FULFILLED
+                    || order.getStatus() == OrderStatus.FULFILLED) {
+                throw new ConflictException("ORDER_ALREADY_SHIPPED",
+                    "Cannot update shipping address after order has been shipped");
+            }
+            order.setShippingAddress(req.shippingAddress());
+        }
+        if (req.adminNotes() != null) {
+            order.setAdminNotes(req.adminNotes());
+            orderEventService.emit(orderId, OrderEventType.NOTE_ADDED,
+                "Admin note added", null, "admin", null);
+        }
         return toResponse(orderRepo.save(order));
     }
 

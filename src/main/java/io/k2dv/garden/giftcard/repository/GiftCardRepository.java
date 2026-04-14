@@ -15,7 +15,7 @@ public interface GiftCardRepository extends JpaRepository<GiftCard, UUID>, JpaSp
 
     Optional<GiftCard> findByCodeIgnoreCase(String code);
 
-    @Modifying
+    @Modifying(clearAutomatically = true)
     @Query("""
         UPDATE GiftCard g SET g.currentBalance = g.currentBalance - :amount
         WHERE g.id = :id AND g.currentBalance >= :amount

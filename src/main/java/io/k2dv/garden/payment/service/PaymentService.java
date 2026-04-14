@@ -14,7 +14,9 @@ import io.k2dv.garden.discount.service.DiscountService;
 import io.k2dv.garden.giftcard.dto.GiftCardApplication;
 import io.k2dv.garden.giftcard.service.GiftCardService;
 import io.k2dv.garden.order.model.Order;
+import io.k2dv.garden.order.model.OrderEventType;
 import io.k2dv.garden.order.model.OrderStatus;
+import io.k2dv.garden.order.service.OrderEventService;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
@@ -35,6 +37,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -50,6 +53,7 @@ public class PaymentService {
   private final AddressRepository addressRepo;
   private final DiscountService discountService;
   private final GiftCardService giftCardService;
+  private final OrderEventService orderEventService;
 
   // NOT @Transactional — Stripe call is outside transaction; each sub-call
   // manages its own tx
@@ -72,15 +76,23 @@ public class PaymentService {
     if (discountCode != null && !discountCode.isBlank()) {
       discount = discountService.redeem(discountCode, order.getTotalAmount());
       orderService.applyDiscount(order.getId(), discount.discountId(), discount.discountedAmount());
-      // Refresh order total after discount
       order = orderService.getById(order.getId());
+      orderEventService.emit(order.getId(), OrderEventType.DISCOUNT_APPLIED,
+          "Discount '" + discount.code() + "' applied (−" + discount.discountedAmount() + ")",
+          null, "system", Map.of("discountId", discount.discountId().toString(),
+              "amount", discount.discountedAmount().toPlainString()));
     }
 
     // Apply gift card after discount
     if (giftCardCode != null && !giftCardCode.isBlank()) {
-      GiftCardApplication gca = giftCardService.redeem(giftCardCode, order.getTotalAmount(), order.getId());
+      GiftCardApplication gca = giftCardService.redeem(giftCardCode, order.getTotalAmount(),
+          order.getId(), order.getCurrency());
       orderService.applyGiftCard(order.getId(), gca.giftCardId(), gca.appliedAmount());
       order = orderService.getById(order.getId());
+      orderEventService.emit(order.getId(), OrderEventType.GIFT_CARD_APPLIED,
+          "Gift card '" + gca.code() + "' applied (−" + gca.appliedAmount() + ")",
+          null, "system", Map.of("giftCardId", gca.giftCardId().toString(),
+              "amount", gca.appliedAmount().toPlainString()));
       // If gift card covers the full remaining total, mark paid and skip Stripe
       if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
         orderService.markPaidDirectly(order.getId());

@@ -66,13 +66,15 @@ class PaymentServiceTest {
   io.k2dv.garden.discount.service.DiscountService discountService;
   @Mock
   io.k2dv.garden.giftcard.service.GiftCardService giftCardService;
+  @Mock
+  io.k2dv.garden.order.service.OrderEventService orderEventService;
 
   PaymentService paymentService;
 
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService);
   }
 
   private Cart stubCart(UUID userId) {

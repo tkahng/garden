@@ -21,6 +21,10 @@ public class StatsService {
 
     @Transactional(readOnly = true)
     public StatsResponse getStats(Instant from, Instant to) {
+        if (from.isAfter(to)) {
+            throw new io.k2dv.garden.shared.exception.ValidationException(
+                "INVALID_DATE_RANGE", "from must not be after to");
+        }
         long orderCount = orderRepo.countPaidOrdersBetween(from, to, OrderStatus.PAID);
         BigDecimal totalRevenue = orderRepo.sumRevenueForPaidOrdersBetween(from, to, OrderStatus.PAID);
         if (totalRevenue == null) totalRevenue = BigDecimal.ZERO;

@@ -43,6 +43,9 @@ public class DiscountService {
 
     @Transactional
     public DiscountResponse create(CreateDiscountRequest req) {
+        if (req.startsAt() != null && req.endsAt() != null && !req.startsAt().isBefore(req.endsAt())) {
+            throw new ValidationException("INVALID_DATE_RANGE", "startsAt must be before endsAt");
+        }
         if (discountRepo.findByCodeIgnoreCase(req.code()).isPresent()) {
             throw new ConflictException("DISCOUNT_CODE_EXISTS", "Discount code already exists: " + req.code());
         }
@@ -60,6 +63,11 @@ public class DiscountService {
     @Transactional
     public DiscountResponse update(UUID id, UpdateDiscountRequest req) {
         Discount d = findOrThrow(id);
+        Instant effectiveStart = req.startsAt() != null ? req.startsAt() : d.getStartsAt();
+        Instant effectiveEnd = req.endsAt() != null ? req.endsAt() : d.getEndsAt();
+        if (effectiveStart != null && effectiveEnd != null && !effectiveStart.isBefore(effectiveEnd)) {
+            throw new ValidationException("INVALID_DATE_RANGE", "startsAt must be before endsAt");
+        }
         if (req.code() != null) {
             String upper = req.code().toUpperCase();
             discountRepo.findByCodeIgnoreCase(req.code()).ifPresent(existing -> {

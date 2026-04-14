@@ -126,6 +126,8 @@ public class ShippingService {
     public List<ShippingRateResponse> findRatesForAddress(String country, String province,
                                                            BigDecimal orderAmount) {
         List<ShippingZone> zones = zoneRepo.findMatchingZones(country, province);
+        // Note: minWeightGrams / maxWeightGrams are stored on ShippingRate but weight-based
+        // filtering is not applied here — cart weight calculation is not yet implemented.
         return zones.stream()
             .flatMap(z -> rateRepo.findByZoneId(z.getId()).stream())
             .filter(ShippingRate::isActive)
