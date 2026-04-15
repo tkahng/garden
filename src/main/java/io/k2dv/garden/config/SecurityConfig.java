@@ -5,6 +5,7 @@ import io.k2dv.garden.auth.security.CustomJwtAuthenticationConverter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -30,8 +31,27 @@ public class SecurityConfig {
     private final CustomJwtAuthenticationConverter jwtAuthConverter;
     private final OAuth2SuccessHandler oauth2SuccessHandler;
 
+    // Chain 1: handles the OAuth2 login flow — needs sessions to preserve state parameter
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+    @Order(1)
+    SecurityFilterChain oauth2FilterChain(HttpSecurity http) throws Exception {
+        http
+            .securityMatcher("/api/v1/auth/oauth2/**", "/login/oauth2/**", "/oauth2/**")
+            .cors(cors -> cors.configurationSource(corsConfigurationSource()))
+            .authorizeHttpRequests(auth -> auth.anyRequest().permitAll())
+            .oauth2Login(oauth2 -> oauth2
+                .authorizationEndpoint(ep -> ep.baseUri("/api/v1/auth/oauth2"))
+                .successHandler(oauth2SuccessHandler)
+            )
+            .csrf(csrf -> csrf.disable());
+
+        return http.build();
+    }
+
+    // Chain 2: stateless JWT resource server for all API requests
+    @Bean
+    @Order(2)
+    SecurityFilterChain apiFilterChain(HttpSecurity http) throws Exception {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .authorizeHttpRequests(auth -> auth
@@ -54,10 +74,6 @@ public class SecurityConfig {
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter))
             )
-            .oauth2Login(oauth2 -> oauth2
-                .authorizationEndpoint(ep -> ep.baseUri("/api/v1/auth/oauth2"))
-                .successHandler(oauth2SuccessHandler)
-            )
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )
@@ -75,6 +91,8 @@ public class SecurityConfig {
         cors.setAllowCredentials(true);
         var source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/api/**", cors);
+        source.registerCorsConfiguration("/login/oauth2/**", cors);
+        source.registerCorsConfiguration("/oauth2/**", cors);
         return source;
     }
 

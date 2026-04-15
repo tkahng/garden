@@ -73,6 +73,12 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
             return saved;
         });
 
+        if (user.getEmailVerifiedAt() == null) {
+            user.setEmailVerifiedAt(Instant.now());
+            user.setStatus(UserStatus.ACTIVE);
+            user = userRepo.save(user);
+        }
+
         Identity identity = new Identity();
         identity.setUserId(user.getId());
         identity.setProvider(IdentityProvider.GOOGLE);
