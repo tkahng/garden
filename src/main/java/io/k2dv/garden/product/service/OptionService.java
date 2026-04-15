@@ -85,6 +85,7 @@ public class OptionService {
             v.setTitle(variantService.buildTitle(v.getOptionValues()));
         }
         variantRepo.saveAll(affected);
+        variantRepo.flush(); // ensure join-table rows are deleted before the entity delete
         optionValueRepo.delete(val);
     }
 
