@@ -15,6 +15,7 @@ public record AdminProductResponse(
     ProductStatus status,
     UUID featuredImageId,
     List<AdminVariantResponse> variants,
+    List<ProductOptionResponse> options,
     List<ProductImageResponse> images,
     List<String> tags,
     Instant createdAt,

@@ -1,5 +1,8 @@
 package io.k2dv.garden.product.dto;
 
+import io.k2dv.garden.inventory.model.FulfillmentType;
+import io.k2dv.garden.inventory.model.InventoryPolicy;
+
 import java.math.BigDecimal;
 
 public record UpdateVariantRequest(
@@ -8,5 +11,8 @@ public record UpdateVariantRequest(
     String sku,
     String barcode,
     BigDecimal weight,
-    String weightUnit
+    String weightUnit,
+    FulfillmentType fulfillmentType,
+    InventoryPolicy inventoryPolicy,
+    Integer leadTimeDays
 ) {}

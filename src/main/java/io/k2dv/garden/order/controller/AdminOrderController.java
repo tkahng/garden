@@ -3,6 +3,7 @@ package io.k2dv.garden.order.controller;
 import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderResponse;
+import io.k2dv.garden.order.dto.UpdateOrderRequest;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.shared.dto.ApiResponse;
@@ -50,5 +51,19 @@ public class AdminOrderController {
     @HasPermission("order:write")
     public ResponseEntity<ApiResponse<OrderResponse>> cancelOrder(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.of(orderService.cancelAndReturn(id)));
+    }
+
+    @PostMapping("/{id}/refund")
+    @HasPermission("order:write")
+    public ResponseEntity<ApiResponse<OrderResponse>> refundOrder(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(orderService.adminRefundOrder(id)));
+    }
+
+    @PutMapping("/{id}")
+    @HasPermission("order:write")
+    public ResponseEntity<ApiResponse<OrderResponse>> updateOrder(
+            @PathVariable UUID id,
+            @RequestBody UpdateOrderRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(orderService.updateOrder(id, req)));
     }
 }

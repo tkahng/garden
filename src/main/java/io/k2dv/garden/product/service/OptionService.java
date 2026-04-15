@@ -58,8 +58,9 @@ public class OptionService {
     }
 
     @Transactional
-    public ProductOptionValueResponse createOptionValue(UUID optionId, CreateOptionValueRequest req) {
+    public ProductOptionValueResponse createOptionValue(UUID productId, UUID optionId, CreateOptionValueRequest req) {
         optionRepo.findById(optionId)
+            .filter(o -> o.getProductId().equals(productId))
             .orElseThrow(() -> new NotFoundException("OPTION_NOT_FOUND", "Option not found"));
         ProductOptionValue val = new ProductOptionValue();
         val.setOptionId(optionId);
@@ -67,6 +68,25 @@ public class OptionService {
         val.setPosition(req.position());
         val = optionValueRepo.save(val);
         return new ProductOptionValueResponse(val.getId(), val.getLabel(), val.getPosition());
+    }
+
+    @Transactional
+    public void deleteOptionValue(UUID productId, UUID optionId, UUID valueId) {
+        optionRepo.findById(optionId)
+            .filter(o -> o.getProductId().equals(productId))
+            .orElseThrow(() -> new NotFoundException("OPTION_NOT_FOUND", "Option not found"));
+        ProductOptionValue val = optionValueRepo.findById(valueId)
+            .filter(v -> v.getOptionId().equals(optionId))
+            .orElseThrow(() -> new NotFoundException("OPTION_VALUE_NOT_FOUND", "Option value not found"));
+
+        List<ProductVariant> affected = variantRepo.findByOptionValueIdAndDeletedAtIsNull(valueId);
+        for (ProductVariant v : affected) {
+            v.getOptionValues().remove(val);
+            v.setTitle(variantService.buildTitle(v.getOptionValues()));
+        }
+        variantRepo.saveAll(affected);
+        variantRepo.flush(); // ensure join-table rows are deleted before the entity delete
+        optionValueRepo.delete(val);
     }
 
     @Transactional

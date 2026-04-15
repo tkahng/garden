@@ -100,7 +100,7 @@ class PaymentServiceIT extends AbstractIntegrationTest {
     void initiateCheckout_noDefaultAddress_throwsValidation() {
         cartService.addItem(userId, new AddCartItemRequest(variant.id(), 1));
 
-        assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+        assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null, null))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode")
             .isEqualTo("NO_SHIPPING_ADDRESS");
@@ -110,7 +110,7 @@ class PaymentServiceIT extends AbstractIntegrationTest {
     void initiateCheckout_emptyCart_throwsValidation() {
         addDefaultAddress();
 
-        assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+        assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null, null))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode")
             .isEqualTo("EMPTY_CART");
@@ -126,7 +126,7 @@ class PaymentServiceIT extends AbstractIntegrationTest {
         when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_it_123");
         when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
-        CheckoutResponse response = paymentService.initiateCheckout(userId);
+        CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
 
         assertThat(response.checkoutUrl()).isEqualTo("https://checkout.stripe.com/pay/cs_test_it_123");
         assertThat(response.orderId()).isNotNull();
@@ -139,7 +139,7 @@ class PaymentServiceIT extends AbstractIntegrationTest {
 
         when(stripeGateway.createCheckoutSession(any())).thenThrow(mock(StripeException.class));
 
-        assertThatThrownBy(() -> paymentService.initiateCheckout(userId))
+        assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null, null))
             .isInstanceOf(PaymentException.class)
             .extracting("errorCode")
             .isEqualTo("STRIPE_ERROR");

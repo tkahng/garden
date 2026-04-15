@@ -1,4 +1,21 @@
 services:
+  app:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-local}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/garden
+      SPRING_DATASOURCE_USERNAME: garden
+      SPRING_DATASOURCE_PASSWORD: garden
+      STORAGE_ENDPOINT: http://minio:9000
+      STORAGE_BASE_URL: http://localhost:9000/garden
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
   postgres:
     image: postgres:17-alpine
     environment:

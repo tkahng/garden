@@ -8,11 +8,15 @@ import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.inventory.service.InventoryService;
+import io.k2dv.garden.order.dto.OrderEventResponse;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderItemProductInfo;
 import io.k2dv.garden.order.dto.OrderItemResponse;
 import io.k2dv.garden.order.dto.OrderResponse;
+import io.k2dv.garden.order.dto.UpdateOrderRequest;
 import io.k2dv.garden.order.model.Order;
+import io.k2dv.garden.order.model.OrderEvent;
+import io.k2dv.garden.order.model.OrderEventType;
 import io.k2dv.garden.order.model.OrderItem;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.repository.OrderItemRepository;
@@ -59,6 +63,7 @@ public class OrderService {
     private final StorageService storageService;
     private final InventoryService inventoryService;
     private final StripeGateway stripeGateway;
+    private final OrderEventService orderEventService;
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
@@ -102,6 +107,9 @@ public class OrderService {
             orderItemRepo.save(item);
         }
 
+        orderEventService.emit(order.getId(), OrderEventType.ORDER_PLACED,
+            "Order placed", null, "system", null);
+
         return order;
     }
 
@@ -137,7 +145,43 @@ public class OrderService {
             orderItemRepo.save(orderItem);
         }
 
+        orderEventService.emit(order.getId(), OrderEventType.ORDER_PLACED,
+            "Order placed from quote", null, "system", null);
+
         return order;
+    }
+
+    @Transactional
+    public void applyDiscount(UUID orderId, UUID discountId, BigDecimal discountAmount) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setDiscountId(discountId);
+        order.setDiscountAmount(discountAmount);
+        order.setTotalAmount(order.getTotalAmount().subtract(discountAmount));
+        orderRepo.save(order);
+    }
+
+    @Transactional
+    public void applyGiftCard(UUID orderId, UUID giftCardId, BigDecimal giftCardAmount) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setGiftCardId(giftCardId);
+        order.setGiftCardAmount(giftCardAmount);
+        order.setTotalAmount(order.getTotalAmount().subtract(giftCardAmount));
+        orderRepo.save(order);
+    }
+
+    @Transactional
+    public void markPaidDirectly(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setStatus(OrderStatus.PAID);
+        orderRepo.save(order);
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
+            .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
+        orderEventService.emit(orderId, OrderEventType.PAYMENT_CONFIRMED,
+            "Payment fulfilled via gift card", null, "system", null);
     }
 
     @Transactional
@@ -159,6 +203,9 @@ public class OrderService {
             orderItemRepo.findByOrderId(order.getId()).stream()
                 .filter(item -> item.getVariantId() != null)
                 .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
+
+            orderEventService.emit(order.getId(), OrderEventType.PAYMENT_CONFIRMED,
+                "Payment confirmed via Stripe", null, "system", null);
         });
     }
 
@@ -172,6 +219,9 @@ public class OrderService {
             orderItemRepo.findByOrderId(order.getId()).stream()
                 .filter(item -> item.getVariantId() != null)
                 .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+
+            orderEventService.emit(order.getId(), OrderEventType.ORDER_CANCELLED,
+                "Order cancelled (Stripe session expired)", null, "system", null);
         });
     }
 
@@ -190,6 +240,8 @@ public class OrderService {
         orderItemRepo.findByOrderId(orderId).stream()
             .filter(item -> item.getVariantId() != null)
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+
+        orderEventService.emit(orderId, OrderEventType.ORDER_CANCELLED, "Order cancelled", null, "system", null);
     }
 
     @Transactional
@@ -244,6 +296,54 @@ public class OrderService {
     }
 
     @Transactional
+    public OrderResponse adminRefundOrder(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() == OrderStatus.REFUNDED) return toResponse(order);
+        if (order.getStatus() != OrderStatus.PAID) {
+            throw new ConflictException("INVALID_ORDER_STATUS",
+                "Cannot refund order in status: " + order.getStatus());
+        }
+        if (order.getStripePaymentIntentId() == null) {
+            throw new ConflictException("NO_PAYMENT_INTENT", "Order has no payment intent to refund");
+        }
+        try {
+            com.stripe.param.RefundCreateParams params = com.stripe.param.RefundCreateParams.builder()
+                .setPaymentIntent(order.getStripePaymentIntentId())
+                .build();
+            stripeGateway.createRefund(params);
+        } catch (com.stripe.exception.StripeException e) {
+            throw new io.k2dv.garden.payment.exception.PaymentException(
+                "STRIPE_REFUND_ERROR", "Failed to issue refund: " + e.getMessage());
+        }
+        order.setStatus(OrderStatus.REFUNDED);
+        orderRepo.save(order);
+        orderEventService.emit(orderId, OrderEventType.ADMIN_REFUND_ISSUED,
+            "Admin issued full refund", null, "admin", null);
+        return toResponse(order);
+    }
+
+    @Transactional
+    public OrderResponse updateOrder(UUID orderId, UpdateOrderRequest req) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (req.shippingAddress() != null) {
+            if (order.getStatus() == OrderStatus.PARTIALLY_FULFILLED
+                    || order.getStatus() == OrderStatus.FULFILLED) {
+                throw new ConflictException("ORDER_ALREADY_SHIPPED",
+                    "Cannot update shipping address after order has been shipped");
+            }
+            order.setShippingAddress(req.shippingAddress());
+        }
+        if (req.adminNotes() != null) {
+            order.setAdminNotes(req.adminNotes());
+            orderEventService.emit(orderId, OrderEventType.NOTE_ADDED,
+                "Admin note added", null, "admin", null);
+        }
+        return toResponse(orderRepo.save(order));
+    }
+
+    @Transactional
     public OrderResponse refundOrder(UUID orderId, UUID requestingUserId) {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
@@ -270,6 +370,8 @@ public class OrderService {
         }
         order.setStatus(OrderStatus.REFUNDED);
         orderRepo.save(order);
+        orderEventService.emit(orderId, OrderEventType.ORDER_REFUNDED,
+            "Customer-initiated refund", null, "system", null);
         return toResponse(order);
     }
 
@@ -326,6 +428,9 @@ public class OrderService {
 
         return new OrderResponse(order.getId(), order.getUserId(), order.getStatus(),
             order.getTotalAmount(), order.getCurrency(), order.getStripeSessionId(),
+            order.getDiscountId(), order.getDiscountAmount(),
+            order.getGiftCardId(), order.getGiftCardAmount(),
+            order.getAdminNotes(), order.getShippingAddress(),
             items, order.getCreatedAt());
     }
 }

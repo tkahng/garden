@@ -24,4 +24,16 @@ public class BlobObject extends BaseEntity {
 
     @Column(nullable = false)
     private long size;
+
+    @Column
+    private String alt;
+
+    @Column
+    private String title;
+
+    @Column
+    private Integer width;
+
+    @Column
+    private Integer height;
 }

@@ -9,8 +9,14 @@ import io.k2dv.garden.cart.model.Cart;
 import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.config.AppProperties;
+import io.k2dv.garden.discount.dto.DiscountApplication;
+import io.k2dv.garden.discount.service.DiscountService;
+import io.k2dv.garden.giftcard.dto.GiftCardApplication;
+import io.k2dv.garden.giftcard.service.GiftCardService;
 import io.k2dv.garden.order.model.Order;
+import io.k2dv.garden.order.model.OrderEventType;
 import io.k2dv.garden.order.model.OrderStatus;
+import io.k2dv.garden.order.service.OrderEventService;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
@@ -31,6 +37,7 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -44,10 +51,13 @@ public class PaymentService {
   private final AppProperties appProperties;
   private final QuoteRequestRepository quoteRequestRepo;
   private final AddressRepository addressRepo;
+  private final DiscountService discountService;
+  private final GiftCardService giftCardService;
+  private final OrderEventService orderEventService;
 
   // NOT @Transactional — Stripe call is outside transaction; each sub-call
   // manages its own tx
-  public CheckoutResponse initiateCheckout(UUID userId) {
+  public CheckoutResponse initiateCheckout(UUID userId, String discountCode, String giftCardCode) {
     if (addressRepo.findByUserIdAndIsDefaultTrue(userId).isEmpty()) {
       throw new ValidationException("NO_SHIPPING_ADDRESS", "A default shipping address is required before checkout");
     }
@@ -61,6 +71,36 @@ public class PaymentService {
 
     Order order = orderService.createFromCart(userId, cartItems);
 
+    // Apply discount before creating Stripe session
+    DiscountApplication discount = null;
+    if (discountCode != null && !discountCode.isBlank()) {
+      discount = discountService.redeem(discountCode, order.getTotalAmount());
+      orderService.applyDiscount(order.getId(), discount.discountId(), discount.discountedAmount());
+      order = orderService.getById(order.getId());
+      orderEventService.emit(order.getId(), OrderEventType.DISCOUNT_APPLIED,
+          "Discount '" + discount.code() + "' applied (−" + discount.discountedAmount() + ")",
+          null, "system", Map.of("discountId", discount.discountId().toString(),
+              "amount", discount.discountedAmount().toPlainString()));
+    }
+
+    // Apply gift card after discount
+    if (giftCardCode != null && !giftCardCode.isBlank()) {
+      GiftCardApplication gca = giftCardService.redeem(giftCardCode, order.getTotalAmount(),
+          order.getId(), order.getCurrency());
+      orderService.applyGiftCard(order.getId(), gca.giftCardId(), gca.appliedAmount());
+      order = orderService.getById(order.getId());
+      orderEventService.emit(order.getId(), OrderEventType.GIFT_CARD_APPLIED,
+          "Gift card '" + gca.code() + "' applied (−" + gca.appliedAmount() + ")",
+          null, "system", Map.of("giftCardId", gca.giftCardId().toString(),
+              "amount", gca.appliedAmount().toPlainString()));
+      // If gift card covers the full remaining total, mark paid and skip Stripe
+      if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
+        orderService.markPaidDirectly(order.getId());
+        cartService.markCheckedOut(cart.getId());
+        return new CheckoutResponse(null, order.getId());
+      }
+    }
+
     try {
       String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
 
@@ -68,34 +108,53 @@ public class PaymentService {
           .setMode(SessionCreateParams.Mode.PAYMENT)
           .setSuccessUrl(appProperties.getFrontendUrl()
               + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
-          // Both success and cancel redirect to the same return page; the page checks
-          // session status
           .setCancelUrl(appProperties.getFrontendUrl()
               + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
           .putMetadata("orderId", order.getId() != null ? order.getId().toString() : "");
 
-      for (CartItem cartItem : cartItems) {
-        ProductVariant variant = variantRepo.findById(cartItem.getVariantId())
-            .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
-                "Variant not found: " + cartItem.getVariantId()));
-        long unitAmountCents = cartItem.getUnitPrice()
+      if (discount != null) {
+        // Use single line item with discounted total when discount applies
+        long totalCents = order.getTotalAmount()
             .multiply(BigDecimal.valueOf(100))
             .setScale(0, RoundingMode.HALF_UP)
             .longValueExact();
-
         builder.addLineItem(
             SessionCreateParams.LineItem.builder()
-                .setQuantity((long) cartItem.getQuantity())
+                .setQuantity(1L)
                 .setPriceData(
                     SessionCreateParams.LineItem.PriceData.builder()
                         .setCurrency(currency)
-                        .setUnitAmount(unitAmountCents)
+                        .setUnitAmount(totalCents)
                         .setProductData(
                             SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                .setName(variant.getTitle())
+                                .setName("Order Total (discount applied)")
                                 .build())
                         .build())
                 .build());
+      } else {
+        for (CartItem cartItem : cartItems) {
+          ProductVariant variant = variantRepo.findById(cartItem.getVariantId())
+              .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
+                  "Variant not found: " + cartItem.getVariantId()));
+          long unitAmountCents = cartItem.getUnitPrice()
+              .multiply(BigDecimal.valueOf(100))
+              .setScale(0, RoundingMode.HALF_UP)
+              .longValueExact();
+
+          builder.addLineItem(
+              SessionCreateParams.LineItem.builder()
+                  .setQuantity((long) cartItem.getQuantity())
+                  .setPriceData(
+                      SessionCreateParams.LineItem.PriceData.builder()
+                          .setCurrency(currency)
+                          .setUnitAmount(unitAmountCents)
+                          .setProductData(
+                              SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                                  .setName(variant.getTitle())
+                                  .build())
+                          .build())
+                  .build());
+        }
       }
 
       Session session = stripeGateway.createCheckoutSession(builder.build());
