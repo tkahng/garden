@@ -100,6 +100,9 @@ public class VariantService {
         if (req.barcode() != null) v.setBarcode(req.barcode());
         if (req.weight() != null) v.setWeight(req.weight());
         if (req.weightUnit() != null) v.setWeightUnit(req.weightUnit());
+        if (req.fulfillmentType() != null) v.setFulfillmentType(req.fulfillmentType());
+        if (req.inventoryPolicy() != null) v.setInventoryPolicy(req.inventoryPolicy());
+        if (req.leadTimeDays() != null) v.setLeadTimeDays(req.leadTimeDays());
         return toResponse(variantRepo.save(v));
     }
 

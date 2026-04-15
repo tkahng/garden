@@ -37,7 +37,7 @@ class AdminProductControllerTest {
 
     private AdminProductResponse stubProduct() {
         return new AdminProductResponse(UUID.randomUUID(), "T-Shirt", null, "t-shirt",
-            null, null, ProductStatus.DRAFT, null, List.of(), List.of(), List.of(), null, null, null);
+            null, null, ProductStatus.DRAFT, null, List.of(), List.of(), List.of(), List.of(), null, null, null);
     }
 
     @Test
@@ -96,5 +96,37 @@ class AdminProductControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("[]"))
             .andExpect(status().isOk());
+    }
+
+    @Test
+    void createOptionValue_returns201() throws Exception {
+        var optionValueResponse = new io.k2dv.garden.product.dto.ProductOptionValueResponse(
+            UUID.randomUUID(), "Red", 0);
+        when(optionService.createOptionValue(any(), any(), any())).thenReturn(optionValueResponse);
+
+        mvc.perform(post("/api/v1/admin/products/{id}/options/{optId}/values",
+                    UUID.randomUUID(), UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"label\":\"Red\",\"position\":0}"))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.data.label").value("Red"));
+    }
+
+    @Test
+    void createOptionValue_missingLabel_returns400() throws Exception {
+        mvc.perform(post("/api/v1/admin/products/{id}/options/{optId}/values",
+                    UUID.randomUUID(), UUID.randomUUID())
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"label\":\"\",\"position\":0}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void deleteOptionValue_returns204() throws Exception {
+        doNothing().when(optionService).deleteOptionValue(any(), any(), any());
+
+        mvc.perform(delete("/api/v1/admin/products/{id}/options/{optId}/values/{valId}",
+                    UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID()))
+            .andExpect(status().isNoContent());
     }
 }

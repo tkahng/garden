@@ -145,12 +145,29 @@ public class AdminProductController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{id}/options/{optId}/values")
+    @HasPermission("product:write")
+    public ResponseEntity<ApiResponse<ProductOptionValueResponse>> createOptionValue(
+            @PathVariable UUID id, @PathVariable UUID optId,
+            @Valid @RequestBody CreateOptionValueRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(
+            ApiResponse.of(optionService.createOptionValue(id, optId, req)));
+    }
+
     @PatchMapping("/{id}/options/{optId}/values/{valId}")
     @HasPermission("product:write")
     public ResponseEntity<ApiResponse<ProductOptionValueResponse>> renameOptionValue(
             @PathVariable UUID id, @PathVariable UUID optId, @PathVariable UUID valId,
             @Valid @RequestBody RenameOptionValueRequest req) {
         return ResponseEntity.ok(ApiResponse.of(optionService.renameOptionValue(optId, valId, req)));
+    }
+
+    @DeleteMapping("/{id}/options/{optId}/values/{valId}")
+    @HasPermission("product:delete")
+    public ResponseEntity<Void> deleteOptionValue(
+            @PathVariable UUID id, @PathVariable UUID optId, @PathVariable UUID valId) {
+        optionService.deleteOptionValue(id, optId, valId);
+        return ResponseEntity.noContent().build();
     }
 
     // Inventory GET

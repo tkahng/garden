@@ -117,9 +117,9 @@ class ProductServiceIT extends AbstractIntegrationTest {
     void createVariant_withOptionValues_generatesTitle() {
         var product = productService.create(new CreateProductRequest("Shirt", null, null, null, null, List.of()));
         var colorOpt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
-        var redVal = optionService.createOptionValue(colorOpt.id(), new CreateOptionValueRequest("Red", 1));
+        var redVal = optionService.createOptionValue(product.id(), colorOpt.id(), new CreateOptionValueRequest("Red", 1));
         var sizeOpt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 2));
-        var lgVal = optionService.createOptionValue(sizeOpt.id(), new CreateOptionValueRequest("Large", 1));
+        var lgVal = optionService.createOptionValue(product.id(), sizeOpt.id(), new CreateOptionValueRequest("Large", 1));
 
         var req = new CreateVariantRequest(new java.math.BigDecimal("19.99"), null, null, null, null, null,
             List.of(redVal.id(), lgVal.id()));
@@ -132,7 +132,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
     void renameOptionValue_recomputesVariantTitles() {
         var product = productService.create(new CreateProductRequest("Hat", null, null, null, null, List.of()));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
-        var val = optionService.createOptionValue(opt.id(), new CreateOptionValueRequest("Blu", 1)); // typo
+        var val = optionService.createOptionValue(product.id(), opt.id(), new CreateOptionValueRequest("Blu", 1)); // typo
 
         var req = new CreateVariantRequest(new java.math.BigDecimal("25.00"), null, null, null, null, null,
             List.of(val.id()));

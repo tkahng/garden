@@ -35,6 +35,7 @@ public class ProductService {
     private final ProductTagRepository tagRepo;
     private final ProductImageRepository imageRepo;
     private final ProductOptionRepository optionRepo;
+    private final ProductOptionValueRepository optionValueRepo;
     private final ProductVariantRepository variantRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
@@ -210,8 +211,24 @@ public class ProductService {
         List<ProductVariant> variants = variantRepo.findByProductIdAndDeletedAtIsNullOrderByCreatedAtAsc(p.getId());
         List<ProductImage> images = imageRepo.findByProductIdOrderByPositionAsc(p.getId());
         List<ProductOption> options = optionRepo.findByProductIdOrderByPositionAsc(p.getId());
+        Set<UUID> optionIds = options.stream().map(ProductOption::getId).collect(Collectors.toSet());
         Map<UUID, String> optionNameById = options.stream()
             .collect(Collectors.toMap(ProductOption::getId, ProductOption::getName));
+
+        List<ProductOptionValue> allOptionValues = optionIds.isEmpty()
+            ? List.of()
+            : optionValueRepo.findByOptionIdInOrderByPositionAsc(optionIds);
+        Map<UUID, List<ProductOptionValueResponse>> valuesByOptionId = allOptionValues.stream()
+            .collect(Collectors.groupingBy(
+                ProductOptionValue::getOptionId,
+                Collectors.mapping(
+                    v -> new ProductOptionValueResponse(v.getId(), v.getLabel(), v.getPosition()),
+                    Collectors.toList())));
+
+        List<ProductOptionResponse> optionResponses = options.stream()
+            .map(o -> new ProductOptionResponse(o.getId(), o.getName(), o.getPosition(),
+                valuesByOptionId.getOrDefault(o.getId(), List.of())))
+            .toList();
 
         List<AdminVariantResponse> variantResponses = variants.stream().map(v -> {
             List<OptionValueLabel> labels = v.getOptionValues().stream()
@@ -237,7 +254,7 @@ public class ProductService {
 
         return new AdminProductResponse(p.getId(), p.getTitle(), p.getDescription(), p.getHandle(),
             p.getVendor(), p.getProductType(), p.getStatus(), p.getFeaturedImageId(),
-            variantResponses, imageResponses, tagNames,
+            variantResponses, optionResponses, imageResponses, tagNames,
             p.getCreatedAt(), p.getUpdatedAt(), p.getDeletedAt());
     }
 
