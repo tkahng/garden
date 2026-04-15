@@ -17,6 +17,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -937,8 +938,8 @@ public class DevDataSeeder implements ApplicationRunner {
             VALUES (?, ?, 'PAID', 'cs_test_seed_001', 'pi_test_seed_001',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order1Id, customerUserId, order1Total, shippingAddr,
-                Instant.now().minus(10, ChronoUnit.DAYS),
-                Instant.now().minus(10, ChronoUnit.DAYS));
+                Timestamp.from(Instant.now().minus(10, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(10, ChronoUnit.DAYS)));
         insertOrderItem(order1Id, tomatoVariantId,   2, new BigDecimal("3.99"));
         insertOrderItem(order1Id, lavenderVariantId, 1, new BigDecimal("8.99"));
         insertOrderEvent(order1Id, "ORDER_PLACED",  "Order placed");
@@ -954,8 +955,8 @@ public class DevDataSeeder implements ApplicationRunner {
             VALUES (?, ?, 'PAID', 'cs_test_seed_002', 'pi_test_seed_002',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order2Id, customerUserId, order2Total, shippingAddr,
-                Instant.now().minus(5, ChronoUnit.DAYS),
-                Instant.now().minus(5, ChronoUnit.DAYS));
+                Timestamp.from(Instant.now().minus(5, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(5, ChronoUnit.DAYS)));
         insertOrderItem(order2Id, trowelVariantId, 1, new BigDecimal("12.99"));
         insertOrderItem(order2Id, shearsVariantId, 1, new BigDecimal("24.99"));
         insertOrderEvent(order2Id, "ORDER_PLACED",    "Order placed");
@@ -971,8 +972,8 @@ public class DevDataSeeder implements ApplicationRunner {
             VALUES (?, ?, 'FULFILLED', 'cs_test_seed_003', 'pi_test_seed_003',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order3Id, customerUserId, order3Total, shippingAddr,
-                Instant.now().minus(20, ChronoUnit.DAYS),
-                Instant.now().minus(15, ChronoUnit.DAYS));
+                Timestamp.from(Instant.now().minus(20, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(15, ChronoUnit.DAYS)));
         insertOrderItem(order3Id, canVariantId,    1, new BigDecimal("18.50"));
         insertOrderItem(order3Id, glovesVariantId, 1, new BigDecimal("14.99"));
         insertOrderEvent(order3Id, "ORDER_PLACED",    "Order placed");
@@ -989,8 +990,8 @@ public class DevDataSeeder implements ApplicationRunner {
             VALUES (?, ?, 'PENDING_PAYMENT', 'cs_test_seed_004',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order4Id, customerUserId, order4Total, shippingAddr,
-                Instant.now().minus(1, ChronoUnit.HOURS),
-                Instant.now().minus(1, ChronoUnit.HOURS));
+                Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
+                Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)));
         insertOrderItem(order4Id, lavenderVariantId, 2, new BigDecimal("8.99"));
         insertOrderEvent(order4Id, "ORDER_PLACED", "Order placed, awaiting payment");
 
@@ -1002,8 +1003,8 @@ public class DevDataSeeder implements ApplicationRunner {
               (id, user_id, status, total_amount, currency, shipping_address, created_at, updated_at)
             VALUES (?, ?, 'CANCELLED', ?, 'usd', ?::jsonb, ?, ?)
             """, order5Id, customerUserId, order5Total, shippingAddr,
-                Instant.now().minus(30, ChronoUnit.DAYS),
-                Instant.now().minus(29, ChronoUnit.DAYS));
+                Timestamp.from(Instant.now().minus(30, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(29, ChronoUnit.DAYS)));
         insertOrderItem(order5Id, shearsVariantId, 1, new BigDecimal("24.99"));
         insertOrderEvent(order5Id, "ORDER_PLACED",   "Order placed");
         insertOrderEvent(order5Id, "ORDER_CANCELLED","Cancelled by customer");

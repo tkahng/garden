@@ -76,8 +76,7 @@ class ShippingServiceIT extends AbstractIntegrationTest {
                 null, null, null, null, null, null));
 
         List<ShippingRateResponse> rates = shippingService.findRatesForAddress("US", null, null);
-        assertThat(rates).isNotEmpty();
-        assertThat(rates.get(0).name()).isEqualTo("Ground");
+        assertThat(rates).anyMatch(r -> r.zoneId().equals(zone.id()) && r.name().equals("Ground"));
     }
 
     @Test
@@ -100,10 +99,10 @@ class ShippingServiceIT extends AbstractIntegrationTest {
             new CreateShippingRateRequest("Free Shipping", BigDecimal.ZERO,
                 null, null, new BigDecimal("100"), null, null, null));
 
-        // Order amount below minimum
+        // Order amount below minimum — check only rates from this zone
         List<ShippingRateResponse> rates = shippingService.findRatesForAddress(
             "US", null, new BigDecimal("50"));
-        assertThat(rates).noneMatch(r -> r.name().equals("Free Shipping"));
+        assertThat(rates).noneMatch(r -> r.zoneId().equals(zone.id()));
     }
 
     @Test
