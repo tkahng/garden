@@ -7,6 +7,7 @@ import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayInputStream;
@@ -16,6 +17,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +34,7 @@ public class DevDataSeeder implements ApplicationRunner {
 
     private final JdbcTemplate jdbc;
     private final StorageService storageService;
+    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     @Override
     public void run(ApplicationArguments args) {
@@ -48,6 +53,12 @@ public class DevDataSeeder implements ApplicationRunner {
         seedImages();
         seedCollectionImages();
         seedInventory(productIds, variantProductIds);
+        UUID customerUserId = seedUsers();
+        seedShipping();
+        seedOrders(customerUserId, productIds, variantProductIds);
+        seedDiscounts();
+        seedGiftCards();
+        seedB2bCompany(customerUserId);
         log.info("DevDataSeeder: done.");
     }
 
@@ -795,5 +806,316 @@ public class DevDataSeeder implements ApplicationRunner {
                 VALUES (?, ?, ?, ?)
                 """, UUID.randomUUID(), collectionId, pids.get(pos), pos + 1);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Users
+    // -------------------------------------------------------------------------
+
+    /** Seeds CUSTOMER, STAFF, and MANAGER test accounts (all with password "password").
+     *  Returns the CUSTOMER user UUID for use by downstream seeders. */
+    private UUID seedUsers() {
+        record UserSeed(String email, String firstName, String lastName, String role) {}
+
+        String hash = passwordEncoder.encode("password");
+
+        var users = List.of(
+            new UserSeed("customer@garden.local", "Carol",   "Customer", "CUSTOMER"),
+            new UserSeed("staff@garden.local",    "Sam",     "Staff",    "STAFF"),
+            new UserSeed("manager@garden.local",  "Marcus",  "Manager",  "MANAGER")
+        );
+
+        UUID customerUserId = null;
+        for (UserSeed u : users) {
+            UUID userId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO auth.users (id, email, first_name, last_name, status, email_verified_at)
+                VALUES (?, ?, ?, ?, 'ACTIVE', clock_timestamp())
+                ON CONFLICT (email) DO NOTHING
+                """, userId, u.email(), u.firstName(), u.lastName());
+
+            // Re-fetch in case of conflict (idempotent)
+            userId = jdbc.queryForObject(
+                "SELECT id FROM auth.users WHERE email = ?", UUID.class, u.email());
+
+            jdbc.update("""
+                INSERT INTO auth.identities (id, user_id, provider, account_id, password_hash)
+                VALUES (?, ?, 'CREDENTIALS', ?, ?)
+                ON CONFLICT (provider, account_id) DO NOTHING
+                """, UUID.randomUUID(), userId, userId.toString(), hash);
+
+            jdbc.update("""
+                INSERT INTO auth.user_roles (user_id, role_id)
+                SELECT ?, r.id FROM auth.roles r WHERE r.name = ?
+                ON CONFLICT DO NOTHING
+                """, userId, u.role());
+
+            if ("CUSTOMER".equals(u.role())) {
+                customerUserId = userId;
+            }
+        }
+
+        log.info("DevDataSeeder: seeded test users (customer / staff / manager) with password='password'");
+        return customerUserId;
+    }
+
+    // -------------------------------------------------------------------------
+    // Shipping
+    // -------------------------------------------------------------------------
+
+    private void seedShipping() {
+        UUID usZoneId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO shipping.shipping_zones (id, name, description, country_codes, is_active)
+            VALUES (?, 'United States', 'Domestic US shipping', ARRAY['US'], true)
+            """, usZoneId);
+
+        // Standard Shipping $5.99
+        jdbc.update("""
+            INSERT INTO shipping.shipping_rates
+              (id, zone_id, name, price, estimated_days_min, estimated_days_max, is_active)
+            VALUES (?, ?, 'Standard Shipping', 5.99, 5, 7, true)
+            """, UUID.randomUUID(), usZoneId);
+
+        // Free Shipping on orders >= $50
+        jdbc.update("""
+            INSERT INTO shipping.shipping_rates
+              (id, zone_id, name, price, min_order_amount, estimated_days_min, estimated_days_max, is_active)
+            VALUES (?, ?, 'Free Shipping', 0.00, 50.00, 5, 7, true)
+            """, UUID.randomUUID(), usZoneId);
+
+        // Express Shipping $14.99
+        jdbc.update("""
+            INSERT INTO shipping.shipping_rates
+              (id, zone_id, name, price, estimated_days_min, estimated_days_max, carrier, is_active)
+            VALUES (?, ?, 'Express Shipping', 14.99, 1, 2, 'UPS', true)
+            """, UUID.randomUUID(), usZoneId);
+
+        UUID intlZoneId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO shipping.shipping_zones (id, name, description, country_codes, is_active)
+            VALUES (?, 'International', 'Rest of world', ARRAY['CA','GB','AU','DE','FR'], true)
+            """, intlZoneId);
+
+        jdbc.update("""
+            INSERT INTO shipping.shipping_rates
+              (id, zone_id, name, price, estimated_days_min, estimated_days_max, is_active)
+            VALUES (?, ?, 'International Standard', 24.99, 10, 21, true)
+            """, UUID.randomUUID(), intlZoneId);
+
+        log.info("DevDataSeeder: seeded shipping zones and rates");
+    }
+
+    // -------------------------------------------------------------------------
+    // Orders
+    // -------------------------------------------------------------------------
+
+    private void seedOrders(UUID customerUserId, List<UUID> productIds, List<UUID> variantProductIds) {
+        // Look up variant IDs for a few simple products by product_id
+        // productIds: 0=Tomato($3.99), 1=Lavender($8.99), 2=Sunflower($4.49),
+        //             3=Trowel($12.99), 4=Shears($24.99), 5=WateringCan($18.50)
+        // variantProductIds: 0=Gloves, 1=CeramicPlanter
+        UUID tomatoVariantId   = firstVariantOf(productIds.get(0));
+        UUID lavenderVariantId = firstVariantOf(productIds.get(1));
+        UUID trowelVariantId   = firstVariantOf(productIds.get(3));
+        UUID shearsVariantId   = firstVariantOf(productIds.get(4));
+        UUID canVariantId      = firstVariantOf(productIds.get(5));
+        UUID glovesVariantId   = firstVariantOf(variantProductIds.get(0));  // S / Forest Green $14.99
+
+        String shippingAddr = """
+            {"firstName":"Carol","lastName":"Customer","address1":"123 Garden St",
+             "city":"Portland","province":"OR","zip":"97201","country":"US"}
+            """.strip();
+
+        // Order 1: PAID — tomato seeds x2 + lavender x1
+        UUID order1Id = UUID.randomUUID();
+        BigDecimal order1Total = new BigDecimal("16.97");
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+               total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'PAID', 'cs_test_seed_001', 'pi_test_seed_001',
+                    ?, 'usd', ?::jsonb, ?, ?)
+            """, order1Id, customerUserId, order1Total, shippingAddr,
+                Instant.now().minus(10, ChronoUnit.DAYS),
+                Instant.now().minus(10, ChronoUnit.DAYS));
+        insertOrderItem(order1Id, tomatoVariantId,   2, new BigDecimal("3.99"));
+        insertOrderItem(order1Id, lavenderVariantId, 1, new BigDecimal("8.99"));
+        insertOrderEvent(order1Id, "ORDER_PLACED",  "Order placed");
+        insertOrderEvent(order1Id, "PAYMENT_RECEIVED", "Payment received via Stripe");
+
+        // Order 2: PAID — trowel x1 + shears x1
+        UUID order2Id = UUID.randomUUID();
+        BigDecimal order2Total = new BigDecimal("37.98");
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+               total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'PAID', 'cs_test_seed_002', 'pi_test_seed_002',
+                    ?, 'usd', ?::jsonb, ?, ?)
+            """, order2Id, customerUserId, order2Total, shippingAddr,
+                Instant.now().minus(5, ChronoUnit.DAYS),
+                Instant.now().minus(5, ChronoUnit.DAYS));
+        insertOrderItem(order2Id, trowelVariantId, 1, new BigDecimal("12.99"));
+        insertOrderItem(order2Id, shearsVariantId, 1, new BigDecimal("24.99"));
+        insertOrderEvent(order2Id, "ORDER_PLACED",    "Order placed");
+        insertOrderEvent(order2Id, "PAYMENT_RECEIVED","Payment received via Stripe");
+
+        // Order 3: FULFILLED — watering can x1 + gloves M/Charcoal x1
+        UUID order3Id = UUID.randomUUID();
+        BigDecimal order3Total = new BigDecimal("33.49");
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+               total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'FULFILLED', 'cs_test_seed_003', 'pi_test_seed_003',
+                    ?, 'usd', ?::jsonb, ?, ?)
+            """, order3Id, customerUserId, order3Total, shippingAddr,
+                Instant.now().minus(20, ChronoUnit.DAYS),
+                Instant.now().minus(15, ChronoUnit.DAYS));
+        insertOrderItem(order3Id, canVariantId,    1, new BigDecimal("18.50"));
+        insertOrderItem(order3Id, glovesVariantId, 1, new BigDecimal("14.99"));
+        insertOrderEvent(order3Id, "ORDER_PLACED",    "Order placed");
+        insertOrderEvent(order3Id, "PAYMENT_RECEIVED","Payment received via Stripe");
+        insertOrderEvent(order3Id, "FULFILLMENT_CREATED", "Shipped via USPS — tracking: 9400111899223397910");
+
+        // Order 4: PENDING_PAYMENT — lavender x2
+        UUID order4Id = UUID.randomUUID();
+        BigDecimal order4Total = new BigDecimal("17.98");
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id,
+               total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'PENDING_PAYMENT', 'cs_test_seed_004',
+                    ?, 'usd', ?::jsonb, ?, ?)
+            """, order4Id, customerUserId, order4Total, shippingAddr,
+                Instant.now().minus(1, ChronoUnit.HOURS),
+                Instant.now().minus(1, ChronoUnit.HOURS));
+        insertOrderItem(order4Id, lavenderVariantId, 2, new BigDecimal("8.99"));
+        insertOrderEvent(order4Id, "ORDER_PLACED", "Order placed, awaiting payment");
+
+        // Order 5: CANCELLED — shears x1
+        UUID order5Id = UUID.randomUUID();
+        BigDecimal order5Total = new BigDecimal("24.99");
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'CANCELLED', ?, 'usd', ?::jsonb, ?, ?)
+            """, order5Id, customerUserId, order5Total, shippingAddr,
+                Instant.now().minus(30, ChronoUnit.DAYS),
+                Instant.now().minus(29, ChronoUnit.DAYS));
+        insertOrderItem(order5Id, shearsVariantId, 1, new BigDecimal("24.99"));
+        insertOrderEvent(order5Id, "ORDER_PLACED",   "Order placed");
+        insertOrderEvent(order5Id, "ORDER_CANCELLED","Cancelled by customer");
+
+        log.info("DevDataSeeder: seeded 5 sample orders");
+    }
+
+    private UUID firstVariantOf(UUID productId) {
+        return jdbc.queryForObject("""
+            SELECT id FROM catalog.product_variants WHERE product_id = ? LIMIT 1
+            """, UUID.class, productId);
+    }
+
+    private void insertOrderItem(UUID orderId, UUID variantId, int qty, BigDecimal unitPrice) {
+        jdbc.update("""
+            INSERT INTO checkout.order_items (id, order_id, variant_id, quantity, unit_price)
+            VALUES (?, ?, ?, ?, ?)
+            """, UUID.randomUUID(), orderId, variantId, qty, unitPrice);
+    }
+
+    private void insertOrderEvent(UUID orderId, String type, String message) {
+        jdbc.update("""
+            INSERT INTO checkout.order_events (id, order_id, type, message, author_name)
+            VALUES (?, ?, ?, ?, 'System')
+            """, UUID.randomUUID(), orderId, type, message);
+    }
+
+    // -------------------------------------------------------------------------
+    // Discounts
+    // -------------------------------------------------------------------------
+
+    private void seedDiscounts() {
+        // WELCOME10 — 10% off, no minimum, active
+        jdbc.update("""
+            INSERT INTO checkout.discounts
+              (id, code, type, value, max_uses, starts_at, is_active)
+            VALUES (?, 'WELCOME10', 'PERCENTAGE', 10.00, 500,
+                    clock_timestamp(), true)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID());
+
+        // SAVE5 — $5 flat, min order $25, active
+        jdbc.update("""
+            INSERT INTO checkout.discounts
+              (id, code, type, value, min_order_amount, max_uses, starts_at, is_active)
+            VALUES (?, 'SAVE5', 'FIXED_AMOUNT', 5.00, 25.00, 200,
+                    clock_timestamp(), true)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID());
+
+        // SUMMER25 — 25% off, expired (useful to test expired-code UI)
+        jdbc.update("""
+            INSERT INTO checkout.discounts
+              (id, code, type, value, starts_at, ends_at, is_active)
+            VALUES (?, 'SUMMER25', 'PERCENTAGE', 25.00,
+                    clock_timestamp() - INTERVAL '90 days',
+                    clock_timestamp() - INTERVAL '1 day',
+                    false)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID());
+
+        log.info("DevDataSeeder: seeded discount codes (WELCOME10, SAVE5, SUMMER25)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Gift cards
+    // -------------------------------------------------------------------------
+
+    private void seedGiftCards() {
+        UUID gcId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.gift_cards
+              (id, code, initial_balance, current_balance, currency, is_active, note)
+            VALUES (?, 'GIFT-5000-SEED', 50.00, 50.00, 'usd', true,
+                    'Seeded gift card for local dev testing')
+            ON CONFLICT DO NOTHING
+            """, gcId);
+
+        // A partially spent one
+        UUID gc2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.gift_cards
+              (id, code, initial_balance, current_balance, currency, is_active, note)
+            VALUES (?, 'GIFT-2500-SEED', 25.00, 12.50, 'usd', true,
+                    'Partially spent seeded gift card')
+            ON CONFLICT DO NOTHING
+            """, gc2Id);
+
+        log.info("DevDataSeeder: seeded gift cards (GIFT-5000-SEED, GIFT-2500-SEED)");
+    }
+
+    // -------------------------------------------------------------------------
+    // B2B
+    // -------------------------------------------------------------------------
+
+    private void seedB2bCompany(UUID customerUserId) {
+        UUID companyId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO b2b.companies
+              (id, name, tax_id, phone,
+               billing_address_line1, billing_city, billing_state,
+               billing_postal_code, billing_country)
+            VALUES (?, 'Green Thumb Nurseries LLC', '12-3456789', '+1-503-555-0100',
+                    '456 Bloom Ave', 'Portland', 'OR', '97202', 'US')
+            """, companyId);
+
+        jdbc.update("""
+            INSERT INTO b2b.company_memberships (id, company_id, user_id, role)
+            VALUES (?, ?, ?, 'OWNER')
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, customerUserId);
+
+        log.info("DevDataSeeder: seeded B2B company 'Green Thumb Nurseries LLC'");
     }
 }
