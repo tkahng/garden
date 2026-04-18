@@ -42,7 +42,7 @@ class QuoteControllerTest {
     private QuoteRequestResponse stubQuote(UUID id) {
         return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null,
             QuoteStatus.PENDING, "123 Main St", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
     }
 
     @Test
@@ -93,7 +93,7 @@ class QuoteControllerTest {
     void acceptQuote_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         when(quoteService.accept(any(), any()))
-            .thenReturn(new QuoteAcceptResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID()));
+            .thenReturn(new QuoteAcceptResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID(), false));
 
         mvc.perform(post("/api/v1/quotes/{id}/accept", id))
             .andExpect(status().isOk())
@@ -115,7 +115,7 @@ class QuoteControllerTest {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse rejected = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
             null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
         when(quoteService.reject(any(), any())).thenReturn(rejected);
 
         mvc.perform(post("/api/v1/quotes/{id}/reject", id))
@@ -128,7 +128,7 @@ class QuoteControllerTest {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse cancelled = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
             null, QuoteStatus.CANCELLED, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
         when(quoteService.cancelForUser(any(), any())).thenReturn(cancelled);
 
         mvc.perform(post("/api/v1/quotes/{id}/cancel", id))

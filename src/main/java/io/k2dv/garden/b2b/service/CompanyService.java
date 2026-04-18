@@ -1,6 +1,7 @@
 package io.k2dv.garden.b2b.service;
 
 import io.k2dv.garden.b2b.dto.*;
+import java.math.BigDecimal;
 import io.k2dv.garden.b2b.model.Company;
 import io.k2dv.garden.b2b.model.CompanyMembership;
 import io.k2dv.garden.b2b.model.CompanyRole;
@@ -106,6 +107,7 @@ public class CompanyService {
         membership.setCompanyId(companyId);
         membership.setUserId(user.getId());
         membership.setRole(CompanyRole.MEMBER);
+        membership.setSpendingLimit(req.spendingLimit());
         membership = membershipRepo.save(membership);
         return toMemberResponse(membership, user);
     }
@@ -121,8 +123,33 @@ public class CompanyService {
         membershipRepo.delete(membership);
     }
 
+    @Transactional
+    public CompanyMemberResponse updateSpendingLimit(UUID companyId, UUID targetUserId, UUID requestorId, UpdateSpendingLimitRequest req) {
+        requireOwner(companyId, requestorId);
+        CompanyMembership membership = membershipRepo.findByCompanyIdAndUserId(companyId, targetUserId)
+            .orElseThrow(() -> new NotFoundException("MEMBER_NOT_FOUND", "Member not found"));
+        membership.setSpendingLimit(req.spendingLimit());
+        membership = membershipRepo.save(membership);
+        User user = userRepo.findById(targetUserId).orElse(null);
+        return toMemberResponse(membership, user);
+    }
+
     public void requireMemberAccess(UUID companyId, UUID userId) {
         requireMember(companyId, userId);
+    }
+
+    @Transactional(readOnly = true)
+    public java.math.BigDecimal getSpendingLimit(UUID companyId, UUID userId) {
+        return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
+            .map(CompanyMembership::getSpendingLimit)
+            .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isOwner(UUID companyId, UUID userId) {
+        return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
+            .map(m -> m.getRole() == CompanyRole.OWNER)
+            .orElse(false);
     }
 
     private void requireMember(UUID companyId, UUID userId) {
@@ -157,6 +184,7 @@ public class CompanyService {
             user != null ? user.getFirstName() : null,
             user != null ? user.getLastName() : null,
             m.getRole(),
+            m.getSpendingLimit(),
             m.getCreatedAt()
         );
     }

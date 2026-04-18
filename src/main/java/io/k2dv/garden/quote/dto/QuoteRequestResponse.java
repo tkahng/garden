@@ -24,6 +24,8 @@ public record QuoteRequestResponse(
     Instant expiresAt,
     UUID pdfBlobId,
     UUID orderId,
+    UUID approverId,
+    Instant approvedAt,
     List<QuoteItemResponse> items,
     Instant createdAt,
     Instant updatedAt

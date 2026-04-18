@@ -71,6 +71,20 @@ public class QuoteController {
         return ResponseEntity.ok(ApiResponse.of(quoteService.cancelForUser(id, user.getId())));
     }
 
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<ApiResponse<QuoteAcceptResponse>> approveSpend(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(quoteService.approveSpend(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/reject-approval")
+    public ResponseEntity<ApiResponse<QuoteRequestResponse>> rejectSpend(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(quoteService.rejectSpend(id, user.getId())));
+    }
+
     @GetMapping("/{id}/pdf")
     public ResponseEntity<byte[]> downloadPdf(
         @CurrentUser User user,

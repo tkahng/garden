@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.util.UUID;
 
 @Entity
@@ -22,4 +23,7 @@ public class CompanyMembership extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private CompanyRole role = CompanyRole.MEMBER;
+
+    @Column(name = "spending_limit", precision = 19, scale = 4)
+    private BigDecimal spendingLimit;
 }

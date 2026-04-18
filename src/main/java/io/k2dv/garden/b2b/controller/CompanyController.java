@@ -77,6 +77,16 @@ public class CompanyController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{id}/members/{userId}/spending-limit")
+    public ResponseEntity<ApiResponse<CompanyMemberResponse>> updateSpendingLimit(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID userId,
+        @Valid @RequestBody UpdateSpendingLimitRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(
+            companyService.updateSpendingLimit(id, userId, user.getId(), req)));
+    }
+
     @GetMapping("/{id}/price-lists")
     public ResponseEntity<ApiResponse<List<PriceListResponse>>> listPriceLists(
         @CurrentUser User user,

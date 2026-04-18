@@ -49,7 +49,7 @@ class CompanyControllerTest {
 
     private CompanyMemberResponse stubMember(UUID userId) {
         return new CompanyMemberResponse(UUID.randomUUID(), userId, "user@example.com",
-            "Test", "User", CompanyRole.MEMBER, Instant.now());
+            "Test", "User", CompanyRole.MEMBER, null, Instant.now());
     }
 
     @Test
@@ -124,7 +124,7 @@ class CompanyControllerTest {
 
         mvc.perform(post("/api/v1/companies/{id}/members", companyId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(new AddMemberRequest("user@example.com"))))
+                .content(objectMapper.writeValueAsString(new AddMemberRequest("user@example.com", null))))
             .andExpect(status().isOk());
     }
 
@@ -135,7 +135,7 @@ class CompanyControllerTest {
 
         mvc.perform(post("/api/v1/companies/{id}/members", UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(new AddMemberRequest("nobody@example.com"))))
+                .content(objectMapper.writeValueAsString(new AddMemberRequest("nobody@example.com", null))))
             .andExpect(status().isNotFound());
     }
 

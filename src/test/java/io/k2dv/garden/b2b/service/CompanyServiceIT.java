@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -24,14 +25,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class CompanyServiceIT extends AbstractIntegrationTest {
 
-    @Autowired
-    CompanyService companyService;
-    @Autowired
-    AuthService authService;
-    @Autowired
-    UserRepository userRepo;
-    @MockitoBean
-    EmailService emailService;
+    @Autowired CompanyService companyService;
+    @Autowired AuthService authService;
+    @Autowired UserRepository userRepo;
+    @MockitoBean EmailService emailService;
 
     private static final AtomicInteger counter = new AtomicInteger(0);
 
@@ -68,10 +65,10 @@ class CompanyServiceIT extends AbstractIntegrationTest {
     void listForUser_returnsOwnedAndMemberCompanies() {
         CompanyResponse c1 = companyService.create(ownerUserId,
             new CreateCompanyRequest("Company A", null, null, null, null, null, null, null, null));
-        companyService.addMember(c1.id(), ownerUserId, new AddMemberRequest(
-            userRepo.findById(memberUserId).orElseThrow().getEmail()));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(c1.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
 
-        CompanyResponse c2 = companyService.create(memberUserId,
+        companyService.create(memberUserId,
             new CreateCompanyRequest("Company B", null, null, null, null, null, null, null, null));
 
         List<CompanyResponse> forOwner = companyService.listForUser(ownerUserId);
@@ -97,8 +94,8 @@ class CompanyServiceIT extends AbstractIntegrationTest {
     void update_byMember_throwsForbidden() {
         CompanyResponse company = companyService.create(ownerUserId,
             new CreateCompanyRequest("Acme", null, null, null, null, null, null, null, null));
-        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(
-            userRepo.findById(memberUserId).orElseThrow().getEmail()));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
 
         assertThatThrownBy(() -> companyService.update(company.id(), memberUserId,
             new UpdateCompanyRequest("Hacked", null, null, null, null, null, null, null, null)))
@@ -112,10 +109,37 @@ class CompanyServiceIT extends AbstractIntegrationTest {
         String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
 
         CompanyMemberResponse member = companyService.addMember(company.id(), ownerUserId,
-            new AddMemberRequest(memberEmail));
+            new AddMemberRequest(memberEmail, null));
 
         assertThat(member.userId()).isEqualTo(memberUserId);
         assertThat(member.role()).isEqualTo(CompanyRole.MEMBER);
+        assertThat(member.spendingLimit()).isNull();
+    }
+
+    @Test
+    void addMember_withSpendingLimit_setsLimit() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+
+        CompanyMemberResponse member = companyService.addMember(company.id(), ownerUserId,
+            new AddMemberRequest(memberEmail, new BigDecimal("5000.00")));
+
+        assertThat(member.spendingLimit()).isEqualByComparingTo("5000.00");
+    }
+
+    @Test
+    void updateSpendingLimit_byOwner_updatesLimit() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
+
+        CompanyMemberResponse updated = companyService.updateSpendingLimit(
+            company.id(), memberUserId, ownerUserId,
+            new UpdateSpendingLimitRequest(new BigDecimal("2500.00")));
+
+        assertThat(updated.spendingLimit()).isEqualByComparingTo("2500.00");
     }
 
     @Test
@@ -123,10 +147,10 @@ class CompanyServiceIT extends AbstractIntegrationTest {
         CompanyResponse company = companyService.create(ownerUserId,
             new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
         String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
-        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail));
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
 
         assertThatThrownBy(() -> companyService.addMember(company.id(), ownerUserId,
-            new AddMemberRequest(memberEmail)))
+            new AddMemberRequest(memberEmail, null)))
             .isInstanceOf(ConflictException.class);
     }
 
@@ -135,7 +159,7 @@ class CompanyServiceIT extends AbstractIntegrationTest {
         CompanyResponse company = companyService.create(ownerUserId,
             new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
         String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
-        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail));
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
 
         companyService.removeMember(company.id(), ownerUserId, memberUserId);
 
@@ -167,7 +191,7 @@ class CompanyServiceIT extends AbstractIntegrationTest {
             new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
 
         assertThatThrownBy(() -> companyService.addMember(company.id(), ownerUserId,
-            new AddMemberRequest("nobody@unknown.example")))
+            new AddMemberRequest("nobody@unknown.example", null)))
             .isInstanceOf(NotFoundException.class);
     }
 }

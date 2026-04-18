@@ -62,4 +62,10 @@ public class QuoteRequest extends BaseEntity {
 
     @Column(name = "order_id")
     private UUID orderId;
+
+    @Column(name = "approver_id")
+    private UUID approverId;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
 }
