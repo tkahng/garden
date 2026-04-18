@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,6 +24,7 @@ import java.util.UUID;
 public class CompanyController {
 
     private final CompanyService companyService;
+    private final PriceListService priceListService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<CompanyResponse>> create(
@@ -73,5 +75,23 @@ public class CompanyController {
         @PathVariable UUID userId) {
         companyService.removeMember(id, user.getId(), userId);
         return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/{id}/price-lists")
+    public ResponseEntity<ApiResponse<List<PriceListResponse>>> listPriceLists(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(priceListService.listByCompany(id)));
+    }
+
+    @GetMapping("/{id}/price")
+    public ResponseEntity<ApiResponse<ResolvedPriceResponse>> resolvePrice(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @RequestParam UUID variantId,
+        @RequestParam(defaultValue = "1") int qty) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(priceListService.resolvePrice(id, variantId, qty)));
     }
 }

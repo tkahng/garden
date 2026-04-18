@@ -121,6 +121,10 @@ public class CompanyService {
         membershipRepo.delete(membership);
     }
 
+    public void requireMemberAccess(UUID companyId, UUID userId) {
+        requireMember(companyId, userId);
+    }
+
     private void requireMember(UUID companyId, UUID userId) {
         if (!membershipRepo.existsByCompanyIdAndUserId(companyId, userId)) {
             throw new ForbiddenException("NOT_A_MEMBER", "You are not a member of this company");

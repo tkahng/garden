@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.CompanyRole;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.config.TestCurrentUserConfig;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.shared.dto.ApiResponse;
@@ -38,6 +39,8 @@ class CompanyControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     @MockitoBean
     CompanyService companyService;
+    @MockitoBean
+    PriceListService priceListService;
 
     private CompanyResponse stubCompany(UUID id) {
         return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null,
