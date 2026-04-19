@@ -1100,7 +1100,8 @@ public class DevDataSeeder implements ApplicationRunner {
     // B2B
     // -------------------------------------------------------------------------
 
-    private void seedB2bCompany(UUID customerUserId) {
+    private void seedB2bCompany(UUID ownerUserId) {
+        // ─── Company ─────────────────────────────────────────────────────────
         UUID companyId = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO b2b.companies
@@ -1111,12 +1112,220 @@ public class DevDataSeeder implements ApplicationRunner {
                     '456 Bloom Ave', 'Portland', 'OR', '97202', 'US')
             """, companyId);
 
+        // ─── Memberships ─────────────────────────────────────────────────────
+        // OWNER = existing customer user (carol@garden.local)
         jdbc.update("""
             INSERT INTO b2b.company_memberships (id, company_id, user_id, role)
-            VALUES (?, ?, ?, 'OWNER')
-            ON CONFLICT DO NOTHING
-            """, UUID.randomUUID(), companyId, customerUserId);
+            VALUES (?, ?, ?, 'OWNER') ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, ownerUserId);
 
-        log.info("DevDataSeeder: seeded B2B company 'Green Thumb Nurseries LLC'");
+        // Seed two extra B2B users (MANAGER and MEMBER)
+        UUID managerId = seedB2bUser("b2b-manager@garden.local", "Marcus", "Manager");
+        UUID memberId  = seedB2bUser("b2b-member@garden.local",  "Maria",  "Member");
+
+        jdbc.update("""
+            INSERT INTO b2b.company_memberships (id, company_id, user_id, role)
+            VALUES (?, ?, ?, 'MANAGER') ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, managerId);
+
+        // MEMBER with a $2,000 spending limit
+        jdbc.update("""
+            INSERT INTO b2b.company_memberships (id, company_id, user_id, role, spending_limit)
+            VALUES (?, ?, ?, 'MEMBER', ?) ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, memberId, new BigDecimal("2000.00"));
+
+        // ─── Credit account (NET-30, $5,000 limit) ────────────────────────
+        jdbc.update("""
+            INSERT INTO b2b.credit_accounts (id, company_id, credit_limit, payment_terms_days)
+            VALUES (?, ?, 5000.00, 30)
+            """, UUID.randomUUID(), companyId);
+
+        // ─── Price list + entries ─────────────────────────────────────────
+        UUID priceListId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO b2b.price_lists (id, company_id, name, currency, priority)
+            VALUES (?, ?, 'Contract Pricing 2026', 'USD', 10)
+            """, priceListId, companyId);
+
+        UUID trowelVid    = variantIdBySku("SKU-004");
+        UUID shearsVid    = variantIdBySku("SKU-005");
+        UUID glovesVid    = variantIdBySku("SKU-G-M-GRN");
+        UUID lavenderVid  = variantIdBySku("SKU-002");
+        UUID sunflowerVid = variantIdBySku("SKU-003");
+
+        insertPriceListEntry(priceListId, trowelVid,   new BigDecimal("9.99"),  1);
+        insertPriceListEntry(priceListId, shearsVid,   new BigDecimal("19.99"), 1);
+        insertPriceListEntry(priceListId, glovesVid,   new BigDecimal("11.99"), 1);
+        insertPriceListEntry(priceListId, glovesVid,   new BigDecimal("9.99"),  10); // volume tier
+        insertPriceListEntry(priceListId, lavenderVid, new BigDecimal("6.99"),  1);
+        insertPriceListEntry(priceListId, sunflowerVid,new BigDecimal("3.49"),  1);
+
+        // ─── Shared delivery address ──────────────────────────────────────
+        String addr  = "456 Bloom Ave";
+        String city  = "Portland";
+        String state = "OR";
+        String zip   = "97202";
+        String ctry  = "US";
+
+        // ─── Quote 1: PENDING — just submitted, awaiting staff assignment ─
+        UUID quote1Id = UUID.randomUUID();
+        UUID grfcVid  = variantIdBySku("SKU-QO-001");
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               customer_notes, created_at, updated_at)
+            VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?,
+                    'Please include care instructions for the trough planter.', ?, ?)
+            """, quote1Id, ownerUserId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().minus(2, ChronoUnit.HOURS)),
+                Timestamp.from(Instant.now().minus(2, ChronoUnit.HOURS)));
+        insertQuoteItem(quote1Id, grfcVid, "GFRC Trough Planter — 48in × 18in × 20in, Charcoal finish", 2, null);
+
+        // ─── Quote 2: SENT — priced by staff, expires in 14 days ─────────
+        UUID quote2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               customer_notes, staff_notes, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'SENT', ?, ?, ?, ?, ?,
+                    'Large-volume order for spring restock.',
+                    'Contract pricing applied. Freight included in unit price.',
+                    ?, ?, ?)
+            """, quote2Id, managerId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().plus(14, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(3, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(1, ChronoUnit.DAYS)));
+        insertQuoteItem(quote2Id, trowelVid,  "Garden Trowel",                        20, new BigDecimal("9.99"));
+        insertQuoteItem(quote2Id, shearsVid,  "Pruning Shears",                       10, new BigDecimal("19.99"));
+        insertQuoteItem(quote2Id, glovesVid,  "Gardening Gloves (M / Forest Green)",  50, new BigDecimal("9.99"));
+
+        // ─── Quote 3: ACCEPTED — invoiced via net terms ───────────────────
+        UUID quote3Id    = UUID.randomUUID();
+        BigDecimal q3Total = new BigDecimal("296.95"); // 30×6.99 + 25×3.49
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'ACCEPTED', ?, ?, ?, ?, ?,
+                    ?, ?, ?)
+            """, quote3Id, memberId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().plus(30, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(15, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS)));
+        insertQuoteItem(quote3Id, lavenderVid,  "Lavender Starter Pack", 30, new BigDecimal("6.99"));
+        insertQuoteItem(quote3Id, sunflowerVid, "Sunflower Mix",          25, new BigDecimal("3.49"));
+
+        // Corresponding INVOICED order and invoice
+        String invoiceAddr = """
+            {"firstName":"Maria","lastName":"Member","address1":"456 Bloom Ave",
+             "city":"Portland","province":"OR","zip":"97202","country":"US"}
+            """.strip();
+        UUID invoiceOrderId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'INVOICED', ?, 'usd', ?::jsonb, ?, ?)
+            """, invoiceOrderId, memberId, q3Total, invoiceAddr,
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS)));
+        insertOrderItem(invoiceOrderId, lavenderVid,  30, new BigDecimal("6.99"));
+        insertOrderItem(invoiceOrderId, sunflowerVid, 25, new BigDecimal("3.49"));
+
+        jdbc.update("UPDATE quote.quote_requests SET order_id = ? WHERE id = ?",
+            invoiceOrderId, quote3Id);
+
+        jdbc.update("""
+            INSERT INTO b2b.invoices
+              (id, company_id, order_id, quote_id, status,
+               total_amount, paid_amount, currency, due_at)
+            VALUES (?, ?, ?, ?, 'ISSUED', ?, 0, 'USD', ?)
+            """, UUID.randomUUID(), companyId, invoiceOrderId, quote3Id,
+                q3Total,
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS).plus(30, ChronoUnit.DAYS)));
+
+        // ─── Quote 4: CANCELLED ───────────────────────────────────────────
+        UUID quote4Id      = UUID.randomUUID();
+        UUID bluestoneVid  = variantIdBySku("SKU-QO-002");
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               created_at, updated_at)
+            VALUES (?, ?, ?, 'CANCELLED', ?, ?, ?, ?, ?, ?, ?)
+            """, quote4Id, ownerUserId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().minus(20, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(18, ChronoUnit.DAYS)));
+        insertQuoteItem(quote4Id, bluestoneVid,
+            "Bluestone Outdoor Pavers — Natural Cleft, 18×18 in", 200, null);
+
+        // ─── Pending invitation ───────────────────────────────────────────
+        jdbc.update("""
+            INSERT INTO b2b.company_invitations
+              (id, company_id, email, role, spending_limit, token, invited_by, status, expires_at)
+            VALUES (?, ?, 'newbuyer@example.com', 'MEMBER', 1500.00,
+                    '00000000-b2b0-0000-0000-000000000001',
+                    ?, 'PENDING', ?)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, ownerUserId,
+                Timestamp.from(Instant.now().plus(7, ChronoUnit.DAYS)));
+
+        log.info("DevDataSeeder: seeded B2B company 'Green Thumb Nurseries LLC' " +
+            "with 3 members, price list, 4 quotes, credit account, and pending invitation");
+    }
+
+    /** Seeds a CUSTOMER-role user with password "password" and returns their UUID. */
+    private UUID seedB2bUser(String email, String firstName, String lastName) {
+        String hash = passwordEncoder.encode("password");
+        UUID userId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO auth.users (id, email, first_name, last_name, status, email_verified_at)
+            VALUES (?, ?, ?, ?, 'ACTIVE', clock_timestamp())
+            ON CONFLICT (email) DO NOTHING
+            """, userId, email, firstName, lastName);
+        userId = jdbc.queryForObject("SELECT id FROM auth.users WHERE email = ?", UUID.class, email);
+        jdbc.update("""
+            INSERT INTO auth.identities (id, user_id, provider, account_id, password_hash)
+            VALUES (?, ?, 'CREDENTIALS', ?, ?)
+            ON CONFLICT (provider, account_id) DO NOTHING
+            """, UUID.randomUUID(), userId, userId.toString(), hash);
+        jdbc.update("""
+            INSERT INTO auth.user_roles (user_id, role_id)
+            SELECT ?, r.id FROM auth.roles r WHERE r.name = 'CUSTOMER'
+            ON CONFLICT DO NOTHING
+            """, userId);
+        return userId;
+    }
+
+    private UUID variantIdBySku(String sku) {
+        return jdbc.queryForObject(
+            "SELECT id FROM catalog.product_variants WHERE sku = ?", UUID.class, sku);
+    }
+
+    private void insertPriceListEntry(UUID priceListId, UUID variantId, BigDecimal price, int minQty) {
+        jdbc.update("""
+            INSERT INTO b2b.price_list_entries (id, price_list_id, variant_id, price, min_qty)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT ON CONSTRAINT uq_price_list_entry DO NOTHING
+            """, UUID.randomUUID(), priceListId, variantId, price, minQty);
+    }
+
+    private void insertQuoteItem(UUID quoteRequestId, UUID variantId, String description,
+                                  int quantity, BigDecimal unitPrice) {
+        jdbc.update("""
+            INSERT INTO quote.quote_items
+              (id, quote_request_id, variant_id, description, quantity, unit_price)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, UUID.randomUUID(), quoteRequestId, variantId, description, quantity, unitPrice);
     }
 }
