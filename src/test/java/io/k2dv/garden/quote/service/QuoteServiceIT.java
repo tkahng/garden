@@ -6,7 +6,10 @@ import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.dto.AddMemberRequest;
 import io.k2dv.garden.b2b.dto.CompanyResponse;
 import io.k2dv.garden.b2b.dto.CreateCompanyRequest;
+import io.k2dv.garden.b2b.dto.CreateCreditAccountRequest;
+import io.k2dv.garden.b2b.model.InvoiceStatus;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.inventory.model.InventoryLevel;
@@ -53,6 +56,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
     @Autowired QuoteService quoteService;
     @Autowired QuoteCartService quoteCartService;
     @Autowired CompanyService companyService;
+    @Autowired CreditAccountService creditAccountService;
     @Autowired ProductService productService;
     @Autowired VariantService variantService;
     @Autowired AuthService authService;
@@ -486,5 +490,78 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> quoteService.rejectSpend(quote.id(), memberId))
             .isInstanceOf(ForbiddenException.class)
             .extracting("errorCode").isEqualTo("NOT_COMPANY_OWNER");
+    }
+
+    // --- Net terms path ---
+
+    private void createCreditAccount(BigDecimal limit) {
+        creditAccountService.create(
+            new CreateCreditAccountRequest(companyId, limit, 30, "USD"));
+    }
+
+    @Test
+    void accept_withCreditAccount_createsInvoiceInsteadOfStripe() {
+        createCreditAccount(new BigDecimal("50000.00"));
+
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("150.00")));
+        sendQuote(quote.id());
+
+        QuoteAcceptResponse response = quoteService.accept(quote.id(), userId);
+
+        assertThat(response.checkoutUrl()).isNull();
+        assertThat(response.invoiceId()).isNotNull();
+        assertThat(response.orderId()).isNotNull();
+        assertThat(response.pendingApproval()).isFalse();
+        assertThat(quoteService.getAdmin(quote.id()).status()).isEqualTo(QuoteStatus.ACCEPTED);
+    }
+
+    @Test
+    void accept_withCreditAccount_creditLimitExceeded_throwsConflict() {
+        createCreditAccount(new BigDecimal("1.00")); // limit far below order total
+
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("150.00"))); // total = 300
+        sendQuote(quote.id());
+
+        assertThatThrownBy(() -> quoteService.accept(quote.id(), userId))
+            .isInstanceOf(io.k2dv.garden.shared.exception.ConflictException.class)
+            .extracting("errorCode").isEqualTo("CREDIT_LIMIT_EXCEEDED");
+    }
+
+    @Test
+    void approveSpend_withCreditAccount_createsInvoice() {
+        createCreditAccount(new BigDecimal("50000.00"));
+
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00"))); // total 1000 > limit 100
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId); // → PENDING_APPROVAL
+
+        QuoteAcceptResponse approved = quoteService.approveSpend(quote.id(), userId);
+
+        assertThat(approved.invoiceId()).isNotNull();
+        assertThat(approved.checkoutUrl()).isNull();
+        assertThat(approved.orderId()).isNotNull();
+        assertThat(quoteService.getAdmin(quote.id()).status()).isEqualTo(QuoteStatus.ACCEPTED);
+    }
+
+    @Test
+    void accept_withCreditAccount_noCreditLimit_usesStripeWhenNoCreditAccount() {
+        // no credit account → Stripe path still works
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("150.00")));
+        sendQuote(quote.id());
+
+        QuoteAcceptResponse response = quoteService.accept(quote.id(), userId);
+
+        assertThat(response.checkoutUrl()).isNotBlank();
+        assertThat(response.invoiceId()).isNull();
     }
 }
