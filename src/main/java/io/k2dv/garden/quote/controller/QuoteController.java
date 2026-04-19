@@ -43,6 +43,15 @@ public class QuoteController {
             quoteService.listForUser(user.getId(), PageRequest.of(page, size))));
     }
 
+    @GetMapping("/pending-approvals")
+    public ResponseEntity<ApiResponse<PagedResult<QuoteRequestResponse>>> listPendingApprovals(
+        @CurrentUser User user,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(ApiResponse.of(
+            quoteService.listPendingApprovals(user.getId(), PageRequest.of(page, size))));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<QuoteRequestResponse>> get(
         @CurrentUser User user,

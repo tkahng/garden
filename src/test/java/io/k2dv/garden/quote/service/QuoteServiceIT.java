@@ -564,4 +564,55 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         assertThat(response.checkoutUrl()).isNotBlank();
         assertThat(response.invoiceId()).isNull();
     }
+
+    // --- Pending approvals list ---
+
+    @Test
+    void listPendingApprovals_ownerSeesTeamPendingQuotes() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId); // → PENDING_APPROVAL
+
+        var result = quoteService.listPendingApprovals(userId, PageRequest.of(0, 20));
+
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).id()).isEqualTo(quote.id());
+        assertThat(result.getContent().get(0).status()).isEqualTo(QuoteStatus.PENDING_APPROVAL);
+    }
+
+    @Test
+    void listPendingApprovals_memberSeesNothing() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId);
+
+        // member is not an OWNER → empty list
+        var result = quoteService.listPendingApprovals(memberId, PageRequest.of(0, 20));
+        assertThat(result.getContent()).isEmpty();
+    }
+
+    @Test
+    void listPendingApprovals_afterApproval_quoteRemovedFromList() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId);
+
+        assertThat(quoteService.listPendingApprovals(userId, PageRequest.of(0, 20)).getContent()).hasSize(1);
+
+        quoteService.approveSpend(quote.id(), userId);
+
+        assertThat(quoteService.listPendingApprovals(userId, PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
 }

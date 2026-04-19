@@ -1,6 +1,7 @@
 package io.k2dv.garden.b2b.repository;
 
 import io.k2dv.garden.b2b.model.CompanyMembership;
+import io.k2dv.garden.b2b.model.CompanyRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
@@ -16,4 +17,6 @@ public interface CompanyMembershipRepository extends JpaRepository<CompanyMember
     Optional<CompanyMembership> findByCompanyIdAndUserId(UUID companyId, UUID userId);
 
     boolean existsByCompanyIdAndUserId(UUID companyId, UUID userId);
+
+    List<CompanyMembership> findByUserIdAndRole(UUID userId, CompanyRole role);
 }

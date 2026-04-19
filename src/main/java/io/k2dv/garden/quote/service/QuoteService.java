@@ -2,6 +2,7 @@ package io.k2dv.garden.quote.service;
 
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.model.Company;
+import io.k2dv.garden.b2b.model.CompanyRole;
 import io.k2dv.garden.b2b.model.CreditAccount;
 import io.k2dv.garden.b2b.model.Invoice;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
@@ -131,6 +132,21 @@ public class QuoteService {
     public PagedResult<QuoteRequestResponse> listForUser(UUID userId, Pageable pageable) {
         Specification<QuoteRequest> spec = (root, query, cb) ->
             cb.equal(root.get("userId"), userId);
+        return PagedResult.of(quoteRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResult<QuoteRequestResponse> listPendingApprovals(UUID userId, Pageable pageable) {
+        List<UUID> ownedCompanyIds = membershipRepo
+            .findByUserIdAndRole(userId, CompanyRole.OWNER)
+            .stream().map(m -> m.getCompanyId()).toList();
+        if (ownedCompanyIds.isEmpty()) {
+            return PagedResult.of(org.springframework.data.domain.Page.empty(pageable), this::toResponse);
+        }
+        Specification<QuoteRequest> spec = (root, query, cb) -> cb.and(
+            root.get("companyId").in(ownedCompanyIds),
+            cb.equal(root.get("status"), QuoteStatus.PENDING_APPROVAL)
+        );
         return PagedResult.of(quoteRepo.findAll(spec, pageable), this::toResponse);
     }
 
