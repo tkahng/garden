@@ -7,7 +7,10 @@ import io.k2dv.garden.b2b.dto.AddMemberRequest;
 import io.k2dv.garden.b2b.dto.CompanyResponse;
 import io.k2dv.garden.b2b.dto.CreateCompanyRequest;
 import io.k2dv.garden.b2b.dto.CreateCreditAccountRequest;
+import io.k2dv.garden.b2b.dto.CreatePriceListRequest;
+import io.k2dv.garden.b2b.dto.UpsertPriceListEntryRequest;
 import io.k2dv.garden.b2b.model.InvoiceStatus;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
@@ -57,6 +60,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
     @Autowired QuoteCartService quoteCartService;
     @Autowired CompanyService companyService;
     @Autowired CreditAccountService creditAccountService;
+    @Autowired PriceListService priceListService;
     @Autowired ProductService productService;
     @Autowired VariantService variantService;
     @Autowired AuthService authService;
@@ -678,5 +682,26 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         quoteService.approveSpend(quote.id(), userId);
 
         assertThat(quoteService.listPendingApprovals(userId, PageRequest.of(0, 20)).getContent()).isEmpty();
+    }
+
+    @Test
+    void submit_withContractPriceList_prePricedLineItems() {
+        var pl = priceListService.create(
+            new CreatePriceListRequest(companyId, "Contract", "USD", 10, null, null));
+        priceListService.upsertEntry(pl.id(), variant.id(),
+            new UpsertPriceListEntryRequest(new BigDecimal("7.50"), 1));
+
+        QuoteRequestResponse quote = submitQuote();
+
+        assertThat(quote.items()).hasSize(1);
+        assertThat(quote.items().get(0).unitPrice()).isEqualByComparingTo("7.50");
+    }
+
+    @Test
+    void submit_withoutPriceList_unitPriceIsNull() {
+        QuoteRequestResponse quote = submitQuote();
+
+        assertThat(quote.items()).hasSize(1);
+        assertThat(quote.items().get(0).unitPrice()).isNull();
     }
 }

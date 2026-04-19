@@ -10,6 +10,7 @@ import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.b2b.service.InvoiceService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.blob.model.BlobObject;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
@@ -57,6 +58,7 @@ public class QuoteService {
     private final CompanyService companyService;
     private final CreditAccountService creditAccountService;
     private final InvoiceService invoiceService;
+    private final PriceListService priceListService;
     private final ProductVariantRepository variantRepo;
     private final OrderService orderService;
     private final PaymentService paymentService;
@@ -96,17 +98,19 @@ public class QuoteService {
         quote.setCustomerNotes(req.customerNotes());
         quote = quoteRepo.save(quote);
 
-        // Copy cart items to quote items
+        // Copy cart items to quote items, pre-populating contract price when available
         for (io.k2dv.garden.quote.model.QuoteCartItem cartItem : cartItems) {
             ProductVariant variant = variantRepo.findById(cartItem.getVariantId()).orElse(null);
             String description = variant != null ? variant.getTitle() : "Unknown item";
+
+            var resolved = priceListService.resolvePrice(req.companyId(), cartItem.getVariantId(), cartItem.getQuantity());
 
             QuoteItem quoteItem = new QuoteItem();
             quoteItem.setQuoteRequestId(quote.getId());
             quoteItem.setVariantId(cartItem.getVariantId());
             quoteItem.setDescription(description);
             quoteItem.setQuantity(cartItem.getQuantity());
-            // unitPrice is null — will be set by staff
+            quoteItem.setUnitPrice(resolved.contractPrice() ? resolved.price() : null);
             itemRepo.save(quoteItem);
         }
 
