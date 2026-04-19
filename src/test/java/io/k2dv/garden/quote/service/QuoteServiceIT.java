@@ -3,6 +3,7 @@ package io.k2dv.garden.quote.service;
 import io.k2dv.garden.auth.dto.RegisterRequest;
 import io.k2dv.garden.auth.service.AuthService;
 import io.k2dv.garden.auth.service.EmailService;
+import io.k2dv.garden.b2b.dto.AddMemberRequest;
 import io.k2dv.garden.b2b.dto.CompanyResponse;
 import io.k2dv.garden.b2b.dto.CreateCompanyRequest;
 import io.k2dv.garden.b2b.service.CompanyService;
@@ -340,5 +341,150 @@ class QuoteServiceIT extends AbstractIntegrationTest {
             new UpdateQuoteItemRequest(2, new BigDecimal("150.00")));
         QuoteRequestResponse sent = sendQuote(quote.id());
         assertThat(sent.pdfBlobId()).isNotNull();
+    }
+
+    // --- Spending limit / approval chain ---
+
+    private UUID createMemberWithLimit(BigDecimal limit) {
+        int n = counter.incrementAndGet();
+        String email = "member-" + n + "-" + UUID.randomUUID() + "@example.com";
+        authService.register(new RegisterRequest(email, "password1", "Member", "User"));
+        UUID memberId = userRepo.findByEmail(email).orElseThrow().getId();
+        companyService.addMember(companyId, userId, new AddMemberRequest(email, limit));
+        return memberId;
+    }
+
+    private QuoteRequestResponse submitQuoteAs(UUID buyerId) {
+        quoteCartService.getOrCreateActiveCart(buyerId);
+        quoteCartService.addItem(buyerId, new AddQuoteCartItemRequest(variant.id(), 2, null));
+        return quoteService.submit(buyerId, new SubmitQuoteRequest(
+            companyId, "123 Main St", null, "Springfield", null, "12345", "US", null, null));
+    }
+
+    @Test
+    void accept_belowSpendingLimit_returnsCheckoutUrlDirectly() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("10000.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("100.00"))); // total = 200, limit = 10000
+        sendQuote(quote.id());
+
+        QuoteAcceptResponse response = quoteService.accept(quote.id(), memberId);
+
+        assertThat(response.pendingApproval()).isFalse();
+        assertThat(response.checkoutUrl()).isNotBlank();
+        assertThat(response.orderId()).isNotNull();
+        assertThat(quoteService.getAdmin(quote.id()).status()).isEqualTo(QuoteStatus.ACCEPTED);
+    }
+
+    @Test
+    void accept_overSpendingLimit_movesPendingApproval() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00"))); // total = 1000, limit = 100
+        sendQuote(quote.id());
+
+        QuoteAcceptResponse response = quoteService.accept(quote.id(), memberId);
+
+        assertThat(response.pendingApproval()).isTrue();
+        assertThat(response.checkoutUrl()).isNull();
+        assertThat(response.orderId()).isNull();
+        assertThat(quoteService.getAdmin(quote.id()).status()).isEqualTo(QuoteStatus.PENDING_APPROVAL);
+    }
+
+    @Test
+    void accept_noSpendingLimit_alwaysApproved() {
+        // userId is the OWNER — no spending limit set
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("999999.00")));
+        sendQuote(quote.id());
+
+        QuoteAcceptResponse response = quoteService.accept(quote.id(), userId);
+
+        assertThat(response.pendingApproval()).isFalse();
+        assertThat(response.checkoutUrl()).isNotBlank();
+    }
+
+    @Test
+    void approveSpend_byOwner_createsOrderAndReturnsCheckout() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId); // → PENDING_APPROVAL
+
+        QuoteAcceptResponse approved = quoteService.approveSpend(quote.id(), userId);
+
+        assertThat(approved.pendingApproval()).isFalse();
+        assertThat(approved.checkoutUrl()).isNotBlank();
+        assertThat(approved.orderId()).isNotNull();
+
+        QuoteRequestResponse reloaded = quoteService.getAdmin(quote.id());
+        assertThat(reloaded.status()).isEqualTo(QuoteStatus.ACCEPTED);
+        assertThat(reloaded.approverId()).isEqualTo(userId);
+        assertThat(reloaded.approvedAt()).isNotNull();
+    }
+
+    @Test
+    void approveSpend_byNonOwner_throwsForbidden() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId);
+
+        assertThatThrownBy(() -> quoteService.approveSpend(quote.id(), memberId))
+            .isInstanceOf(ForbiddenException.class)
+            .extracting("errorCode").isEqualTo("NOT_COMPANY_OWNER");
+    }
+
+    @Test
+    void approveSpend_wrongStatus_throwsConflict() {
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("100.00")));
+        sendQuote(quote.id());
+        // quote is SENT, not PENDING_APPROVAL
+
+        assertThatThrownBy(() -> quoteService.approveSpend(quote.id(), userId))
+            .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void rejectSpend_byOwner_transitionsToRejected() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId);
+
+        QuoteRequestResponse rejected = quoteService.rejectSpend(quote.id(), userId);
+
+        assertThat(rejected.status()).isEqualTo(QuoteStatus.REJECTED);
+    }
+
+    @Test
+    void rejectSpend_byNonOwner_throwsForbidden() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId);
+
+        assertThatThrownBy(() -> quoteService.rejectSpend(quote.id(), memberId))
+            .isInstanceOf(ForbiddenException.class)
+            .extracting("errorCode").isEqualTo("NOT_COMPANY_OWNER");
     }
 }

@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
@@ -25,6 +26,7 @@ public class CompanyController {
 
     private final CompanyService companyService;
     private final PriceListService priceListService;
+    private final InvoiceService invoiceService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<CompanyResponse>> create(
@@ -85,6 +87,14 @@ public class CompanyController {
         @Valid @RequestBody UpdateSpendingLimitRequest req) {
         return ResponseEntity.ok(ApiResponse.of(
             companyService.updateSpendingLimit(id, userId, user.getId(), req)));
+    }
+
+    @GetMapping("/{id}/invoices")
+    public ResponseEntity<ApiResponse<List<InvoiceResponse>>> listInvoices(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(invoiceService.listByCompany(id)));
     }
 
     @GetMapping("/{id}/price-lists")

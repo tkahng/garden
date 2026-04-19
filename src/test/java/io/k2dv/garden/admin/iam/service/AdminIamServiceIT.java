@@ -71,8 +71,8 @@ class AdminIamServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void listPermissions_returns41() { // 38 existing + 3 price_list permissions from V28
+    void listPermissions_returns46() { // 41 existing + 5 net terms permissions from V30
         var perms = adminIamService.listPermissions();
-        assertThat(perms).hasSize(41);
+        assertThat(perms).hasSize(46);
     }
 }

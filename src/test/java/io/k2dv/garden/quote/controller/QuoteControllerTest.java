@@ -93,7 +93,7 @@ class QuoteControllerTest {
     void acceptQuote_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         when(quoteService.accept(any(), any()))
-            .thenReturn(new QuoteAcceptResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID(), false));
+            .thenReturn(new QuoteAcceptResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID(), false, null));
 
         mvc.perform(post("/api/v1/quotes/{id}/accept", id))
             .andExpect(status().isOk())

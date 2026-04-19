@@ -2,9 +2,13 @@ package io.k2dv.garden.quote.service;
 
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.model.Company;
+import io.k2dv.garden.b2b.model.CreditAccount;
+import io.k2dv.garden.b2b.model.Invoice;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.CreditAccountService;
+import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.blob.model.BlobObject;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
@@ -50,6 +54,8 @@ public class QuoteService {
     private final CompanyRepository companyRepo;
     private final CompanyMembershipRepository membershipRepo;
     private final CompanyService companyService;
+    private final CreditAccountService creditAccountService;
+    private final InvoiceService invoiceService;
     private final ProductVariantRepository variantRepo;
     private final OrderService orderService;
     private final PaymentService paymentService;
@@ -186,7 +192,7 @@ public class QuoteService {
             if (total.compareTo(limit) > 0) {
                 quote.setStatus(QuoteStatus.PENDING_APPROVAL);
                 quoteRepo.save(quote);
-                return new QuoteAcceptResponse(null, null, true);
+                return new QuoteAcceptResponse(null, null, true, null);
             }
         }
 
@@ -234,8 +240,27 @@ public class QuoteService {
         quote.setOrderId(order.getId());
         quote.setStatus(QuoteStatus.ACCEPTED);
         quoteRepo.save(quote);
-        CheckoutResponse checkout = paymentService.createCheckoutSessionFromQuote(order, items, quote);
-        return new QuoteAcceptResponse(checkout.checkoutUrl(), order.getId(), false);
+
+        // Net terms path: if the company has a credit account, issue an invoice instead of Stripe
+        return creditAccountService.findByCompanyId(quote.getCompanyId())
+            .map(creditAccount -> {
+                BigDecimal outstanding = creditAccountService.getOutstandingBalance(quote.getCompanyId());
+                if (outstanding.add(order.getTotalAmount())
+                        .compareTo(creditAccount.getCreditLimit()) > 0) {
+                    throw new ConflictException("CREDIT_LIMIT_EXCEEDED",
+                        "Order total would exceed the company credit limit");
+                }
+                Invoice invoice = invoiceService.createFromOrder(
+                    quote.getCompanyId(), order.getId(), quote.getId(),
+                    order.getTotalAmount(), creditAccount.getCurrency(),
+                    creditAccount.getPaymentTermsDays()
+                );
+                return new QuoteAcceptResponse(null, order.getId(), false, invoice.getId());
+            })
+            .orElseGet(() -> {
+                CheckoutResponse checkout = paymentService.createCheckoutSessionFromQuote(order, items, quote);
+                return new QuoteAcceptResponse(checkout.checkoutUrl(), order.getId(), false, null);
+            });
     }
 
     @Transactional

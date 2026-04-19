@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.CompanyRole;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.config.TestCurrentUserConfig;
 import io.k2dv.garden.config.TestSecurityConfig;
@@ -41,6 +42,8 @@ class CompanyControllerTest {
     CompanyService companyService;
     @MockitoBean
     PriceListService priceListService;
+    @MockitoBean
+    InvoiceService invoiceService;
 
     private CompanyResponse stubCompany(UUID id) {
         return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null,
