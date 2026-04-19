@@ -289,4 +289,63 @@ class PriceListServiceIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> priceListService.resolvePrice(companyId, UUID.randomUUID(), 1))
             .isInstanceOf(NotFoundException.class);
     }
+
+    // --- listEntriesForCustomer ---
+
+    @Test
+    void listEntriesForCustomer_returnsEnrichedEntries() {
+        PriceListResponse pl = priceListService.create(
+            new CreatePriceListRequest(companyId, "Customer View", "USD", 0, null, null));
+        priceListService.upsertEntry(pl.id(), variantId,
+            new UpsertPriceListEntryRequest(new BigDecimal("75.00"), 1));
+
+        List<CustomerPriceEntryResponse> entries =
+            priceListService.listEntriesForCustomer(pl.id(), companyId);
+
+        assertThat(entries).hasSize(1);
+        CustomerPriceEntryResponse entry = entries.get(0);
+        assertThat(entry.variantId()).isEqualTo(variantId);
+        assertThat(entry.contractPrice()).isEqualByComparingTo("75.00");
+        assertThat(entry.retailPrice()).isEqualByComparingTo("100.00");
+        assertThat(entry.minQty()).isEqualTo(1);
+        assertThat(entry.productTitle()).isEqualTo("Widget");
+    }
+
+    @Test
+    void listEntriesForCustomer_volumeTiers_allReturned() {
+        PriceListResponse pl = priceListService.create(
+            new CreatePriceListRequest(companyId, "Volume", "USD", 0, null, null));
+        priceListService.upsertEntry(pl.id(), variantId,
+            new UpsertPriceListEntryRequest(new BigDecimal("90.00"), 1));
+        priceListService.upsertEntry(pl.id(), variantId,
+            new UpsertPriceListEntryRequest(new BigDecimal("80.00"), 10));
+
+        List<CustomerPriceEntryResponse> entries =
+            priceListService.listEntriesForCustomer(pl.id(), companyId);
+
+        assertThat(entries).hasSize(2);
+        assertThat(entries).extracting(CustomerPriceEntryResponse::minQty).containsExactly(1, 10);
+    }
+
+    @Test
+    void listEntriesForCustomer_wrongCompany_throwsNotFound() {
+        PriceListResponse pl = priceListService.create(
+            new CreatePriceListRequest(companyId, "Private", "USD", 0, null, null));
+
+        UUID otherCompanyId = companyService.create(userId,
+            new CreateCompanyRequest("Other Co", null, null, null, null, null, null, null, null)).id();
+
+        assertThatThrownBy(() -> priceListService.listEntriesForCustomer(pl.id(), otherCompanyId))
+            .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void listEntriesForCustomer_emptyList_returnsEmpty() {
+        PriceListResponse pl = priceListService.create(
+            new CreatePriceListRequest(companyId, "Empty", "USD", 0, null, null));
+
+        List<CustomerPriceEntryResponse> entries =
+            priceListService.listEntriesForCustomer(pl.id(), companyId);
+        assertThat(entries).isEmpty();
+    }
 }

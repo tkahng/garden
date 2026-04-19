@@ -6,7 +6,9 @@ import io.k2dv.garden.b2b.model.PriceListEntry;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.b2b.repository.PriceListEntryRepository;
 import io.k2dv.garden.b2b.repository.PriceListRepository;
+import io.k2dv.garden.product.model.Product;
 import io.k2dv.garden.product.model.ProductVariant;
+import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -15,7 +17,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +29,7 @@ public class PriceListService {
     private final PriceListEntryRepository entryRepo;
     private final CompanyRepository companyRepo;
     private final ProductVariantRepository variantRepo;
+    private final ProductRepository productRepo;
 
     @Transactional
     public PriceListResponse create(CreatePriceListRequest req) {
@@ -129,6 +134,40 @@ public class PriceListService {
             variantId, companyId, qty,
             variant.getPrice(), "USD", null, false
         );
+    }
+
+    @Transactional(readOnly = true)
+    public List<CustomerPriceEntryResponse> listEntriesForCustomer(UUID priceListId, UUID companyId) {
+        PriceList pl = requirePriceList(priceListId);
+        if (!pl.getCompanyId().equals(companyId)) {
+            throw new NotFoundException("PRICE_LIST_NOT_FOUND", "Price list not found");
+        }
+        List<PriceListEntry> entries = entryRepo.findByPriceListIdOrderByMinQtyAsc(priceListId);
+        if (entries.isEmpty()) return List.of();
+
+        List<UUID> variantIds = entries.stream().map(PriceListEntry::getVariantId).toList();
+        Map<UUID, ProductVariant> variantMap = variantRepo.findAllById(variantIds)
+            .stream().collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
+        List<UUID> productIds = variantMap.values().stream()
+            .map(ProductVariant::getProductId).distinct().toList();
+        Map<UUID, Product> productMap = productRepo.findAllById(productIds)
+            .stream().collect(Collectors.toMap(Product::getId, p -> p));
+
+        return entries.stream().map(e -> {
+            ProductVariant v = variantMap.get(e.getVariantId());
+            Product p = v != null ? productMap.get(v.getProductId()) : null;
+            return new CustomerPriceEntryResponse(
+                e.getVariantId(),
+                p != null ? p.getTitle() : null,
+                p != null ? p.getHandle() : null,
+                v != null ? v.getTitle() : null,
+                v != null ? v.getSku() : null,
+                v != null ? v.getPrice() : null,
+                e.getPrice(),
+                e.getMinQty()
+            );
+        }).toList();
     }
 
     private PriceListEntry pickBestEntry(List<PriceListEntry> candidates, List<PriceList> orderedLists) {

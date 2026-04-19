@@ -140,6 +140,15 @@ public class CompanyController {
         return ResponseEntity.ok(ApiResponse.of(priceListService.listByCompany(id)));
     }
 
+    @GetMapping("/{id}/price-lists/{priceListId}/entries")
+    public ResponseEntity<ApiResponse<List<CustomerPriceEntryResponse>>> listPriceListEntries(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID priceListId) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(priceListService.listEntriesForCustomer(priceListId, id)));
+    }
+
     @GetMapping("/{id}/price")
     public ResponseEntity<ApiResponse<ResolvedPriceResponse>> resolvePrice(
         @CurrentUser User user,
