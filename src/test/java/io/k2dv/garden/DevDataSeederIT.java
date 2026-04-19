@@ -121,4 +121,122 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             "SELECT COUNT(*) FROM catalog.collections WHERE featured_image_id IS NULL", Long.class);
         assertThat(withoutImage).isEqualTo(0L);
     }
+
+    // ─── B2B ──────────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_b2bCompanyExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM b2b.companies WHERE name = 'Green Thumb Nurseries LLC'", Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_b2bCompanyHasThreeMembers() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_memberships m
+            JOIN b2b.companies c ON c.id = m.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(3L);
+    }
+
+    @Test
+    void seeder_b2bMembershipRolesAreCorrect() {
+        Long ownerCount = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_memberships m
+            JOIN b2b.companies c ON c.id = m.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC' AND m.role = 'OWNER'
+            """, Long.class);
+        assertThat(ownerCount).isEqualTo(1L);
+
+        Long managerCount = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_memberships m
+            JOIN b2b.companies c ON c.id = m.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC' AND m.role = 'MANAGER'
+            """, Long.class);
+        assertThat(managerCount).isEqualTo(1L);
+
+        Long memberCount = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_memberships m
+            JOIN b2b.companies c ON c.id = m.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC' AND m.role = 'MEMBER'
+            """, Long.class);
+        assertThat(memberCount).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_b2bMemberHasSpendingLimit() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_memberships m
+            JOIN b2b.companies c ON c.id = m.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND m.role = 'MEMBER' AND m.spending_limit = 2000.00
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_b2bCreditAccountExists() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.credit_accounts ca
+            JOIN b2b.companies c ON c.id = ca.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND ca.credit_limit = 5000.00 AND ca.payment_terms_days = 30
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_b2bPriceListHasSixEntries() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.price_list_entries e
+            JOIN b2b.price_lists pl ON pl.id = e.price_list_id
+            JOIN b2b.companies c ON c.id = pl.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(6L);
+    }
+
+    @Test
+    void seeder_b2bQuoteRequestStatusesPresent() {
+        var statuses = jdbc.queryForList("""
+            SELECT DISTINCT qr.status FROM quote.quote_requests qr
+            JOIN b2b.companies c ON c.id = qr.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            ORDER BY qr.status
+            """, String.class);
+        assertThat(statuses).containsExactlyInAnyOrder("ACCEPTED", "CANCELLED", "PENDING", "SENT");
+    }
+
+    @Test
+    void seeder_b2bAcceptedQuoteHasInvoice() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.invoices i
+            JOIN b2b.companies c ON c.id = i.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC' AND i.status = 'ISSUED'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_b2bInvoiceLinkedToInvoicedOrder() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.invoices i
+            JOIN checkout.orders o ON o.id = i.order_id
+            WHERE o.status = 'INVOICED'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_b2bPendingInvitationExists() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_invitations ci
+            JOIN b2b.companies c ON c.id = ci.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND ci.email = 'newbuyer@example.com' AND ci.status = 'PENDING'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
 }
