@@ -8,4 +8,5 @@ public interface EmailService {
     void sendQuoteSubmitted(String to, UUID quoteId);
     void sendQuoteNewRequest(String to, UUID quoteId);
     void sendQuotePdf(String to, UUID quoteId, byte[] pdfBytes);
+    void sendCompanyInvitation(String to, String companyName, String inviterName, String token);
 }

@@ -76,6 +76,22 @@ public class SmtpEmailService implements EmailService {
     }
 
     @Override
+    public void sendCompanyInvitation(String to, String companyName, String inviterName, String token) {
+        try {
+            var msg = new SimpleMailMessage();
+            msg.setTo(to);
+            msg.setSubject(inviterName + " has invited you to join " + companyName + " on Garden");
+            msg.setText("You've been invited to join " + companyName + " by " + inviterName + ".\n\n"
+                + "Accept your invitation here:\n"
+                + props.getFrontendUrl() + "/invitations/" + token + "\n\n"
+                + "This invitation expires in 7 days.");
+            mailSender.send(msg);
+        } catch (MailException e) {
+            log.error("Failed to send company invitation to {}: {}", to, e.getMessage(), e);
+        }
+    }
+
+    @Override
     public void sendQuotePdf(String to, UUID quoteId, byte[] pdfBytes) {
         try {
             MimeMessage mimeMessage = mailSender.createMimeMessage();

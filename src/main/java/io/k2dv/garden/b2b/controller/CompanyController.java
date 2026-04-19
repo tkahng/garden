@@ -3,6 +3,7 @@ package io.k2dv.garden.b2b.controller;
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.b2b.dto.*;
+import io.k2dv.garden.b2b.service.CompanyInvitationService;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.b2b.service.PriceListService;
@@ -25,6 +26,7 @@ import java.util.UUID;
 public class CompanyController {
 
     private final CompanyService companyService;
+    private final CompanyInvitationService invitationService;
     private final PriceListService priceListService;
     private final InvoiceService invoiceService;
 
@@ -97,6 +99,29 @@ public class CompanyController {
         @Valid @RequestBody UpdateSpendingLimitRequest req) {
         return ResponseEntity.ok(ApiResponse.of(
             companyService.updateSpendingLimit(id, userId, user.getId(), req)));
+    }
+
+    @GetMapping("/{id}/invitations")
+    public ResponseEntity<ApiResponse<List<InvitationResponse>>> listInvitations(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.listPending(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/invitations")
+    public ResponseEntity<ApiResponse<InvitationResponse>> invite(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @Valid @RequestBody CreateInvitationRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.invite(id, user.getId(), req)));
+    }
+
+    @DeleteMapping("/{id}/invitations/{invitationId}")
+    public ResponseEntity<ApiResponse<InvitationResponse>> cancelInvitation(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID invitationId) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.cancel(id, invitationId, user.getId())));
     }
 
     @GetMapping("/{id}/invoices")

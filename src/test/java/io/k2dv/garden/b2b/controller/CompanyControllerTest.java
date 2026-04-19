@@ -3,6 +3,7 @@ package io.k2dv.garden.b2b.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.CompanyRole;
+import io.k2dv.garden.b2b.service.CompanyInvitationService;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.b2b.service.PriceListService;
@@ -40,6 +41,8 @@ class CompanyControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     @MockitoBean
     CompanyService companyService;
+    @MockitoBean
+    CompanyInvitationService invitationService;
     @MockitoBean
     PriceListService priceListService;
     @MockitoBean
