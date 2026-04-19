@@ -143,6 +143,21 @@ class CompanyControllerTest {
     }
 
     @Test
+    void updateMemberRole_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID memberId = UUID.randomUUID();
+        when(companyService.updateMemberRole(eq(companyId), eq(memberId), any(), any()))
+            .thenReturn(stubMember(memberId));
+
+        mvc.perform(put("/api/v1/companies/{id}/members/{userId}/role", companyId, memberId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                    new io.k2dv.garden.b2b.dto.UpdateMemberRoleRequest(
+                        io.k2dv.garden.b2b.model.CompanyRole.MANAGER))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
     void removeMember_returns204() throws Exception {
         UUID companyId = UUID.randomUUID();
         UUID memberId = UUID.randomUUID();

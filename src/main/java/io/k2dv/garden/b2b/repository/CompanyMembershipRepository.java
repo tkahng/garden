@@ -19,4 +19,6 @@ public interface CompanyMembershipRepository extends JpaRepository<CompanyMember
     boolean existsByCompanyIdAndUserId(UUID companyId, UUID userId);
 
     List<CompanyMembership> findByUserIdAndRole(UUID userId, CompanyRole role);
+
+    List<CompanyMembership> findByUserIdAndRoleIn(UUID userId, java.util.Collection<CompanyRole> roles);
 }

@@ -5,6 +5,7 @@ import io.k2dv.garden.auth.service.AuthService;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.CompanyRole;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
@@ -193,5 +194,76 @@ class CompanyServiceIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> companyService.addMember(company.id(), ownerUserId,
             new AddMemberRequest("nobody@unknown.example", null)))
             .isInstanceOf(NotFoundException.class);
+    }
+
+    // --- Member role management ---
+
+    @Test
+    void updateMemberRole_promotesToManager() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
+
+        CompanyMemberResponse updated = companyService.updateMemberRole(
+            company.id(), memberUserId, ownerUserId,
+            new UpdateMemberRoleRequest(CompanyRole.MANAGER));
+
+        assertThat(updated.role()).isEqualTo(CompanyRole.MANAGER);
+    }
+
+    @Test
+    void updateMemberRole_demotesToMember() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
+        companyService.updateMemberRole(company.id(), memberUserId, ownerUserId,
+            new UpdateMemberRoleRequest(CompanyRole.MANAGER));
+
+        CompanyMemberResponse demoted = companyService.updateMemberRole(
+            company.id(), memberUserId, ownerUserId,
+            new UpdateMemberRoleRequest(CompanyRole.MEMBER));
+
+        assertThat(demoted.role()).isEqualTo(CompanyRole.MEMBER);
+    }
+
+    @Test
+    void updateMemberRole_cannotPromoteToOwner_throwsForbidden() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
+
+        assertThatThrownBy(() -> companyService.updateMemberRole(
+            company.id(), memberUserId, ownerUserId,
+            new UpdateMemberRoleRequest(CompanyRole.OWNER)))
+            .isInstanceOf(ForbiddenException.class)
+            .satisfies(e -> assertThat(((ForbiddenException) e).getErrorCode()).isEqualTo("CANNOT_ASSIGN_OWNER"));
+    }
+
+    @Test
+    void updateMemberRole_cannotChangeOwnerRole_throwsForbidden() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
+
+        assertThatThrownBy(() -> companyService.updateMemberRole(
+            company.id(), ownerUserId, ownerUserId,
+            new UpdateMemberRoleRequest(CompanyRole.MEMBER)))
+            .isInstanceOf(ForbiddenException.class)
+            .satisfies(e -> assertThat(((ForbiddenException) e).getErrorCode()).isEqualTo("CANNOT_CHANGE_OWNER_ROLE"));
+    }
+
+    @Test
+    void updateMemberRole_byNonOwner_throwsForbidden() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
+
+        assertThatThrownBy(() -> companyService.updateMemberRole(
+            company.id(), ownerUserId, memberUserId,
+            new UpdateMemberRoleRequest(CompanyRole.MEMBER)))
+            .isInstanceOf(ForbiddenException.class);
     }
 }

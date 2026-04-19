@@ -152,6 +152,31 @@ public class CompanyService {
             .orElse(false);
     }
 
+    @Transactional(readOnly = true)
+    public boolean isOwnerOrManager(UUID companyId, UUID userId) {
+        return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
+            .map(m -> m.getRole() == CompanyRole.OWNER || m.getRole() == CompanyRole.MANAGER)
+            .orElse(false);
+    }
+
+    @Transactional
+    public CompanyMemberResponse updateMemberRole(UUID companyId, UUID targetUserId, UUID requestorId,
+                                                   UpdateMemberRoleRequest req) {
+        requireOwner(companyId, requestorId);
+        if (req.role() == CompanyRole.OWNER) {
+            throw new ForbiddenException("CANNOT_ASSIGN_OWNER", "Cannot promote a member to OWNER");
+        }
+        CompanyMembership membership = membershipRepo.findByCompanyIdAndUserId(companyId, targetUserId)
+            .orElseThrow(() -> new NotFoundException("MEMBER_NOT_FOUND", "Member not found"));
+        if (membership.getRole() == CompanyRole.OWNER) {
+            throw new ForbiddenException("CANNOT_CHANGE_OWNER_ROLE", "Cannot change the role of the company owner");
+        }
+        membership.setRole(req.role());
+        membership = membershipRepo.save(membership);
+        User user = userRepo.findById(targetUserId).orElse(null);
+        return toMemberResponse(membership, user);
+    }
+
     private void requireMember(UUID companyId, UUID userId) {
         if (!membershipRepo.existsByCompanyIdAndUserId(companyId, userId)) {
             throw new ForbiddenException("NOT_A_MEMBER", "You are not a member of this company");

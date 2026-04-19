@@ -214,7 +214,7 @@ class QuoteControllerTest {
     @Test
     void approveSpend_notOwner_returns403() throws Exception {
         when(quoteService.approveSpend(any(), any()))
-            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("NOT_COMPANY_OWNER", "Only a company owner can approve spend"));
+            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("INSUFFICIENT_COMPANY_ROLE", "Only a company owner can approve spend"));
 
         mvc.perform(post("/api/v1/quotes/{id}/approve", UUID.randomUUID()))
             .andExpect(status().isForbidden());
@@ -246,7 +246,7 @@ class QuoteControllerTest {
     @Test
     void rejectApproval_notOwner_returns403() throws Exception {
         when(quoteService.rejectSpend(any(), any()))
-            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("NOT_COMPANY_OWNER", "Only a company owner can reject spend"));
+            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("INSUFFICIENT_COMPANY_ROLE", "Only a company owner can reject spend"));
 
         mvc.perform(post("/api/v1/quotes/{id}/reject-approval", UUID.randomUUID()))
             .andExpect(status().isForbidden());

@@ -138,7 +138,7 @@ public class QuoteService {
     @Transactional(readOnly = true)
     public PagedResult<QuoteRequestResponse> listPendingApprovals(UUID userId, Pageable pageable) {
         List<UUID> ownedCompanyIds = membershipRepo
-            .findByUserIdAndRole(userId, CompanyRole.OWNER)
+            .findByUserIdAndRoleIn(userId, List.of(CompanyRole.OWNER, CompanyRole.MANAGER))
             .stream().map(m -> m.getCompanyId()).toList();
         if (ownedCompanyIds.isEmpty()) {
             return PagedResult.of(org.springframework.data.domain.Page.empty(pageable), this::toResponse);
@@ -224,8 +224,9 @@ public class QuoteService {
             throw new ConflictException("INVALID_QUOTE_STATUS",
                 "Quote must be in PENDING_APPROVAL status to approve (current: " + quote.getStatus() + ")");
         }
-        if (!companyService.isOwner(quote.getCompanyId(), approverId)) {
-            throw new ForbiddenException("NOT_COMPANY_OWNER", "Only a company owner can approve spend");
+        if (!companyService.isOwnerOrManager(quote.getCompanyId(), approverId)) {
+            throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can approve spend");
         }
 
         quote.setApproverId(approverId);
@@ -244,8 +245,9 @@ public class QuoteService {
             throw new ConflictException("INVALID_QUOTE_STATUS",
                 "Quote must be in PENDING_APPROVAL status to reject approval (current: " + quote.getStatus() + ")");
         }
-        if (!companyService.isOwner(quote.getCompanyId(), approverId)) {
-            throw new ForbiddenException("NOT_COMPANY_OWNER", "Only a company owner can reject spend");
+        if (!companyService.isOwnerOrManager(quote.getCompanyId(), approverId)) {
+            throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can reject spend");
         }
         quote.setStatus(QuoteStatus.REJECTED);
         return toResponse(quoteRepo.save(quote));

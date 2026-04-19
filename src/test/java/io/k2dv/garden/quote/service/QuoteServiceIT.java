@@ -447,7 +447,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> quoteService.approveSpend(quote.id(), memberId))
             .isInstanceOf(ForbiddenException.class)
-            .extracting("errorCode").isEqualTo("NOT_COMPANY_OWNER");
+            .extracting("errorCode").isEqualTo("INSUFFICIENT_COMPANY_ROLE");
     }
 
     @Test
@@ -489,7 +489,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> quoteService.rejectSpend(quote.id(), memberId))
             .isInstanceOf(ForbiddenException.class)
-            .extracting("errorCode").isEqualTo("NOT_COMPANY_OWNER");
+            .extracting("errorCode").isEqualTo("INSUFFICIENT_COMPANY_ROLE");
     }
 
     // --- Net terms path ---
@@ -563,6 +563,70 @@ class QuoteServiceIT extends AbstractIntegrationTest {
 
         assertThat(response.checkoutUrl()).isNotBlank();
         assertThat(response.invoiceId()).isNull();
+    }
+
+    // --- Manager role ---
+
+    private UUID createMemberWithRole(io.k2dv.garden.b2b.model.CompanyRole role) {
+        int n = counter.incrementAndGet();
+        String email = "role-" + n + "-" + UUID.randomUUID() + "@example.com";
+        authService.register(new RegisterRequest(email, "password1", "Role", "User"));
+        UUID memberId = userRepo.findByEmail(email).orElseThrow().getId();
+        companyService.addMember(companyId, userId, new AddMemberRequest(email, new BigDecimal("100.00")));
+        if (role != io.k2dv.garden.b2b.model.CompanyRole.MEMBER) {
+            companyService.updateMemberRole(companyId, memberId, userId,
+                new io.k2dv.garden.b2b.dto.UpdateMemberRoleRequest(role));
+        }
+        return memberId;
+    }
+
+    @Test
+    void manager_canApproveSpend() {
+        UUID managerId = createMemberWithRole(io.k2dv.garden.b2b.model.CompanyRole.MANAGER);
+        UUID buyerId = createMemberWithLimit(new BigDecimal("50.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(buyerId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), buyerId); // → PENDING_APPROVAL
+
+        QuoteAcceptResponse approved = quoteService.approveSpend(quote.id(), managerId);
+
+        assertThat(approved.pendingApproval()).isFalse();
+        assertThat(approved.orderId()).isNotNull();
+        assertThat(quoteService.getAdmin(quote.id()).status()).isEqualTo(QuoteStatus.ACCEPTED);
+    }
+
+    @Test
+    void manager_canRejectSpend() {
+        UUID managerId = createMemberWithRole(io.k2dv.garden.b2b.model.CompanyRole.MANAGER);
+        UUID buyerId = createMemberWithLimit(new BigDecimal("50.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(buyerId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), buyerId);
+
+        QuoteRequestResponse rejected = quoteService.rejectSpend(quote.id(), managerId);
+        assertThat(rejected.status()).isEqualTo(QuoteStatus.REJECTED);
+    }
+
+    @Test
+    void manager_seesListPendingApprovals() {
+        UUID managerId = createMemberWithRole(io.k2dv.garden.b2b.model.CompanyRole.MANAGER);
+        UUID buyerId = createMemberWithLimit(new BigDecimal("50.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(buyerId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), buyerId);
+
+        var result = quoteService.listPendingApprovals(managerId, PageRequest.of(0, 20));
+        assertThat(result.getContent()).hasSize(1);
+        assertThat(result.getContent().get(0).id()).isEqualTo(quote.id());
     }
 
     // --- Pending approvals list ---

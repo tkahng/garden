@@ -79,6 +79,16 @@ public class CompanyController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{id}/members/{userId}/role")
+    public ResponseEntity<ApiResponse<CompanyMemberResponse>> updateMemberRole(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID userId,
+        @Valid @RequestBody UpdateMemberRoleRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(
+            companyService.updateMemberRole(id, userId, user.getId(), req)));
+    }
+
     @PutMapping("/{id}/members/{userId}/spending-limit")
     public ResponseEntity<ApiResponse<CompanyMemberResponse>> updateSpendingLimit(
         @CurrentUser User user,
