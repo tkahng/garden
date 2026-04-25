@@ -7,6 +7,7 @@ import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.*;
 import io.k2dv.garden.product.repository.*;
 import io.k2dv.garden.product.specification.ProductSpecification;
+import io.k2dv.garden.review.service.ProductReviewService;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
@@ -40,6 +41,7 @@ public class ProductService {
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
     private final CollectionMembershipService collectionMembershipService;
+    private final ProductReviewService reviewService;
 
     @Transactional
     public AdminProductResponse create(CreateProductRequest req) {
@@ -288,6 +290,7 @@ public class ProductService {
         List<String> tagNames = p.getTags().stream().map(ProductTag::getName).toList();
 
         return new ProductDetailResponse(p.getId(), p.getTitle(), p.getDescription(), p.getHandle(),
-            p.getVendor(), p.getProductType(), variantResponses, imageResponses, tagNames);
+            p.getVendor(), p.getProductType(), variantResponses, imageResponses, tagNames,
+            reviewService.getReviewSummary(p.getId()));
     }
 }
