@@ -63,6 +63,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/pages/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/blogs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/menus/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/storefront/discounts/validate").permitAll()
                 .requestMatchers("/api/v1/webhooks/**").permitAll()
                 // Swagger UI / OpenAPI spec — non-prod only (disabled in prod via properties)
                 .requestMatchers("/swagger-ui/**").permitAll()
