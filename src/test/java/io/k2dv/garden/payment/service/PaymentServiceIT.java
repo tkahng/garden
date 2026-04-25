@@ -73,7 +73,7 @@ class PaymentServiceIT extends AbstractIntegrationTest {
         userId = userRepo.findByEmail(email).orElseThrow().getId();
 
         AdminProductResponse product = productService.create(
-            new CreateProductRequest("Test Plant", null, null, null, null, List.of()));
+            new CreateProductRequest("Test Plant", null, null, null, null, List.of(), null, null));
         productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("25.00"), null, null, null, null, null, List.of()));

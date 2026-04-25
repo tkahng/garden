@@ -28,6 +28,10 @@ public class Collection extends BaseEntity {
     private UUID featuredImageId;
     @Column(nullable = false)
     private boolean disjunctive = false;
+    @Column(name = "meta_title")
+    private String metaTitle;
+    @Column(name = "meta_description", columnDefinition = "TEXT")
+    private String metaDescription;
     @Column(name = "deleted_at")
     private Instant deletedAt;
 }

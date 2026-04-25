@@ -57,6 +57,8 @@ public class ProductService {
         product.setHandle(handle);
         product.setVendor(req.vendor());
         product.setProductType(req.productType());
+        product.setMetaTitle(req.metaTitle());
+        product.setMetaDescription(req.metaDescription());
         product.setStatus(ProductStatus.DRAFT);
         if (req.tags() != null) {
             req.tags().forEach(name -> product.getTags().add(findOrCreateTag(name)));
@@ -92,6 +94,8 @@ public class ProductService {
         if (req.vendor() != null) p.setVendor(req.vendor());
         if (req.productType() != null) p.setProductType(req.productType());
         if (req.featuredImageId() != null) p.setFeaturedImageId(req.featuredImageId());
+        if (req.metaTitle() != null) p.setMetaTitle(req.metaTitle());
+        if (req.metaDescription() != null) p.setMetaDescription(req.metaDescription());
         if (req.tags() != null) {
             p.getTags().clear();
             req.tags().forEach(name -> p.getTags().add(findOrCreateTag(name)));
@@ -281,6 +285,7 @@ public class ProductService {
         return new AdminProductResponse(p.getId(), p.getTitle(), p.getDescription(), p.getHandle(),
             p.getVendor(), p.getProductType(), p.getStatus(), p.getFeaturedImageId(),
             variantResponses, optionResponses, imageResponses, tagNames,
+            p.getMetaTitle(), p.getMetaDescription(),
             p.getCreatedAt(), p.getUpdatedAt(), p.getDeletedAt());
     }
 
@@ -315,6 +320,7 @@ public class ProductService {
 
         return new ProductDetailResponse(p.getId(), p.getTitle(), p.getDescription(), p.getHandle(),
             p.getVendor(), p.getProductType(), variantResponses, imageResponses, tagNames,
-            reviewService.getReviewSummary(p.getId()));
+            reviewService.getReviewSummary(p.getId()),
+            p.getMetaTitle(), p.getMetaDescription());
     }
 }

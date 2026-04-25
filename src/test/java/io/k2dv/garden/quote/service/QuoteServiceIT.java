@@ -92,7 +92,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         companyId = company.id();
 
         AdminProductResponse product = productService.create(
-            new CreateProductRequest("Widget", null, null, null, null, List.of()));
+            new CreateProductRequest("Widget", null, null, null, null, List.of(), null, null));
         productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         variant = variantService.create(product.id(),
             new CreateVariantRequest(null, null, null, null, null, null, List.of()));

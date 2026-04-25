@@ -28,6 +28,10 @@ public class Product extends BaseEntity {
     private ProductStatus status = ProductStatus.DRAFT;
     @Column(name = "featured_image_id")
     private UUID featuredImageId;
+    @Column(name = "meta_title")
+    private String metaTitle;
+    @Column(name = "meta_description", columnDefinition = "TEXT")
+    private String metaDescription;
     @Column(name = "deleted_at")
     private Instant deletedAt;
     @ManyToMany(fetch = FetchType.LAZY)

@@ -11,5 +11,6 @@ public record AdminCollectionResponse(
     CollectionType collectionType, CollectionStatus status,
     UUID featuredImageId, boolean disjunctive, long productCount,
     List<CollectionRuleResponse> rules,
+    String metaTitle, String metaDescription,
     Instant createdAt, Instant updatedAt, Instant deletedAt
 ) {}

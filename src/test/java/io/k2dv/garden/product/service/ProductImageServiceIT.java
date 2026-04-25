@@ -36,7 +36,7 @@ class ProductImageServiceIT extends AbstractIntegrationTest {
         blobId = blobRepo.save(blob).getId();
 
         productId = productService.create(
-            new CreateProductRequest("Img Product", null, null, null, null, List.of())
+            new CreateProductRequest("Img Product", null, null, null, null, List.of(), null, null)
         ).id();
     }
 

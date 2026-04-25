@@ -18,6 +18,8 @@ public record AdminProductResponse(
     List<ProductOptionResponse> options,
     List<ProductImageResponse> images,
     List<String> tags,
+    String metaTitle,
+    String metaDescription,
     Instant createdAt,
     Instant updatedAt,
     Instant deletedAt

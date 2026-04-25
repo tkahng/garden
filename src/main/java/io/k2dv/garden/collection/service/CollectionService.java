@@ -73,6 +73,8 @@ public class CollectionService {
         c.setCollectionType(req.collectionType());
         c.setDisjunctive(req.disjunctive());
         c.setFeaturedImageId(req.featuredImageId());
+        c.setMetaTitle(req.metaTitle());
+        c.setMetaDescription(req.metaDescription());
         c.setStatus(CollectionStatus.DRAFT);
         Collection saved = collectionRepo.save(c);
         return toAdminResponse(saved);
@@ -109,6 +111,8 @@ public class CollectionService {
         if (req.description() != null)     c.setDescription(req.description());
         if (req.disjunctive() != null)     c.setDisjunctive(req.disjunctive());
         if (req.featuredImageId() != null) c.setFeaturedImageId(req.featuredImageId());
+        if (req.metaTitle() != null) c.setMetaTitle(req.metaTitle());
+        if (req.metaDescription() != null) c.setMetaDescription(req.metaDescription());
         return toAdminResponse(collectionRepo.save(c));
     }
 
@@ -247,7 +251,8 @@ public class CollectionService {
             Map<UUID, String> imageUrls = resolveCollectionImageUrls(Set.of(c.getFeaturedImageId()));
             imageUrl = imageUrls.get(c.getFeaturedImageId());
         }
-        return new CollectionDetailResponse(c.getId(), c.getTitle(), c.getHandle(), c.getDescription(), imageUrl);
+        return new CollectionDetailResponse(c.getId(), c.getTitle(), c.getHandle(), c.getDescription(), imageUrl,
+                c.getMetaTitle(), c.getMetaDescription());
     }
 
     @Transactional(readOnly = true)
@@ -302,7 +307,8 @@ public class CollectionService {
                 .stream().map(this::toRuleResponse).toList();
         return new AdminCollectionResponse(c.getId(), c.getTitle(), c.getHandle(), c.getDescription(),
                 c.getCollectionType(), c.getStatus(), c.getFeaturedImageId(), c.isDisjunctive(),
-                productCount, rules, c.getCreatedAt(), c.getUpdatedAt(), c.getDeletedAt());
+                productCount, rules, c.getMetaTitle(), c.getMetaDescription(),
+                c.getCreatedAt(), c.getUpdatedAt(), c.getDeletedAt());
     }
 
     private CollectionRuleResponse toRuleResponse(CollectionRule r) {

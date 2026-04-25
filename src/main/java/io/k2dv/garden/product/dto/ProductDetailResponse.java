@@ -15,5 +15,7 @@ public record ProductDetailResponse(
     List<ProductVariantResponse> variants,
     List<ProductImageResponse> images,
     List<String> tags,
-    ReviewSummaryResponse reviewSummary
+    ReviewSummaryResponse reviewSummary,
+    String metaTitle,
+    String metaDescription
 ) {}

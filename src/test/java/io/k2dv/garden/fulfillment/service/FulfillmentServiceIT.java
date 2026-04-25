@@ -75,7 +75,7 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
         adminUser = userRepo.findByEmail(email).orElseThrow();
 
         AdminProductResponse product = productService.create(
-            new CreateProductRequest("Plant", null, null, null, null, List.of()));
+            new CreateProductRequest("Plant", null, null, null, null, List.of(), null, null));
         productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         AdminVariantResponse variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("25.00"), null, null, null, null, null, List.of()));

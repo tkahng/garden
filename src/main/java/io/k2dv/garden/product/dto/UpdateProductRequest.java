@@ -10,5 +10,7 @@ public record UpdateProductRequest(
     String vendor,
     String productType,
     UUID featuredImageId,
-    List<String> tags
+    List<String> tags,
+    String metaTitle,
+    String metaDescription
 ) {}

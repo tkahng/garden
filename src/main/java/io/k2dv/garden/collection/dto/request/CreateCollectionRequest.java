@@ -11,5 +11,7 @@ public record CreateCollectionRequest(
     String description,
     @NotNull CollectionType collectionType,
     boolean disjunctive,
-    UUID featuredImageId
+    UUID featuredImageId,
+    String metaTitle,
+    String metaDescription
 ) {}

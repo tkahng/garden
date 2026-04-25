@@ -52,7 +52,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
             new CreateCompanyRequest("Test Co", null, null, null, null, null, null, null, null)).id();
 
         AdminProductResponse product = productService.create(
-            new CreateProductRequest("Widget", null, null, null, null, List.of()));
+            new CreateProductRequest("Widget", null, null, null, null, List.of(), null, null));
         AdminVariantResponse variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("100.00"), null, null, null, null, null, List.of()));
         variantId = variant.id();

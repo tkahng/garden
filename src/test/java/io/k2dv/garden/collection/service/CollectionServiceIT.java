@@ -36,16 +36,16 @@ class CollectionServiceIT extends AbstractIntegrationTest {
 
     private AdminCollectionResponse createManual(String title) {
         return collectionService.create(new CreateCollectionRequest(
-                title, null, null, CollectionType.MANUAL, false, null));
+                title, null, null, CollectionType.MANUAL, false, null, null, null));
     }
 
     private AdminCollectionResponse createAutomated(String title) {
         return collectionService.create(new CreateCollectionRequest(
-                title, null, null, CollectionType.AUTOMATED, false, null));
+                title, null, null, CollectionType.AUTOMATED, false, null, null, null));
     }
 
     private AdminProductResponse createProduct(String title, String... tags) {
-        return productService.create(new CreateProductRequest(title, null, null, null, null, List.of(tags)));
+        return productService.create(new CreateProductRequest(title, null, null, null, null, List.of(tags), null, null));
     }
 
     // ---- CRUD ----
@@ -68,7 +68,7 @@ class CollectionServiceIT extends AbstractIntegrationTest {
     @Test
     void update_changesTitle() {
         var c = createManual("Old Title");
-        var updated = collectionService.update(c.id(), new UpdateCollectionRequest("New Title", null, null, null, null));
+        var updated = collectionService.update(c.id(), new UpdateCollectionRequest("New Title", null, null, null, null, null, null));
         assertThat(updated.title()).isEqualTo("New Title");
     }
 
@@ -99,9 +99,9 @@ class CollectionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void handleUniqueness_duplicateHandleReturnsConflict() {
-        collectionService.create(new CreateCollectionRequest("Hats", "hats", null, CollectionType.MANUAL, false, null));
+        collectionService.create(new CreateCollectionRequest("Hats", "hats", null, CollectionType.MANUAL, false, null, null, null));
         assertThatThrownBy(() ->
-                collectionService.create(new CreateCollectionRequest("Other", "hats", null, CollectionType.MANUAL, false, null))
+                collectionService.create(new CreateCollectionRequest("Other", "hats", null, CollectionType.MANUAL, false, null, null, null))
         ).isInstanceOf(ConflictException.class);
     }
 
@@ -221,7 +221,7 @@ class CollectionServiceIT extends AbstractIntegrationTest {
         productService.changeStatus(p.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         assertThat(cpRepo.existsByCollectionIdAndProductId(c.id(), p.id())).isFalse();
         // Update tags — triggers syncCollectionsForProduct
-        productService.update(p.id(), new UpdateProductRequest(null, null, null, null, null, null, List.of("sale")));
+        productService.update(p.id(), new UpdateProductRequest(null, null, null, null, null, null, List.of("sale"), null, null));
         assertThat(cpRepo.existsByCollectionIdAndProductId(c.id(), p.id())).isTrue();
     }
 
@@ -272,7 +272,7 @@ class CollectionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void disjunctiveTrue_storedWithoutError() {
-        var req = new CreateCollectionRequest("OR Collection", null, null, CollectionType.AUTOMATED, true, null);
+        var req = new CreateCollectionRequest("OR Collection", null, null, CollectionType.AUTOMATED, true, null, null, null);
         var resp = collectionService.create(req);
         assertThat(resp.disjunctive()).isTrue();
     }
@@ -306,7 +306,7 @@ class CollectionServiceIT extends AbstractIntegrationTest {
         UUID blobId = blobRepo.save(blob).getId();
 
         var c = collectionService.create(new CreateCollectionRequest(
-                "With Image", null, null, CollectionType.MANUAL, false, blobId));
+                "With Image", null, null, CollectionType.MANUAL, false, blobId, null, null));
         collectionService.changeStatus(c.id(), new CollectionStatusRequest(CollectionStatus.ACTIVE));
 
         var result = collectionService.listStorefront(PageRequest.of(0, 20));
