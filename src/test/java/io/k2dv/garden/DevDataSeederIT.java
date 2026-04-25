@@ -239,4 +239,111 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             """, Long.class);
         assertThat(count).isEqualTo(1L);
     }
+
+    // ─── Orders ───────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_allOrderStatusesPresent() {
+        var statuses = jdbc.queryForList(
+            "SELECT DISTINCT status FROM checkout.orders ORDER BY status", String.class);
+        assertThat(statuses).contains("PAID", "FULFILLED", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "INVOICED");
+    }
+
+    @Test
+    void seeder_fulfilledOrderHasFulfillmentRecord() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.fulfillments f
+            JOIN checkout.orders o ON o.id = f.order_id
+            WHERE o.status = 'FULFILLED' AND f.status = 'DELIVERED'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_fulfillmentHasTwoItems() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.fulfillment_items fi
+            JOIN checkout.fulfillments f ON f.id = fi.fulfillment_id
+            JOIN checkout.orders o ON o.id = f.order_id
+            WHERE o.status = 'FULFILLED'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    // ─── Blog & Content ───────────────────────────────────────────────────────
+
+    @Test
+    void seeder_blogExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM content.blogs WHERE handle = 'garden-journal'", Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_articlesCount() {
+        Long published = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM content.articles WHERE status = 'PUBLISHED'", Long.class);
+        assertThat(published).isEqualTo(3L);
+
+        Long draft = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM content.articles WHERE status = 'DRAFT'", Long.class);
+        assertThat(draft).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_contentTagsExist() {
+        Long count = jdbc.queryForObject("SELECT COUNT(*) FROM content.content_tags", Long.class);
+        assertThat(count).isEqualTo(3L);
+    }
+
+    // ─── Reviews ─────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_productReviewsExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.product_reviews WHERE status = 'PUBLISHED'", Long.class);
+        assertThat(count).isEqualTo(6L);
+    }
+
+    @Test
+    void seeder_verifiedPurchaseReviewsPresent() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.product_reviews WHERE verified_purchase = true", Long.class);
+        assertThat(count).isEqualTo(5L);
+    }
+
+    // ─── Wishlist ─────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_customerHasWishlistWithThreeItems() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM catalog.wishlist_items wi
+            JOIN catalog.wishlists w ON w.id = wi.wishlist_id
+            JOIN auth.users u ON u.id = w.user_id
+            WHERE u.email = 'customer@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(3L);
+    }
+
+    // ─── Address ─────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_customerHasSavedAddress() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM auth.addresses a
+            JOIN auth.users u ON u.id = a.user_id
+            WHERE u.email = 'customer@garden.local' AND a.is_default = true
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── User tags ────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_customerUserHasTags() {
+        String tags = jdbc.queryForObject("""
+            SELECT array_to_string(tags, ',') FROM auth.users WHERE email = 'customer@garden.local'
+            """, String.class);
+        assertThat(tags).contains("vip", "repeat-buyer");
+    }
 }
