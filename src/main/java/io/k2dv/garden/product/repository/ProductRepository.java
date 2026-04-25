@@ -17,6 +17,7 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     boolean existsByHandleAndDeletedAtIsNullAndIdNot(String handle, UUID id);
     Optional<Product> findByHandle(String handle);
     List<Product> findAllByStatusAndDeletedAtIsNull(ProductStatus status);
+    List<Product> findAllByIdInAndDeletedAtIsNull(List<UUID> ids);
 
     @Query(value = """
         SELECT p.* FROM catalog.product_product_tags t

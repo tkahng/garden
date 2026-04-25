@@ -71,6 +71,20 @@ public class AdminUserService {
     }
 
     @Transactional
+    public void bulkSuspend(List<UUID> ids) {
+        List<User> users = userRepo.findAllById(ids);
+        users.forEach(u -> u.setStatus(UserStatus.SUSPENDED));
+        userRepo.saveAll(users);
+    }
+
+    @Transactional
+    public void bulkReactivate(List<UUID> ids) {
+        List<User> users = userRepo.findAllById(ids);
+        users.forEach(u -> u.setStatus(UserStatus.ACTIVE));
+        userRepo.saveAll(users);
+    }
+
+    @Transactional
     public AdminUserResponse updateNotes(UUID id, String adminNotes) {
         User user = findUser(id);
         user.setAdminNotes(adminNotes);

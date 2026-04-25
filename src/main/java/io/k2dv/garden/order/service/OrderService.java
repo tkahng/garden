@@ -304,6 +304,23 @@ public class OrderService {
         return toResponse(order);
     }
 
+    @Transactional
+    public void bulkCancel(List<UUID> ids) {
+        List<Order> cancellable = orderRepo.findAllById(ids).stream()
+            .filter(o -> o.getStatus() == OrderStatus.PENDING_PAYMENT || o.getStatus() == OrderStatus.PAID)
+            .toList();
+        for (Order order : cancellable) {
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepo.save(order);
+            orderItemRepo.findByOrderId(order.getId()).stream()
+                .filter(item -> item.getVariantId() != null)
+                .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+            orderEventService.emit(order.getId(), OrderEventType.ORDER_CANCELLED, "Bulk cancelled", null, "admin", null);
+            String to = resolveCustomerEmail(order);
+            if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+        }
+    }
+
     @Transactional(readOnly = true)
     public Order findByStripeSessionId(String stripeSessionId) {
         return orderRepo.findByStripeSessionId(stripeSessionId)

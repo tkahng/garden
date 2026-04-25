@@ -126,6 +126,30 @@ public class ProductService {
         productRepo.save(p);
     }
 
+    @Transactional
+    public void bulkChangeStatus(List<UUID> ids, ProductStatus status) {
+        List<Product> products = productRepo.findAllByIdInAndDeletedAtIsNull(ids);
+        Instant now = Instant.now();
+        for (Product p : products) {
+            p.setStatus(status);
+            if (status == ProductStatus.ARCHIVED) {
+                collectionMembershipService.removeProductFromAllCollections(p.getId());
+            }
+        }
+        productRepo.saveAll(products);
+    }
+
+    @Transactional
+    public void bulkDelete(List<UUID> ids) {
+        List<Product> products = productRepo.findAllByIdInAndDeletedAtIsNull(ids);
+        Instant now = Instant.now();
+        for (Product p : products) {
+            collectionMembershipService.removeProductFromAllCollections(p.getId());
+            p.setDeletedAt(now);
+        }
+        productRepo.saveAll(products);
+    }
+
     @Transactional(readOnly = true)
     public PagedResult<ProductSummaryResponse> listStorefront(StorefrontProductFilterRequest filter, Pageable pageable) {
         Page<Product> page = productRepo.findAll(ProductSpecification.storefrontSpec(filter), pageable);

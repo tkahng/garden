@@ -5,6 +5,7 @@ import io.k2dv.garden.product.dto.*;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.service.*;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.shared.dto.BulkIdsRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -75,6 +76,20 @@ public class AdminProductController {
     @HasPermission("product:delete")
     public ResponseEntity<Void> delete(@PathVariable UUID id) {
         productService.softDelete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/bulk/status")
+    @HasPermission("product:publish")
+    public ResponseEntity<Void> bulkChangeStatus(@Valid @RequestBody BulkStatusRequest req) {
+        productService.bulkChangeStatus(req.ids(), req.status());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bulk/delete")
+    @HasPermission("product:delete")
+    public ResponseEntity<Void> bulkDelete(@Valid @RequestBody BulkIdsRequest req) {
+        productService.bulkDelete(req.ids());
         return ResponseEntity.noContent().build();
     }
 

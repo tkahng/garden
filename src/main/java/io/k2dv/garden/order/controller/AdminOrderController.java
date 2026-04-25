@@ -7,8 +7,10 @@ import io.k2dv.garden.order.dto.UpdateOrderRequest;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.shared.dto.BulkIdsRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
@@ -81,5 +83,12 @@ public class AdminOrderController {
             @PathVariable UUID id,
             @RequestBody UpdateOrderRequest req) {
         return ResponseEntity.ok(ApiResponse.of(orderService.updateOrder(id, req)));
+    }
+
+    @PostMapping("/bulk/cancel")
+    @HasPermission("order:write")
+    public ResponseEntity<Void> bulkCancel(@Valid @RequestBody BulkIdsRequest req) {
+        orderService.bulkCancel(req.ids());
+        return ResponseEntity.noContent().build();
     }
 }

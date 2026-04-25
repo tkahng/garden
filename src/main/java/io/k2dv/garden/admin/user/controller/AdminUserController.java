@@ -9,6 +9,7 @@ import io.k2dv.garden.admin.user.dto.UserFilter;
 import io.k2dv.garden.admin.user.service.AdminUserService;
 import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.shared.dto.BulkIdsRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.user.model.UserStatus;
 import jakarta.validation.Valid;
@@ -113,5 +114,19 @@ public class AdminUserController {
             @PathVariable UUID id,
             @RequestBody UpdateTagsRequest req) {
         return ApiResponse.of(adminUserService.updateTags(id, req.tags()));
+    }
+
+    @PostMapping("/bulk/suspend")
+    @HasPermission("staff:manage")
+    public ResponseEntity<Void> bulkSuspend(@Valid @RequestBody BulkIdsRequest req) {
+        adminUserService.bulkSuspend(req.ids());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bulk/reactivate")
+    @HasPermission("staff:manage")
+    public ResponseEntity<Void> bulkReactivate(@Valid @RequestBody BulkIdsRequest req) {
+        adminUserService.bulkReactivate(req.ids());
+        return ResponseEntity.noContent().build();
     }
 }
