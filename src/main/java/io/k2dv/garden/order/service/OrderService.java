@@ -67,6 +67,23 @@ public class OrderService {
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
+        return createFromCart(userId, cartItems, null, null, null);
+    }
+
+    @Transactional
+    public Order createFromCart(UUID userId, List<CartItem> cartItems,
+                                UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
+        return buildOrder(userId, null, cartItems, shippingRateId, shippingCost, shippingAddress);
+    }
+
+    @Transactional
+    public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
+                                  UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
+        return buildOrder(null, guestEmail, cartItems, shippingRateId, shippingCost, shippingAddress);
+    }
+
+    private Order buildOrder(UUID userId, String guestEmail, List<CartItem> cartItems,
+                             UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
         if (cartItems.isEmpty()) {
             throw new ValidationException("EMPTY_CART", "Cart is empty");
         }
@@ -84,18 +101,25 @@ public class OrderService {
             }
         }
 
-        // Reserve inventory for each item (throws ValidationException if insufficient)
         for (CartItem cartItem : cartItems) {
             inventoryService.reserveStock(cartItem.getVariantId(), cartItem.getQuantity());
         }
 
-        BigDecimal total = cartItems.stream()
+        BigDecimal itemsTotal = cartItems.stream()
             .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        BigDecimal total = shippingCost != null
+            ? itemsTotal.add(shippingCost)
+            : itemsTotal;
+
         Order order = new Order();
         order.setUserId(userId);
+        order.setGuestEmail(guestEmail);
         order.setTotalAmount(total);
+        order.setShippingCost(shippingCost);
+        order.setShippingRateId(shippingRateId);
+        order.setShippingAddress(shippingAddress);
         order = orderRepo.save(order);
 
         for (CartItem cartItem : cartItems) {
@@ -426,11 +450,11 @@ public class OrderService {
             return new OrderItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
         }).toList();
 
-        return new OrderResponse(order.getId(), order.getUserId(), order.getStatus(),
-            order.getTotalAmount(), order.getCurrency(), order.getStripeSessionId(),
-            order.getDiscountId(), order.getDiscountAmount(),
-            order.getGiftCardId(), order.getGiftCardAmount(),
-            order.getAdminNotes(), order.getShippingAddress(),
+        return new OrderResponse(order.getId(), order.getUserId(), order.getGuestEmail(),
+            order.getStatus(), order.getTotalAmount(), order.getCurrency(),
+            order.getStripeSessionId(), order.getDiscountId(), order.getDiscountAmount(),
+            order.getGiftCardId(), order.getGiftCardAmount(), order.getAdminNotes(),
+            order.getShippingAddress(), order.getShippingCost(), order.getShippingRateId(),
             items, order.getCreatedAt());
     }
 }

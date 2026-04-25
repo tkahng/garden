@@ -162,4 +162,9 @@ public class AuthService {
             user.getId(), TokenType.REFRESH_TOKEN, props.getJwt().getRefreshTokenTtl());
         return new AuthTokenResponse(accessToken, refreshToken);
     }
+
+    @Transactional(readOnly = true)
+    public boolean emailExists(String email) {
+        return userRepo.existsByEmail(email);
+    }
 }

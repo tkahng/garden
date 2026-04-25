@@ -111,6 +111,73 @@ public class CartService {
         });
     }
 
+    // --- Guest cart ---
+
+    @Transactional
+    public CartResponse getOrCreateGuestCart(UUID sessionId) {
+        Cart cart = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE)
+            .orElseGet(() -> {
+                Cart c = new Cart();
+                c.setSessionId(sessionId);
+                return cartRepo.save(c);
+            });
+        return toResponse(cart);
+    }
+
+    @Transactional
+    public CartResponse addGuestItem(UUID sessionId, AddCartItemRequest req) {
+        Cart cart = findActiveGuestCartOrThrow(sessionId);
+        ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(req.variantId())
+            .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
+        Product product = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId())
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        if (product.getStatus() != ProductStatus.ACTIVE) {
+            throw new ValidationException("PRODUCT_NOT_ACTIVE", "Product is not available for purchase");
+        }
+        if (variant.getPrice() == null) {
+            throw new ValidationException("QUOTE_ONLY_VARIANT",
+                "This variant is quote-only and cannot be added to the regular cart");
+        }
+        CartItem item = cartItemRepo.findByCartIdAndVariantId(cart.getId(), req.variantId())
+            .orElseGet(() -> {
+                CartItem i = new CartItem();
+                i.setCartId(cart.getId());
+                i.setVariantId(req.variantId());
+                i.setUnitPrice(variant.getPrice());
+                return i;
+            });
+        item.setQuantity(item.getQuantity() + req.quantity());
+        cartItemRepo.save(item);
+        return toResponse(cart);
+    }
+
+    @Transactional
+    public CartResponse updateGuestItem(UUID sessionId, UUID itemId, UpdateCartItemRequest req) {
+        Cart cart = findActiveGuestCartOrThrow(sessionId);
+        CartItem item = cartItemRepo.findByIdAndCartId(itemId, cart.getId())
+            .orElseThrow(() -> new NotFoundException("CART_ITEM_NOT_FOUND", "Cart item not found"));
+        item.setQuantity(req.quantity());
+        cartItemRepo.save(item);
+        return toResponse(cart);
+    }
+
+    @Transactional
+    public CartResponse removeGuestItem(UUID sessionId, UUID itemId) {
+        Cart cart = findActiveGuestCartOrThrow(sessionId);
+        CartItem item = cartItemRepo.findByIdAndCartId(itemId, cart.getId())
+            .orElseThrow(() -> new NotFoundException("CART_ITEM_NOT_FOUND", "Cart item not found"));
+        cartItemRepo.delete(item);
+        return toResponse(cart);
+    }
+
+    @Transactional
+    public void abandonGuestCart(UUID sessionId) {
+        cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE).ifPresent(cart -> {
+            cart.setStatus(CartStatus.ABANDONED);
+            cartRepo.save(cart);
+        });
+    }
+
     // --- Internal API for PaymentService ---
 
     @Transactional(readOnly = true)
@@ -118,9 +185,19 @@ public class CartService {
         return findActiveCartOrThrow(userId);
     }
 
+    @Transactional(readOnly = true)
+    public Cart requireActiveGuestCart(UUID sessionId) {
+        return findActiveGuestCartOrThrow(sessionId);
+    }
+
     private Cart findActiveCartOrThrow(UUID userId) {
         return cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
             .orElseThrow(() -> new ValidationException("NO_ACTIVE_CART", "No active cart found"));
+    }
+
+    private Cart findActiveGuestCartOrThrow(UUID sessionId) {
+        return cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE)
+            .orElseThrow(() -> new ValidationException("NO_ACTIVE_CART", "No active guest cart found"));
     }
 
     @Transactional(readOnly = true)

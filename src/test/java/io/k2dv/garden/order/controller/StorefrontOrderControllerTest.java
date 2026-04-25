@@ -36,8 +36,8 @@ class StorefrontOrderControllerTest {
     @MockitoBean OrderService orderService;
 
     private OrderResponse stubOrder(UUID id, UUID userId, OrderStatus status) {
-        return new OrderResponse(id, userId, status,
-            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, List.of(), null);
+        return new OrderResponse(id, userId, null, status,
+            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null);
     }
 
     @Test

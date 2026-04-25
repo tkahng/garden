@@ -1,9 +1,9 @@
 package io.k2dv.garden.shipping.controller;
 
-import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.shipping.dto.ShippingRateResponse;
 import io.k2dv.garden.shipping.service.ShippingService;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,7 +18,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/storefront/shipping")
 @RequiredArgsConstructor
-@Authenticated
+@SecurityRequirements({})
 public class StorefrontShippingController {
 
     private final ShippingService shippingService;
