@@ -11,6 +11,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.thymeleaf.TemplateEngine;
 
 import java.util.UUID;
 
@@ -25,13 +26,15 @@ class SmtpEmailServiceTest {
     @Mock JavaMailSender mailSender;
     @Mock AppProperties props;
     @Mock MimeMessage mimeMessage;
+    @Mock TemplateEngine templateEngine;
 
     SmtpEmailService service;
 
     @BeforeEach
     void setUp() {
         lenient().when(props.getFrontendUrl()).thenReturn("https://example.com");
-        service = new SmtpEmailService(mailSender, props);
+        lenient().when(templateEngine.process(any(String.class), any())).thenReturn("<html></html>");
+        service = new SmtpEmailService(mailSender, props, templateEngine);
     }
 
     // ── sendEmailVerification ─────────────────────────────────────────────────

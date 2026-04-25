@@ -30,6 +30,8 @@ import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.auth.service.EmailService;
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
@@ -63,6 +65,8 @@ public class OrderService {
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
     private final UserRepository userRepo;
+    private final EmailService emailService;
+    private final AppProperties appProperties;
     private final ProductImageRepository imageRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
@@ -211,6 +215,7 @@ public class OrderService {
             .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
         orderEventService.emit(orderId, OrderEventType.PAYMENT_CONFIRMED,
             "Payment fulfilled via gift card", null, "system", null);
+        sendOrderConfirmationEmail(order);
     }
 
     @Transactional
@@ -235,6 +240,7 @@ public class OrderService {
 
             orderEventService.emit(order.getId(), OrderEventType.PAYMENT_CONFIRMED,
                 "Payment confirmed via Stripe", null, "system", null);
+            sendOrderConfirmationEmail(order);
         });
     }
 
@@ -352,6 +358,37 @@ public class OrderService {
               .append(csvCell(o.getShippingAddress())).append('\n');
         }
         return sb.toString();
+    }
+
+    private void sendOrderConfirmationEmail(Order order) {
+        String to = resolveCustomerEmail(order);
+        if (to == null) return;
+        List<OrderItem> items = orderItemRepo.findByOrderId(order.getId());
+        Set<UUID> variantIds = items.stream().map(OrderItem::getVariantId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, String> titleByVariantId = variantIds.isEmpty() ? Map.of() :
+            variantRepo.findAllById(variantIds).stream()
+                .collect(Collectors.toMap(ProductVariant::getId, ProductVariant::getTitle));
+        List<String> itemLines = items.stream().map(item -> {
+            String title = item.getVariantId() != null
+                ? titleByVariantId.getOrDefault(item.getVariantId(), "Item") : "Item";
+            BigDecimal lineTotal = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+            return String.format("%d × %s — $%.2f", item.getQuantity(), title, lineTotal);
+        }).toList();
+        emailService.sendOrderConfirmation(to, shortRef(order.getId()),
+            order.getTotalAmount(), order.getCurrency(), itemLines, appProperties.getFrontendUrl());
+    }
+
+    private String resolveCustomerEmail(Order order) {
+        if (order.getGuestEmail() != null) return order.getGuestEmail();
+        if (order.getUserId() != null) {
+            return userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null);
+        }
+        return null;
+    }
+
+    private static String shortRef(UUID id) {
+        return "#" + id.toString().substring(0, 8).toUpperCase();
     }
 
     private Specification<Order> buildSpec(OrderFilter filter) {

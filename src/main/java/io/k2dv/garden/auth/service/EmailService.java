@@ -1,5 +1,7 @@
 package io.k2dv.garden.auth.service;
 
+import java.math.BigDecimal;
+import java.util.List;
 import java.util.UUID;
 
 public interface EmailService {
@@ -9,4 +11,6 @@ public interface EmailService {
     void sendQuoteNewRequest(String to, UUID quoteId);
     void sendQuotePdf(String to, UUID quoteId, byte[] pdfBytes);
     void sendCompanyInvitation(String to, String companyName, String inviterName, String token);
+    void sendOrderConfirmation(String to, String orderRef, BigDecimal total, String currency, List<String> itemLines, String storeFrontUrl);
+    void sendShippingNotification(String to, String orderRef, String trackingNumber, String trackingCompany, String trackingUrl, String storeFrontUrl);
 }
