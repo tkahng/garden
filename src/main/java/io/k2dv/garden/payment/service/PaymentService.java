@@ -249,7 +249,9 @@ public class PaymentService {
     switch (event.getType()) {
       case "checkout.session.completed" -> {
         Session session = deserializeSession(event);
-        orderService.confirmPayment(session.getId(), session.getPaymentIntent());
+        Long taxAmountCents = session.getTotalDetails() != null
+            ? session.getTotalDetails().getAmountTax() : null;
+        orderService.confirmPayment(session.getId(), session.getPaymentIntent(), taxAmountCents);
         String orderIdStr = session.getMetadata() != null ? session.getMetadata().get("orderId") : null;
         if (orderIdStr != null && !orderIdStr.isBlank()) {
           quoteRequestRepo.findByOrderId(UUID.fromString(orderIdStr)).ifPresent(quote -> {
@@ -276,7 +278,8 @@ public class PaymentService {
         .setMode(SessionCreateParams.Mode.PAYMENT)
         .setSuccessUrl(appProperties.getFrontendUrl() + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
         .setCancelUrl(appProperties.getFrontendUrl() + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
-        .putMetadata("orderId", orderId != null ? orderId.toString() : "");
+        .putMetadata("orderId", orderId != null ? orderId.toString() : "")
+        .setAutomaticTax(SessionCreateParams.AutomaticTax.builder().setEnabled(true).build());
   }
 
   private void addLineItems(SessionCreateParams.Builder builder, List<CartItem> cartItems,

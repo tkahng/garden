@@ -62,4 +62,7 @@ public class Order extends BaseEntity {
 
     @Column(name = "gift_card_amount", precision = 19, scale = 4)
     private BigDecimal giftCardAmount;
+
+    @Column(name = "tax_amount", precision = 19, scale = 4)
+    private BigDecimal taxAmount;
 }

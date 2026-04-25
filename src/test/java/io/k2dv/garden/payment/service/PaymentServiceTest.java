@@ -296,7 +296,7 @@ class PaymentServiceTest {
 
     paymentService.handleWebhook("payload", "sig", "secret");
 
-    verify(orderService).confirmPayment("cs_test_123", "pi_test_456");
+    verify(orderService).confirmPayment("cs_test_123", "pi_test_456", null);
   }
 
   @Test

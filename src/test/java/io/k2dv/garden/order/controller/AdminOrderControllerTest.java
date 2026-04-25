@@ -38,7 +38,7 @@ class AdminOrderControllerTest {
 
   private OrderResponse stubOrder(UUID id) {
     return new OrderResponse(id, UUID.randomUUID(), null, OrderStatus.PENDING_PAYMENT,
-        new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null);
+        new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null, null);
   }
 
   @Test

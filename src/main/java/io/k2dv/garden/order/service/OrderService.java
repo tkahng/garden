@@ -231,10 +231,19 @@ public class OrderService {
 
     @Transactional
     public void confirmPayment(String stripeSessionId, String stripePaymentIntentId) {
+        confirmPayment(stripeSessionId, stripePaymentIntentId, null);
+    }
+
+    @Transactional
+    public void confirmPayment(String stripeSessionId, String stripePaymentIntentId, Long taxAmountCents) {
         orderRepo.findByStripeSessionId(stripeSessionId).ifPresent(order -> {
             if (order.getStatus() == OrderStatus.PAID) return; // idempotent
             order.setStripePaymentIntentId(stripePaymentIntentId);
             order.setStatus(OrderStatus.PAID);
+            if (taxAmountCents != null && taxAmountCents > 0) {
+                order.setTaxAmount(BigDecimal.valueOf(taxAmountCents)
+                    .divide(BigDecimal.valueOf(100)));
+            }
             orderRepo.save(order);
 
             orderItemRepo.findByOrderId(order.getId()).stream()
@@ -570,6 +579,6 @@ public class OrderService {
             order.getStripeSessionId(), order.getDiscountId(), order.getDiscountAmount(),
             order.getGiftCardId(), order.getGiftCardAmount(), order.getAdminNotes(),
             order.getShippingAddress(), order.getShippingCost(), order.getShippingRateId(),
-            items, order.getCreatedAt());
+            items, order.getTaxAmount(), order.getCreatedAt());
     }
 }
