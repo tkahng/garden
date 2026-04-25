@@ -14,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -93,6 +94,39 @@ public class AdminUserService {
     @Transactional
     public void removeRole(UUID userId, String roleName) {
         iamService.removeRoleByName(userId, roleName);
+    }
+
+    @Transactional(readOnly = true)
+    public String exportCsv(UserFilter filter) {
+        List<User> users = userRepo.findAll(
+            UserSpecification.toSpec(filter), Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("id,email,first_name,last_name,phone,status,roles,tags,created_at,email_verified_at,admin_notes\n");
+        for (User u : users) {
+            List<String> roles = userRepo.findRoleNamesByUserId(u.getId());
+            sb.append(csvCell(u.getId())).append(',')
+              .append(csvCell(u.getEmail())).append(',')
+              .append(csvCell(u.getFirstName())).append(',')
+              .append(csvCell(u.getLastName())).append(',')
+              .append(csvCell(u.getPhone())).append(',')
+              .append(csvCell(u.getStatus())).append(',')
+              .append(csvCell(String.join(";", roles))).append(',')
+              .append(csvCell(u.getTags() != null ? String.join(";", u.getTags()) : "")).append(',')
+              .append(csvCell(u.getCreatedAt())).append(',')
+              .append(csvCell(u.getEmailVerifiedAt())).append(',')
+              .append(csvCell(u.getAdminNotes())).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private static String csvCell(Object value) {
+        if (value == null) return "";
+        String s = value.toString();
+        if (s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r")) {
+            return "\"" + s.replace("\"", "\"\"") + "\"";
+        }
+        return s;
     }
 
     private User findUser(UUID id) {

@@ -34,15 +34,19 @@ import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.user.model.User;
+import io.k2dv.garden.user.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -58,6 +62,7 @@ public class OrderService {
     private final OrderItemRepository orderItemRepo;
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
+    private final UserRepository userRepo;
     private final ProductImageRepository imageRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
@@ -308,7 +313,49 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public PagedResult<OrderResponse> list(OrderFilter filter, Pageable pageable) {
-        Specification<Order> spec = (root, query, cb) -> {
+        return PagedResult.of(orderRepo.findAll(buildSpec(filter), pageable), this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public String exportCsv(OrderFilter filter) {
+        List<Order> orders = orderRepo.findAll(
+            buildSpec(filter), Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Set<UUID> orderIds = orders.stream().map(Order::getId).collect(Collectors.toSet());
+        Map<UUID, Long> itemCounts = orderIds.isEmpty() ? Map.of() :
+            orderItemRepo.findByOrderIdIn(orderIds).stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId, Collectors.counting()));
+
+        Set<UUID> userIds = orders.stream().map(Order::getUserId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, String> emailByUser = userIds.isEmpty() ? Map.of() :
+            userRepo.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getEmail));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("id,created_at,status,customer_email,guest_email,items,total,currency," +
+                  "discount_amount,gift_card_amount,shipping_cost,shipping_address\n");
+        for (Order o : orders) {
+            String customerEmail = o.getUserId() != null
+                ? emailByUser.getOrDefault(o.getUserId(), "") : "";
+            sb.append(csvCell(o.getId())).append(',')
+              .append(csvCell(o.getCreatedAt())).append(',')
+              .append(csvCell(o.getStatus())).append(',')
+              .append(csvCell(customerEmail)).append(',')
+              .append(csvCell(o.getGuestEmail())).append(',')
+              .append(itemCounts.getOrDefault(o.getId(), 0L)).append(',')
+              .append(csvCell(o.getTotalAmount())).append(',')
+              .append(csvCell(o.getCurrency())).append(',')
+              .append(csvCell(o.getDiscountAmount())).append(',')
+              .append(csvCell(o.getGiftCardAmount())).append(',')
+              .append(csvCell(o.getShippingCost())).append(',')
+              .append(csvCell(o.getShippingAddress())).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private Specification<Order> buildSpec(OrderFilter filter) {
+        return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (filter.status() != null) predicates.add(cb.equal(root.get("status"), filter.status()));
             if (filter.userId() != null) predicates.add(cb.equal(root.get("userId"), filter.userId()));
@@ -316,7 +363,15 @@ public class OrderService {
             if (filter.to() != null) predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), filter.to()));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
-        return PagedResult.of(orderRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    private static String csvCell(Object value) {
+        if (value == null) return "";
+        String s = value.toString();
+        if (s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r")) {
+            return "\"" + s.replace("\"", "\"\"") + "\"";
+        }
+        return s;
     }
 
     @Transactional

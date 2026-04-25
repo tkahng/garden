@@ -12,6 +12,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -39,6 +41,20 @@ public class AdminOrderController {
             new OrderFilter(status, userId, from, to),
             PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "createdAt")));
         return ResponseEntity.ok(ApiResponse.of(result));
+    }
+
+    @GetMapping("/export")
+    @HasPermission("order:read")
+    public ResponseEntity<String> exportCsv(
+            @RequestParam(required = false) OrderStatus status,
+            @RequestParam(required = false) UUID userId,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to) {
+        String csv = orderService.exportCsv(new OrderFilter(status, userId, from, to));
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("text/csv"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"orders.csv\"")
+            .body(csv);
     }
 
     @GetMapping("/{id}")

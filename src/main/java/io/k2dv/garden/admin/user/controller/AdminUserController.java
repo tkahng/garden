@@ -15,6 +15,8 @@ import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,6 +39,18 @@ public class AdminUserController {
             @RequestParam(defaultValue = "20") int size) {
         int clampedSize = Math.min(size, 100);
         return ApiResponse.of(adminUserService.listUsers(new UserFilter(status, email), PageRequest.of(page, clampedSize)));
+    }
+
+    @GetMapping("/export")
+    @HasPermission("user:read")
+    public ResponseEntity<String> exportCsv(
+            @RequestParam(required = false) UserStatus status,
+            @RequestParam(required = false) String email) {
+        String csv = adminUserService.exportCsv(new UserFilter(status, email));
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("text/csv"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"customers.csv\"")
+            .body(csv);
     }
 
     @GetMapping("/{id}")
