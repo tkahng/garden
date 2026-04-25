@@ -13,6 +13,9 @@ import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.thymeleaf.TemplateEngine;
 
+import java.math.BigDecimal;
+import java.util.List;
+
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -146,6 +149,37 @@ class SmtpEmailServiceTest {
         doThrow(new MailSendException("SMTP down")).when(mailSender).send(any(MimeMessage.class));
 
         assertThatCode(() -> service.sendQuotePdf("user@example.com", UUID.randomUUID(), new byte[]{1}))
+            .doesNotThrowAnyException();
+    }
+
+    // ── New transactional emails ───────────────────────────────────────────────
+
+    @Test
+    void sendOrderCancelled_doesNotThrow() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        assertThatCode(() -> service.sendOrderCancelled("user@example.com", "#ABCD1234", "https://example.com"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendOrderDelivered_doesNotThrow() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        assertThatCode(() -> service.sendOrderDelivered("user@example.com", "#ABCD1234", null, "https://example.com"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendAbandonedCartReminder_doesNotThrow() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        assertThatCode(() -> service.sendAbandonedCartReminder(
+            "user@example.com", "Jane", List.of("1 × Seeds — $9.99"), "https://example.com/cart"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendLowStockAlert_doesNotThrow() {
+        assertThatCode(() -> service.sendLowStockAlert(
+            "admin@example.com", List.of("Heirloom Tomato Seeds — S/Lagoon: 2 units")))
             .doesNotThrowAnyException();
     }
 }

@@ -114,6 +114,8 @@ public class FulfillmentService {
 
         boolean transitioningToShipped = req.status() == FulfillmentStatus.SHIPPED
             && f.getStatus() != FulfillmentStatus.SHIPPED;
+        boolean transitioningToDelivered = req.status() == FulfillmentStatus.DELIVERED
+            && f.getStatus() != FulfillmentStatus.DELIVERED;
 
         if (req.status() != null) {
             if (!isValidTransition(f.getStatus(), req.status())) {
@@ -135,6 +137,9 @@ public class FulfillmentService {
         if (transitioningToShipped) {
             sendShippingNotificationEmail(orderId, f);
         }
+        if (transitioningToDelivered) {
+            sendDeliveredEmail(orderId);
+        }
 
         return toResponse(f);
     }
@@ -151,6 +156,18 @@ public class FulfillmentService {
         Fulfillment f = fulfillmentRepo.findByIdAndOrderId(fulfillmentId, orderId)
             .orElseThrow(() -> new NotFoundException("FULFILLMENT_NOT_FOUND", "Fulfillment not found"));
         return toResponse(f);
+    }
+
+    private void sendDeliveredEmail(UUID orderId) {
+        orderRepo.findById(orderId).ifPresent(order -> {
+            String to = order.getGuestEmail() != null ? order.getGuestEmail()
+                : (order.getUserId() != null
+                    ? userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null)
+                    : null);
+            if (to == null) return;
+            String orderRef = "#" + orderId.toString().substring(0, 8).toUpperCase();
+            emailService.sendOrderDelivered(to, orderRef, null, appProperties.getFrontendUrl());
+        });
     }
 
     private void sendShippingNotificationEmail(UUID orderId, Fulfillment f) {

@@ -9,6 +9,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -29,4 +31,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
         @Param("to") Instant to,
         @Param("status") OrderStatus status
     );
+
+    long countByUserIdAndStatusIn(UUID userId, Collection<OrderStatus> statuses);
+
+    @Query("SELECT COALESCE(SUM(o.totalAmount), 0) FROM Order o WHERE o.userId = :userId AND o.status IN :statuses")
+    BigDecimal sumSpendByUserId(@Param("userId") UUID userId, @Param("statuses") Collection<OrderStatus> statuses);
 }

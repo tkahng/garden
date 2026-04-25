@@ -148,6 +148,77 @@ public class SmtpEmailService implements EmailService {
     }
 
     @Override
+    public void sendOrderCancelled(String to, String orderRef, String storeFrontUrl) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("orderRef", orderRef);
+            ctx.setVariable("storeFrontUrl", storeFrontUrl);
+            String html = templateEngine.process("email/order-cancelled", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Your order has been cancelled — " + orderRef);
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send order-cancelled email to {} for {}: {}", to, orderRef, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendOrderDelivered(String to, String orderRef, String productHandle, String storeFrontUrl) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("orderRef", orderRef);
+            ctx.setVariable("productHandle", productHandle);
+            ctx.setVariable("storeFrontUrl", storeFrontUrl);
+            String html = templateEngine.process("email/order-delivered", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Your order has been delivered — " + orderRef);
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send order-delivered email to {} for {}: {}", to, orderRef, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendAbandonedCartReminder(String to, String firstName, List<String> itemLines, String cartUrl) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("firstName", firstName);
+            ctx.setVariable("itemLines", itemLines);
+            ctx.setVariable("cartUrl", cartUrl);
+            String html = templateEngine.process("email/abandoned-cart", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("You left something behind");
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send abandoned-cart reminder to {}: {}", to, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendLowStockAlert(String to, List<String> itemLines) {
+        try {
+            var msg = new SimpleMailMessage();
+            msg.setTo(to);
+            msg.setSubject("Low stock alert — " + itemLines.size() + " variant(s) running low");
+            msg.setText("The following variants are running low on stock:\n\n"
+                + String.join("\n", itemLines)
+                + "\n\nLog in to the admin portal to restock.");
+            mailSender.send(msg);
+        } catch (MailException e) {
+            log.error("Failed to send low-stock alert to {}: {}", to, e.getMessage(), e);
+        }
+    }
+
+    @Override
     public void sendQuotePdf(String to, UUID quoteId, byte[] pdfBytes) {
         try {
             MimeMessage mimeMessage = mailSender.createMimeMessage();

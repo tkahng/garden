@@ -25,4 +25,7 @@ public class InventoryLevel extends BaseEntity {
 
   @Column(name = "quantity_committed", nullable = false)
   private int quantityCommitted = 0;
+
+  @Column(name = "low_stock_alerted_at")
+  private java.time.Instant lowStockAlertedAt;
 }

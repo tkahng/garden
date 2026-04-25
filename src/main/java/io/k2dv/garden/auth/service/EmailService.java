@@ -13,4 +13,8 @@ public interface EmailService {
     void sendCompanyInvitation(String to, String companyName, String inviterName, String token);
     void sendOrderConfirmation(String to, String orderRef, BigDecimal total, String currency, List<String> itemLines, String storeFrontUrl);
     void sendShippingNotification(String to, String orderRef, String trackingNumber, String trackingCompany, String trackingUrl, String storeFrontUrl);
+    void sendOrderCancelled(String to, String orderRef, String storeFrontUrl);
+    void sendOrderDelivered(String to, String orderRef, String productHandle, String storeFrontUrl);
+    void sendAbandonedCartReminder(String to, String firstName, List<String> itemLines, String cartUrl);
+    void sendLowStockAlert(String to, List<String> itemLines);
 }

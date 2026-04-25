@@ -31,6 +31,7 @@ import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.auth.service.EmailService;
+import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -67,6 +68,7 @@ public class OrderService {
     private final UserRepository userRepo;
     private final EmailService emailService;
     private final AppProperties appProperties;
+    private final AutoTagService autoTagService;
     private final ProductImageRepository imageRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
@@ -216,6 +218,7 @@ public class OrderService {
         orderEventService.emit(orderId, OrderEventType.PAYMENT_CONFIRMED,
             "Payment fulfilled via gift card", null, "system", null);
         sendOrderConfirmationEmail(order);
+        if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
     }
 
     @Transactional
@@ -241,6 +244,7 @@ public class OrderService {
             orderEventService.emit(order.getId(), OrderEventType.PAYMENT_CONFIRMED,
                 "Payment confirmed via Stripe", null, "system", null);
             sendOrderConfirmationEmail(order);
+            if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
         });
     }
 
@@ -295,6 +299,8 @@ public class OrderService {
         orderItemRepo.findByOrderId(orderId).stream()
             .filter(item -> item.getVariantId() != null)
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+        String to = resolveCustomerEmail(order);
+        if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
         return toResponse(order);
     }
 

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Your order has been delivered</title>
+</head>
+<body style="margin:0;padding:0;background:#f5f5f5;font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:32px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);">
+
+          <tr>
+            <td style="background:#1a1a1a;padding:24px 32px;">
+              <span style="color:#fff;font-size:20px;font-weight:bold;letter-spacing:.5px;">The Garden Shop</span>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:32px;">
+              <h1 style="margin:0 0 8px;font-size:22px;font-weight:700;color:#1a1a1a;">Your order has been delivered</h1>
+              <p style="margin:0 0 24px;color:#666;font-size:14px;">
+                Order <strong th:text="${orderRef}">ORDER-REF</strong> has arrived.
+                We hope you love what you planted.
+              </p>
+
+              <div style="text-align:center;margin-top:8px;">
+                <a th:href="${storeFrontUrl + '/products/' + productHandle}"
+                   th:if="${productHandle}"
+                   style="display:inline-block;background:#1a1a1a;color:#fff;text-decoration:none;
+                          padding:12px 28px;border-radius:6px;font-size:14px;font-weight:600;margin-right:8px;">
+                  Leave a review
+                </a>
+                <a th:href="${storeFrontUrl + '/account/orders'}"
+                   style="display:inline-block;background:#f0f0f0;color:#333;text-decoration:none;
+                          padding:12px 28px;border-radius:6px;font-size:14px;font-weight:600;">
+                  View your orders
+                </a>
+              </div>
+            </td>
+          </tr>
+
+          <tr>
+            <td style="padding:20px 32px;border-top:1px solid #eee;font-size:12px;color:#aaa;text-align:center;">
+              You received this email because you placed an order with The Garden Shop.
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
