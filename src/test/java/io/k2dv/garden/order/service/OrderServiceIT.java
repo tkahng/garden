@@ -67,7 +67,7 @@ class OrderServiceIT extends AbstractIntegrationTest {
   @BeforeEach
   void setUp() {
     AdminProductResponse product = productService.create(
-        new CreateProductRequest("Test Product", null, null, null, null, List.of()));
+        new CreateProductRequest("Test Product", null, null, null, null, List.of(), null, null));
     productService.changeStatus(product.id(),
         new io.k2dv.garden.product.dto.ProductStatusRequest(ProductStatus.ACTIVE));
     variant = variantService.create(product.id(),
@@ -201,7 +201,7 @@ class OrderServiceIT extends AbstractIntegrationTest {
 
     // Create a DRAFT product (do NOT call changeStatus to ACTIVE)
     AdminProductResponse draftProduct = productService.create(
-        new CreateProductRequest("Draft Product", null, null, null, null, List.of()));
+        new CreateProductRequest("Draft Product", null, null, null, null, List.of(), null, null));
     AdminVariantResponse draftVariant = variantService.create(draftProduct.id(),
         new CreateVariantRequest(new BigDecimal("25.00"), null, null, null, null, null, List.of()));
 

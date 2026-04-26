@@ -9,5 +9,7 @@ public record CreateProductRequest(
     String handle,
     String vendor,
     String productType,
-    List<String> tags
+    List<String> tags,
+    String metaTitle,
+    String metaDescription
 ) {}

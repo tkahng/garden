@@ -44,7 +44,7 @@ class StorefrontProductControllerTest {
     @Test
     void getByHandle_activeProduct_returns200() throws Exception {
         var detail = new ProductDetailResponse(UUID.randomUUID(), "Shirt", null, "shirt",
-            null, null, List.of(), List.of(), List.of());
+            null, null, List.of(), List.of(), List.of(), null, null, null);
         when(productService.getByHandle("shirt")).thenReturn(detail);
 
         mvc.perform(get("/api/v1/products/shirt"))

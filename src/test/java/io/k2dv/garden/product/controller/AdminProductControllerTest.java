@@ -37,7 +37,7 @@ class AdminProductControllerTest {
 
     private AdminProductResponse stubProduct() {
         return new AdminProductResponse(UUID.randomUUID(), "T-Shirt", null, "t-shirt",
-            null, null, ProductStatus.DRAFT, null, List.of(), List.of(), List.of(), List.of(), null, null, null);
+            null, null, ProductStatus.DRAFT, null, List.of(), List.of(), List.of(), List.of(), null, null, null, null, null);
     }
 
     @Test
@@ -46,7 +46,7 @@ class AdminProductControllerTest {
 
         mvc.perform(post("/api/v1/admin/products")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(mapper.writeValueAsString(new CreateProductRequest("T-Shirt", null, null, null, null, List.of()))))
+                .content(mapper.writeValueAsString(new CreateProductRequest("T-Shirt", null, null, null, null, List.of(), null, null))))
             .andExpect(status().isCreated())
             .andExpect(jsonPath("$.data.title").value("T-Shirt"))
             .andExpect(jsonPath("$.data.status").value("DRAFT"));

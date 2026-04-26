@@ -9,12 +9,15 @@ import io.k2dv.garden.admin.user.dto.UserFilter;
 import io.k2dv.garden.admin.user.service.AdminUserService;
 import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.shared.dto.BulkIdsRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.user.model.UserStatus;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -37,6 +40,18 @@ public class AdminUserController {
             @RequestParam(defaultValue = "20") int size) {
         int clampedSize = Math.min(size, 100);
         return ApiResponse.of(adminUserService.listUsers(new UserFilter(status, email), PageRequest.of(page, clampedSize)));
+    }
+
+    @GetMapping("/export")
+    @HasPermission("user:read")
+    public ResponseEntity<String> exportCsv(
+            @RequestParam(required = false) UserStatus status,
+            @RequestParam(required = false) String email) {
+        String csv = adminUserService.exportCsv(new UserFilter(status, email));
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("text/csv"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"customers.csv\"")
+            .body(csv);
     }
 
     @GetMapping("/{id}")
@@ -99,5 +114,19 @@ public class AdminUserController {
             @PathVariable UUID id,
             @RequestBody UpdateTagsRequest req) {
         return ApiResponse.of(adminUserService.updateTags(id, req.tags()));
+    }
+
+    @PostMapping("/bulk/suspend")
+    @HasPermission("staff:manage")
+    public ResponseEntity<Void> bulkSuspend(@Valid @RequestBody BulkIdsRequest req) {
+        adminUserService.bulkSuspend(req.ids());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/bulk/reactivate")
+    @HasPermission("staff:manage")
+    public ResponseEntity<Void> bulkReactivate(@Valid @RequestBody BulkIdsRequest req) {
+        adminUserService.bulkReactivate(req.ids());
+        return ResponseEntity.noContent().build();
     }
 }

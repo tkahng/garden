@@ -50,7 +50,7 @@ class CartServiceIT extends AbstractIntegrationTest {
 
   private AdminVariantResponse createActiveVariant(BigDecimal price) {
     AdminProductResponse product = productService.create(
-        new CreateProductRequest("Test Product", null, null, null, null, List.of()));
+        new CreateProductRequest("Test Product", null, null, null, null, List.of(), null, null));
     productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
     return variantService.create(product.id(),
         new CreateVariantRequest(price, null, null, null, null, null, List.of()));
@@ -95,7 +95,7 @@ class CartServiceIT extends AbstractIntegrationTest {
   void addItem_productInfoPopulated() {
     UUID userId = createUserId();
     AdminProductResponse product = productService.create(
-        new CreateProductRequest("Garden Hose", null, null, null, null, List.of()));
+        new CreateProductRequest("Garden Hose", null, null, null, null, List.of(), null, null));
     productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
     AdminVariantResponse variant = variantService.create(product.id(),
         new CreateVariantRequest(new BigDecimal("19.99"), null, null, null, null, null, List.of()));
@@ -161,7 +161,7 @@ class CartServiceIT extends AbstractIntegrationTest {
     UUID userId = createUserId();
     // Create a DRAFT product (not activated)
     AdminProductResponse draftProduct = productService.create(
-        new CreateProductRequest("Draft Product", null, null, null, null, List.of()));
+        new CreateProductRequest("Draft Product", null, null, null, null, List.of(), null, null));
     AdminVariantResponse variant = variantService.create(draftProduct.id(),
         new CreateVariantRequest(new BigDecimal("10.00"), null, null, null, null, null, List.of()));
     cartService.getOrCreateActiveCart(userId);
@@ -194,7 +194,7 @@ class CartServiceIT extends AbstractIntegrationTest {
     UUID userId = createUserId();
     // Create product + variant manually to retain the productId for softDelete
     AdminProductResponse product = productService.create(
-        new CreateProductRequest("Soft-Delete Product", null, null, null, null, List.of()));
+        new CreateProductRequest("Soft-Delete Product", null, null, null, null, List.of(), null, null));
     productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
     AdminVariantResponse variant = variantService.create(product.id(),
         new CreateVariantRequest(new BigDecimal("15.00"), null, null, null, null, null, List.of()));

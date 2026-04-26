@@ -30,19 +30,26 @@ import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.auth.service.EmailService;
+import io.k2dv.garden.automation.AutoTagService;
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.user.model.User;
+import io.k2dv.garden.user.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -58,6 +65,10 @@ public class OrderService {
     private final OrderItemRepository orderItemRepo;
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
+    private final UserRepository userRepo;
+    private final EmailService emailService;
+    private final AppProperties appProperties;
+    private final AutoTagService autoTagService;
     private final ProductImageRepository imageRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
@@ -67,6 +78,23 @@ public class OrderService {
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
+        return createFromCart(userId, cartItems, null, null, null);
+    }
+
+    @Transactional
+    public Order createFromCart(UUID userId, List<CartItem> cartItems,
+                                UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
+        return buildOrder(userId, null, cartItems, shippingRateId, shippingCost, shippingAddress);
+    }
+
+    @Transactional
+    public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
+                                  UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
+        return buildOrder(null, guestEmail, cartItems, shippingRateId, shippingCost, shippingAddress);
+    }
+
+    private Order buildOrder(UUID userId, String guestEmail, List<CartItem> cartItems,
+                             UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
         if (cartItems.isEmpty()) {
             throw new ValidationException("EMPTY_CART", "Cart is empty");
         }
@@ -84,18 +112,25 @@ public class OrderService {
             }
         }
 
-        // Reserve inventory for each item (throws ValidationException if insufficient)
         for (CartItem cartItem : cartItems) {
             inventoryService.reserveStock(cartItem.getVariantId(), cartItem.getQuantity());
         }
 
-        BigDecimal total = cartItems.stream()
+        BigDecimal itemsTotal = cartItems.stream()
             .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
+        BigDecimal total = shippingCost != null
+            ? itemsTotal.add(shippingCost)
+            : itemsTotal;
+
         Order order = new Order();
         order.setUserId(userId);
+        order.setGuestEmail(guestEmail);
         order.setTotalAmount(total);
+        order.setShippingCost(shippingCost);
+        order.setShippingRateId(shippingRateId);
+        order.setShippingAddress(shippingAddress);
         order = orderRepo.save(order);
 
         for (CartItem cartItem : cartItems) {
@@ -182,6 +217,8 @@ public class OrderService {
             .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
         orderEventService.emit(orderId, OrderEventType.PAYMENT_CONFIRMED,
             "Payment fulfilled via gift card", null, "system", null);
+        sendOrderConfirmationEmail(order);
+        if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
     }
 
     @Transactional
@@ -194,10 +231,19 @@ public class OrderService {
 
     @Transactional
     public void confirmPayment(String stripeSessionId, String stripePaymentIntentId) {
+        confirmPayment(stripeSessionId, stripePaymentIntentId, null);
+    }
+
+    @Transactional
+    public void confirmPayment(String stripeSessionId, String stripePaymentIntentId, Long taxAmountCents) {
         orderRepo.findByStripeSessionId(stripeSessionId).ifPresent(order -> {
             if (order.getStatus() == OrderStatus.PAID) return; // idempotent
             order.setStripePaymentIntentId(stripePaymentIntentId);
             order.setStatus(OrderStatus.PAID);
+            if (taxAmountCents != null && taxAmountCents > 0) {
+                order.setTaxAmount(BigDecimal.valueOf(taxAmountCents)
+                    .divide(BigDecimal.valueOf(100)));
+            }
             orderRepo.save(order);
 
             orderItemRepo.findByOrderId(order.getId()).stream()
@@ -206,6 +252,8 @@ public class OrderService {
 
             orderEventService.emit(order.getId(), OrderEventType.PAYMENT_CONFIRMED,
                 "Payment confirmed via Stripe", null, "system", null);
+            sendOrderConfirmationEmail(order);
+            if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
         });
     }
 
@@ -260,7 +308,26 @@ public class OrderService {
         orderItemRepo.findByOrderId(orderId).stream()
             .filter(item -> item.getVariantId() != null)
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+        String to = resolveCustomerEmail(order);
+        if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
         return toResponse(order);
+    }
+
+    @Transactional
+    public void bulkCancel(List<UUID> ids) {
+        List<Order> cancellable = orderRepo.findAllById(ids).stream()
+            .filter(o -> o.getStatus() == OrderStatus.PENDING_PAYMENT || o.getStatus() == OrderStatus.PAID)
+            .toList();
+        for (Order order : cancellable) {
+            order.setStatus(OrderStatus.CANCELLED);
+            orderRepo.save(order);
+            orderItemRepo.findByOrderId(order.getId()).stream()
+                .filter(item -> item.getVariantId() != null)
+                .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+            orderEventService.emit(order.getId(), OrderEventType.ORDER_CANCELLED, "Bulk cancelled", null, "admin", null);
+            String to = resolveCustomerEmail(order);
+            if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+        }
     }
 
     @Transactional(readOnly = true)
@@ -284,7 +351,80 @@ public class OrderService {
 
     @Transactional(readOnly = true)
     public PagedResult<OrderResponse> list(OrderFilter filter, Pageable pageable) {
-        Specification<Order> spec = (root, query, cb) -> {
+        return PagedResult.of(orderRepo.findAll(buildSpec(filter), pageable), this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public String exportCsv(OrderFilter filter) {
+        List<Order> orders = orderRepo.findAll(
+            buildSpec(filter), Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        Set<UUID> orderIds = orders.stream().map(Order::getId).collect(Collectors.toSet());
+        Map<UUID, Long> itemCounts = orderIds.isEmpty() ? Map.of() :
+            orderItemRepo.findByOrderIdIn(orderIds).stream()
+                .collect(Collectors.groupingBy(OrderItem::getOrderId, Collectors.counting()));
+
+        Set<UUID> userIds = orders.stream().map(Order::getUserId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, String> emailByUser = userIds.isEmpty() ? Map.of() :
+            userRepo.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, User::getEmail));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("id,created_at,status,customer_email,guest_email,items,total,currency," +
+                  "discount_amount,gift_card_amount,shipping_cost,shipping_address\n");
+        for (Order o : orders) {
+            String customerEmail = o.getUserId() != null
+                ? emailByUser.getOrDefault(o.getUserId(), "") : "";
+            sb.append(csvCell(o.getId())).append(',')
+              .append(csvCell(o.getCreatedAt())).append(',')
+              .append(csvCell(o.getStatus())).append(',')
+              .append(csvCell(customerEmail)).append(',')
+              .append(csvCell(o.getGuestEmail())).append(',')
+              .append(itemCounts.getOrDefault(o.getId(), 0L)).append(',')
+              .append(csvCell(o.getTotalAmount())).append(',')
+              .append(csvCell(o.getCurrency())).append(',')
+              .append(csvCell(o.getDiscountAmount())).append(',')
+              .append(csvCell(o.getGiftCardAmount())).append(',')
+              .append(csvCell(o.getShippingCost())).append(',')
+              .append(csvCell(o.getShippingAddress())).append('\n');
+        }
+        return sb.toString();
+    }
+
+    private void sendOrderConfirmationEmail(Order order) {
+        String to = resolveCustomerEmail(order);
+        if (to == null) return;
+        List<OrderItem> items = orderItemRepo.findByOrderId(order.getId());
+        Set<UUID> variantIds = items.stream().map(OrderItem::getVariantId)
+            .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, String> titleByVariantId = variantIds.isEmpty() ? Map.of() :
+            variantRepo.findAllById(variantIds).stream()
+                .collect(Collectors.toMap(ProductVariant::getId, ProductVariant::getTitle));
+        List<String> itemLines = items.stream().map(item -> {
+            String title = item.getVariantId() != null
+                ? titleByVariantId.getOrDefault(item.getVariantId(), "Item") : "Item";
+            BigDecimal lineTotal = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
+            return String.format("%d × %s — $%.2f", item.getQuantity(), title, lineTotal);
+        }).toList();
+        emailService.sendOrderConfirmation(to, shortRef(order.getId()),
+            order.getTotalAmount(), order.getCurrency(), itemLines, appProperties.getFrontendUrl());
+    }
+
+    private String resolveCustomerEmail(Order order) {
+        if (order.getGuestEmail() != null) return order.getGuestEmail();
+        if (order.getUserId() != null) {
+            return userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null);
+        }
+        return null;
+    }
+
+    private static String shortRef(UUID id) {
+        return "#" + id.toString().substring(0, 8).toUpperCase();
+    }
+
+    private Specification<Order> buildSpec(OrderFilter filter) {
+        return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (filter.status() != null) predicates.add(cb.equal(root.get("status"), filter.status()));
             if (filter.userId() != null) predicates.add(cb.equal(root.get("userId"), filter.userId()));
@@ -292,7 +432,15 @@ public class OrderService {
             if (filter.to() != null) predicates.add(cb.lessThanOrEqualTo(root.get("createdAt"), filter.to()));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
-        return PagedResult.of(orderRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    private static String csvCell(Object value) {
+        if (value == null) return "";
+        String s = value.toString();
+        if (s.contains(",") || s.contains("\"") || s.contains("\n") || s.contains("\r")) {
+            return "\"" + s.replace("\"", "\"\"") + "\"";
+        }
+        return s;
     }
 
     @Transactional
@@ -426,11 +574,11 @@ public class OrderService {
             return new OrderItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
         }).toList();
 
-        return new OrderResponse(order.getId(), order.getUserId(), order.getStatus(),
-            order.getTotalAmount(), order.getCurrency(), order.getStripeSessionId(),
-            order.getDiscountId(), order.getDiscountAmount(),
-            order.getGiftCardId(), order.getGiftCardAmount(),
-            order.getAdminNotes(), order.getShippingAddress(),
-            items, order.getCreatedAt());
+        return new OrderResponse(order.getId(), order.getUserId(), order.getGuestEmail(),
+            order.getStatus(), order.getTotalAmount(), order.getCurrency(),
+            order.getStripeSessionId(), order.getDiscountId(), order.getDiscountAmount(),
+            order.getGiftCardId(), order.getGiftCardAmount(), order.getAdminNotes(),
+            order.getShippingAddress(), order.getShippingCost(), order.getShippingRateId(),
+            items, order.getTaxAmount(), order.getCreatedAt());
     }
 }

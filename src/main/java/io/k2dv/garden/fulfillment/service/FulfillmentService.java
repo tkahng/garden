@@ -7,6 +7,8 @@ import io.k2dv.garden.fulfillment.dto.UpdateFulfillmentRequest;
 import io.k2dv.garden.fulfillment.model.Fulfillment;
 import io.k2dv.garden.fulfillment.model.FulfillmentItem;
 import io.k2dv.garden.fulfillment.model.FulfillmentStatus;
+import io.k2dv.garden.auth.service.EmailService;
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.fulfillment.repository.FulfillmentItemRepository;
 import io.k2dv.garden.fulfillment.repository.FulfillmentRepository;
 import io.k2dv.garden.order.model.OrderEventType;
@@ -19,6 +21,7 @@ import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
+import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +42,9 @@ public class FulfillmentService {
     private final OrderRepository orderRepo;
     private final OrderItemRepository orderItemRepo;
     private final OrderEventService orderEventService;
+    private final UserRepository userRepo;
+    private final EmailService emailService;
+    private final AppProperties appProperties;
 
     @Transactional
     public FulfillmentResponse create(UUID orderId, CreateFulfillmentRequest req, User admin) {
@@ -106,6 +112,11 @@ public class FulfillmentService {
         Fulfillment f = fulfillmentRepo.findByIdAndOrderId(fulfillmentId, orderId)
             .orElseThrow(() -> new NotFoundException("FULFILLMENT_NOT_FOUND", "Fulfillment not found"));
 
+        boolean transitioningToShipped = req.status() == FulfillmentStatus.SHIPPED
+            && f.getStatus() != FulfillmentStatus.SHIPPED;
+        boolean transitioningToDelivered = req.status() == FulfillmentStatus.DELIVERED
+            && f.getStatus() != FulfillmentStatus.DELIVERED;
+
         if (req.status() != null) {
             if (!isValidTransition(f.getStatus(), req.status())) {
                 throw new ConflictException("INVALID_STATUS_TRANSITION",
@@ -123,6 +134,13 @@ public class FulfillmentService {
         orderEventService.emit(orderId, OrderEventType.FULFILLMENT_UPDATED,
             "Fulfillment updated", null, "admin", null);
 
+        if (transitioningToShipped) {
+            sendShippingNotificationEmail(orderId, f);
+        }
+        if (transitioningToDelivered) {
+            sendDeliveredEmail(orderId);
+        }
+
         return toResponse(f);
     }
 
@@ -138,6 +156,32 @@ public class FulfillmentService {
         Fulfillment f = fulfillmentRepo.findByIdAndOrderId(fulfillmentId, orderId)
             .orElseThrow(() -> new NotFoundException("FULFILLMENT_NOT_FOUND", "Fulfillment not found"));
         return toResponse(f);
+    }
+
+    private void sendDeliveredEmail(UUID orderId) {
+        orderRepo.findById(orderId).ifPresent(order -> {
+            String to = order.getGuestEmail() != null ? order.getGuestEmail()
+                : (order.getUserId() != null
+                    ? userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null)
+                    : null);
+            if (to == null) return;
+            String orderRef = "#" + orderId.toString().substring(0, 8).toUpperCase();
+            emailService.sendOrderDelivered(to, orderRef, null, appProperties.getFrontendUrl());
+        });
+    }
+
+    private void sendShippingNotificationEmail(UUID orderId, Fulfillment f) {
+        orderRepo.findById(orderId).ifPresent(order -> {
+            String to = order.getGuestEmail() != null ? order.getGuestEmail()
+                : (order.getUserId() != null
+                    ? userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null)
+                    : null);
+            if (to == null) return;
+            String orderRef = "#" + orderId.toString().substring(0, 8).toUpperCase();
+            emailService.sendShippingNotification(to, orderRef,
+                f.getTrackingNumber(), f.getTrackingCompany(), f.getTrackingUrl(),
+                appProperties.getFrontendUrl());
+        });
     }
 
     private void recalculateOrderStatus(UUID orderId) {

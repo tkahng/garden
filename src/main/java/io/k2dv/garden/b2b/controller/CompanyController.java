@@ -3,7 +3,10 @@ package io.k2dv.garden.b2b.controller;
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.b2b.dto.*;
+import io.k2dv.garden.b2b.service.CompanyInvitationService;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.InvoiceService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -23,6 +26,9 @@ import java.util.UUID;
 public class CompanyController {
 
     private final CompanyService companyService;
+    private final CompanyInvitationService invitationService;
+    private final PriceListService priceListService;
+    private final InvoiceService invoiceService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<CompanyResponse>> create(
@@ -73,5 +79,83 @@ public class CompanyController {
         @PathVariable UUID userId) {
         companyService.removeMember(id, user.getId(), userId);
         return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/members/{userId}/role")
+    public ResponseEntity<ApiResponse<CompanyMemberResponse>> updateMemberRole(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID userId,
+        @Valid @RequestBody UpdateMemberRoleRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(
+            companyService.updateMemberRole(id, userId, user.getId(), req)));
+    }
+
+    @PutMapping("/{id}/members/{userId}/spending-limit")
+    public ResponseEntity<ApiResponse<CompanyMemberResponse>> updateSpendingLimit(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID userId,
+        @Valid @RequestBody UpdateSpendingLimitRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(
+            companyService.updateSpendingLimit(id, userId, user.getId(), req)));
+    }
+
+    @GetMapping("/{id}/invitations")
+    public ResponseEntity<ApiResponse<List<InvitationResponse>>> listInvitations(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.listPending(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/invitations")
+    public ResponseEntity<ApiResponse<InvitationResponse>> invite(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @Valid @RequestBody CreateInvitationRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.invite(id, user.getId(), req)));
+    }
+
+    @DeleteMapping("/{id}/invitations/{invitationId}")
+    public ResponseEntity<ApiResponse<InvitationResponse>> cancelInvitation(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID invitationId) {
+        return ResponseEntity.ok(ApiResponse.of(invitationService.cancel(id, invitationId, user.getId())));
+    }
+
+    @GetMapping("/{id}/invoices")
+    public ResponseEntity<ApiResponse<List<InvoiceResponse>>> listInvoices(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(invoiceService.listByCompany(id)));
+    }
+
+    @GetMapping("/{id}/price-lists")
+    public ResponseEntity<ApiResponse<List<PriceListResponse>>> listPriceLists(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(priceListService.listByCompany(id)));
+    }
+
+    @GetMapping("/{id}/price-lists/{priceListId}/entries")
+    public ResponseEntity<ApiResponse<List<CustomerPriceEntryResponse>>> listPriceListEntries(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID priceListId) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(priceListService.listEntriesForCustomer(priceListId, id)));
+    }
+
+    @GetMapping("/{id}/price")
+    public ResponseEntity<ApiResponse<ResolvedPriceResponse>> resolvePrice(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @RequestParam UUID variantId,
+        @RequestParam(defaultValue = "1") int qty) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(priceListService.resolvePrice(id, variantId, qty)));
     }
 }

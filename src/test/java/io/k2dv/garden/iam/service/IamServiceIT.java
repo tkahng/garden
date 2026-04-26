@@ -40,6 +40,6 @@ class IamServiceIT extends AbstractIntegrationTest {
         var perms = iamService.loadPermissionsForUser(user.getId());
 
         assertThat(perms).contains("product:read", "product:write", "iam:manage", "staff:manage");
-        assertThat(perms).hasSize(38); // 26 base + 12 new (2 blob + 3 discount + 3 shipping + 3 gift_card + 1 stats from V19)
+        assertThat(perms).hasSize(46); // 41 existing + 5 net terms permissions from V30
     }
 }

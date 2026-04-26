@@ -1,6 +1,5 @@
 package io.k2dv.garden.discount.controller;
 
-import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.discount.dto.DiscountValidationResponse;
 import io.k2dv.garden.discount.service.DiscountService;
 import io.k2dv.garden.shared.dto.ApiResponse;
@@ -14,7 +13,6 @@ import java.math.BigDecimal;
 @RestController
 @RequestMapping("/api/v1/storefront/discounts")
 @RequiredArgsConstructor
-@Authenticated
 public class StorefrontDiscountController {
 
     private final DiscountService discountService;

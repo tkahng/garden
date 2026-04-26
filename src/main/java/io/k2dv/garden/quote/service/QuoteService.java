@@ -2,8 +2,15 @@ package io.k2dv.garden.quote.service;
 
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.model.Company;
+import io.k2dv.garden.b2b.model.CompanyRole;
+import io.k2dv.garden.b2b.model.CreditAccount;
+import io.k2dv.garden.b2b.model.Invoice;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
+import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.CreditAccountService;
+import io.k2dv.garden.b2b.service.InvoiceService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.blob.model.BlobObject;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
@@ -33,6 +40,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.ByteArrayInputStream;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -47,6 +55,10 @@ public class QuoteService {
     private final QuoteCartService cartService;
     private final CompanyRepository companyRepo;
     private final CompanyMembershipRepository membershipRepo;
+    private final CompanyService companyService;
+    private final CreditAccountService creditAccountService;
+    private final InvoiceService invoiceService;
+    private final PriceListService priceListService;
     private final ProductVariantRepository variantRepo;
     private final OrderService orderService;
     private final PaymentService paymentService;
@@ -86,17 +98,19 @@ public class QuoteService {
         quote.setCustomerNotes(req.customerNotes());
         quote = quoteRepo.save(quote);
 
-        // Copy cart items to quote items
+        // Copy cart items to quote items, pre-populating contract price when available
         for (io.k2dv.garden.quote.model.QuoteCartItem cartItem : cartItems) {
             ProductVariant variant = variantRepo.findById(cartItem.getVariantId()).orElse(null);
             String description = variant != null ? variant.getTitle() : "Unknown item";
+
+            var resolved = priceListService.resolvePrice(req.companyId(), cartItem.getVariantId(), cartItem.getQuantity());
 
             QuoteItem quoteItem = new QuoteItem();
             quoteItem.setQuoteRequestId(quote.getId());
             quoteItem.setVariantId(cartItem.getVariantId());
             quoteItem.setDescription(description);
             quoteItem.setQuantity(cartItem.getQuantity());
-            // unitPrice is null — will be set by staff
+            quoteItem.setUnitPrice(resolved.contractPrice() ? resolved.price() : null);
             itemRepo.save(quoteItem);
         }
 
@@ -122,6 +136,21 @@ public class QuoteService {
     public PagedResult<QuoteRequestResponse> listForUser(UUID userId, Pageable pageable) {
         Specification<QuoteRequest> spec = (root, query, cb) ->
             cb.equal(root.get("userId"), userId);
+        return PagedResult.of(quoteRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResult<QuoteRequestResponse> listPendingApprovals(UUID userId, Pageable pageable) {
+        List<UUID> ownedCompanyIds = membershipRepo
+            .findByUserIdAndRoleIn(userId, List.of(CompanyRole.OWNER, CompanyRole.MANAGER))
+            .stream().map(m -> m.getCompanyId()).toList();
+        if (ownedCompanyIds.isEmpty()) {
+            return PagedResult.of(org.springframework.data.domain.Page.empty(pageable), this::toResponse);
+        }
+        Specification<QuoteRequest> spec = (root, query, cb) -> cb.and(
+            root.get("companyId").in(ownedCompanyIds),
+            cb.equal(root.get("status"), QuoteStatus.PENDING_APPROVAL)
+        );
         return PagedResult.of(quoteRepo.findAll(spec, pageable), this::toResponse);
     }
 
@@ -154,7 +183,7 @@ public class QuoteService {
         }
     }
 
-    // Accept: creates Order + Stripe session, transitions to ACCEPTED
+    // Accept: checks spending limit, then creates Order + Stripe session or routes for approval
     @Transactional
     public QuoteAcceptResponse accept(UUID quoteId, UUID userId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -166,7 +195,6 @@ public class QuoteService {
             throw new ConflictException("INVALID_QUOTE_STATUS",
                 "Quote must be in SENT status to accept (current: " + quote.getStatus() + ")");
         }
-        // Lazy expiry check
         if (quote.getExpiresAt() != null && Instant.now().isAfter(quote.getExpiresAt())) {
             quote.setStatus(QuoteStatus.EXPIRED);
             quoteRepo.save(quote);
@@ -174,14 +202,87 @@ public class QuoteService {
         }
 
         List<QuoteItem> items = itemRepo.findByQuoteRequestId(quoteId);
-        Order order = orderService.createFromQuote(quote, items);
 
+        BigDecimal limit = companyService.getSpendingLimit(quote.getCompanyId(), userId);
+        if (limit != null) {
+            BigDecimal total = items.stream()
+                .filter(i -> i.getUnitPrice() != null)
+                .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+            if (total.compareTo(limit) > 0) {
+                quote.setStatus(QuoteStatus.PENDING_APPROVAL);
+                quoteRepo.save(quote);
+                return new QuoteAcceptResponse(null, null, true, null);
+            }
+        }
+
+        return finalizeAcceptance(quote, items);
+    }
+
+    // Approve: company OWNER approves a PENDING_APPROVAL quote
+    @Transactional
+    public QuoteAcceptResponse approveSpend(UUID quoteId, UUID approverId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (quote.getStatus() != QuoteStatus.PENDING_APPROVAL) {
+            throw new ConflictException("INVALID_QUOTE_STATUS",
+                "Quote must be in PENDING_APPROVAL status to approve (current: " + quote.getStatus() + ")");
+        }
+        if (!companyService.isOwnerOrManager(quote.getCompanyId(), approverId)) {
+            throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can approve spend");
+        }
+
+        quote.setApproverId(approverId);
+        quote.setApprovedAt(Instant.now());
+
+        List<QuoteItem> items = itemRepo.findByQuoteRequestId(quoteId);
+        return finalizeAcceptance(quote, items);
+    }
+
+    // Reject approval: company OWNER rejects a PENDING_APPROVAL quote
+    @Transactional
+    public QuoteRequestResponse rejectSpend(UUID quoteId, UUID approverId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (quote.getStatus() != QuoteStatus.PENDING_APPROVAL) {
+            throw new ConflictException("INVALID_QUOTE_STATUS",
+                "Quote must be in PENDING_APPROVAL status to reject approval (current: " + quote.getStatus() + ")");
+        }
+        if (!companyService.isOwnerOrManager(quote.getCompanyId(), approverId)) {
+            throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can reject spend");
+        }
+        quote.setStatus(QuoteStatus.REJECTED);
+        return toResponse(quoteRepo.save(quote));
+    }
+
+    private QuoteAcceptResponse finalizeAcceptance(QuoteRequest quote, List<QuoteItem> items) {
+        Order order = orderService.createFromQuote(quote, items);
         quote.setOrderId(order.getId());
         quote.setStatus(QuoteStatus.ACCEPTED);
         quoteRepo.save(quote);
 
-        CheckoutResponse checkout = paymentService.createCheckoutSessionFromQuote(order, items, quote);
-        return new QuoteAcceptResponse(checkout.checkoutUrl(), order.getId());
+        // Net terms path: if the company has a credit account, issue an invoice instead of Stripe
+        return creditAccountService.findByCompanyId(quote.getCompanyId())
+            .map(creditAccount -> {
+                BigDecimal outstanding = creditAccountService.getOutstandingBalance(quote.getCompanyId());
+                if (outstanding.add(order.getTotalAmount())
+                        .compareTo(creditAccount.getCreditLimit()) > 0) {
+                    throw new ConflictException("CREDIT_LIMIT_EXCEEDED",
+                        "Order total would exceed the company credit limit");
+                }
+                Invoice invoice = invoiceService.createFromOrder(
+                    quote.getCompanyId(), order.getId(), quote.getId(),
+                    order.getTotalAmount(), creditAccount.getCurrency(),
+                    creditAccount.getPaymentTermsDays()
+                );
+                return new QuoteAcceptResponse(null, order.getId(), false, invoice.getId());
+            })
+            .orElseGet(() -> {
+                CheckoutResponse checkout = paymentService.createCheckoutSessionFromQuote(order, items, quote);
+                return new QuoteAcceptResponse(checkout.checkoutUrl(), order.getId(), false, null);
+            });
     }
 
     @Transactional
@@ -358,7 +459,8 @@ public class QuoteService {
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
         if (quote.getStatus() == QuoteStatus.SENT || quote.getStatus() == QuoteStatus.ACCEPTED
             || quote.getStatus() == QuoteStatus.PAID || quote.getStatus() == QuoteStatus.REJECTED
-            || quote.getStatus() == QuoteStatus.EXPIRED || quote.getStatus() == QuoteStatus.CANCELLED) {
+            || quote.getStatus() == QuoteStatus.EXPIRED || quote.getStatus() == QuoteStatus.CANCELLED
+            || quote.getStatus() == QuoteStatus.PENDING_APPROVAL) {
             throw new ConflictException("INVALID_QUOTE_STATUS",
                 "Cannot edit items on quote in status: " + quote.getStatus());
         }
@@ -387,6 +489,7 @@ public class QuoteService {
             q.getDeliveryPostalCode(), q.getDeliveryCountry(),
             q.getShippingRequirements(), q.getCustomerNotes(), q.getStaffNotes(),
             q.getExpiresAt(), q.getPdfBlobId(), q.getOrderId(),
+            q.getApproverId(), q.getApprovedAt(),
             itemResponses, q.getCreatedAt(), q.getUpdatedAt()
         );
     }

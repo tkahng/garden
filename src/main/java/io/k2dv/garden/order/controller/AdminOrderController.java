@@ -7,11 +7,15 @@ import io.k2dv.garden.order.dto.UpdateOrderRequest;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.shared.dto.ApiResponse;
+import io.k2dv.garden.shared.dto.BulkIdsRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -41,6 +45,20 @@ public class AdminOrderController {
         return ResponseEntity.ok(ApiResponse.of(result));
     }
 
+    @GetMapping("/export")
+    @HasPermission("order:read")
+    public ResponseEntity<String> exportCsv(
+            @RequestParam(required = false) OrderStatus status,
+            @RequestParam(required = false) UUID userId,
+            @RequestParam(required = false) Instant from,
+            @RequestParam(required = false) Instant to) {
+        String csv = orderService.exportCsv(new OrderFilter(status, userId, from, to));
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("text/csv"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"orders.csv\"")
+            .body(csv);
+    }
+
     @GetMapping("/{id}")
     @HasPermission("order:read")
     public ResponseEntity<ApiResponse<OrderResponse>> getOrder(@PathVariable UUID id) {
@@ -65,5 +83,12 @@ public class AdminOrderController {
             @PathVariable UUID id,
             @RequestBody UpdateOrderRequest req) {
         return ResponseEntity.ok(ApiResponse.of(orderService.updateOrder(id, req)));
+    }
+
+    @PostMapping("/bulk/cancel")
+    @HasPermission("order:write")
+    public ResponseEntity<Void> bulkCancel(@Valid @RequestBody BulkIdsRequest req) {
+        orderService.bulkCancel(req.ids());
+        return ResponseEntity.noContent().build();
     }
 }

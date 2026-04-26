@@ -70,6 +70,11 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 
+    @GetMapping("/check-email")
+    public ResponseEntity<ApiResponse<Boolean>> checkEmail(@RequestParam String email) {
+        return ResponseEntity.ok(ApiResponse.of(authService.emailExists(email)));
+    }
+
     @Authenticated
     @SecurityRequirement(name = "bearerAuth")
     @PostMapping("/update-password")

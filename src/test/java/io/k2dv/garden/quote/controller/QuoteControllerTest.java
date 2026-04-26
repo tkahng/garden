@@ -42,7 +42,7 @@ class QuoteControllerTest {
     private QuoteRequestResponse stubQuote(UUID id) {
         return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null,
             QuoteStatus.PENDING, "123 Main St", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
     }
 
     @Test
@@ -93,7 +93,7 @@ class QuoteControllerTest {
     void acceptQuote_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         when(quoteService.accept(any(), any()))
-            .thenReturn(new QuoteAcceptResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID()));
+            .thenReturn(new QuoteAcceptResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID(), false, null));
 
         mvc.perform(post("/api/v1/quotes/{id}/accept", id))
             .andExpect(status().isOk())
@@ -115,7 +115,7 @@ class QuoteControllerTest {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse rejected = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
             null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
         when(quoteService.reject(any(), any())).thenReturn(rejected);
 
         mvc.perform(post("/api/v1/quotes/{id}/reject", id))
@@ -128,7 +128,7 @@ class QuoteControllerTest {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse cancelled = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
             null, QuoteStatus.CANCELLED, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
         when(quoteService.cancelForUser(any(), any())).thenReturn(cancelled);
 
         mvc.perform(post("/api/v1/quotes/{id}/cancel", id))
@@ -184,6 +184,71 @@ class QuoteControllerTest {
             .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("NOT_YOUR_QUOTE", "This quote does not belong to you"));
 
         mvc.perform(get("/api/v1/quotes/{id}/pdf", UUID.randomUUID()))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void listPendingApprovals_returns200() throws Exception {
+        io.k2dv.garden.shared.dto.PagedResult<QuoteRequestResponse> result =
+            new io.k2dv.garden.shared.dto.PagedResult<>(
+                List.of(stubQuote(UUID.randomUUID())),
+                PageMeta.builder().page(0).pageSize(20).total(1L).build());
+        when(quoteService.listPendingApprovals(any(), any())).thenReturn(result);
+
+        mvc.perform(get("/api/v1/quotes/pending-approvals"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content").isArray());
+    }
+
+    @Test
+    void approveSpend_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(quoteService.approveSpend(any(), any()))
+            .thenReturn(new QuoteAcceptResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID(), false, null));
+
+        mvc.perform(post("/api/v1/quotes/{id}/approve", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.pendingApproval").value(false));
+    }
+
+    @Test
+    void approveSpend_notOwner_returns403() throws Exception {
+        when(quoteService.approveSpend(any(), any()))
+            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("INSUFFICIENT_COMPANY_ROLE", "Only a company owner can approve spend"));
+
+        mvc.perform(post("/api/v1/quotes/{id}/approve", UUID.randomUUID()))
+            .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void approveSpend_wrongStatus_returns409() throws Exception {
+        when(quoteService.approveSpend(any(), any()))
+            .thenThrow(new ConflictException("INVALID_QUOTE_STATUS", "Quote must be in PENDING_APPROVAL status"));
+
+        mvc.perform(post("/api/v1/quotes/{id}/approve", UUID.randomUUID()))
+            .andExpect(status().isConflict())
+            .andExpect(jsonPath("$.error").value("INVALID_QUOTE_STATUS"));
+    }
+
+    @Test
+    void rejectApproval_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        QuoteRequestResponse rejected = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
+            null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
+            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+        when(quoteService.rejectSpend(any(), any())).thenReturn(rejected);
+
+        mvc.perform(post("/api/v1/quotes/{id}/reject-approval", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("REJECTED"));
+    }
+
+    @Test
+    void rejectApproval_notOwner_returns403() throws Exception {
+        when(quoteService.rejectSpend(any(), any()))
+            .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("INSUFFICIENT_COMPANY_ROLE", "Only a company owner can reject spend"));
+
+        mvc.perform(post("/api/v1/quotes/{id}/reject-approval", UUID.randomUUID()))
             .andExpect(status().isForbidden());
     }
 }

@@ -16,8 +16,17 @@ import java.util.UUID;
 @Setter
 public class Order extends BaseEntity {
 
-    @Column(name = "user_id", nullable = false)
+    @Column(name = "user_id")
     private UUID userId;
+
+    @Column(name = "guest_email")
+    private String guestEmail;
+
+    @Column(name = "shipping_cost", precision = 19, scale = 4)
+    private BigDecimal shippingCost;
+
+    @Column(name = "shipping_rate_id")
+    private UUID shippingRateId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -53,4 +62,7 @@ public class Order extends BaseEntity {
 
     @Column(name = "gift_card_amount", precision = 19, scale = 4)
     private BigDecimal giftCardAmount;
+
+    @Column(name = "tax_amount", precision = 19, scale = 4)
+    private BigDecimal taxAmount;
 }

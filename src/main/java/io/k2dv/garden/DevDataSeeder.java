@@ -60,6 +60,10 @@ public class DevDataSeeder implements ApplicationRunner {
         seedDiscounts();
         seedGiftCards();
         seedB2bCompany(customerUserId);
+        seedBlog();
+        seedReviews(customerUserId, productIds, variantProductIds);
+        seedWishlist(customerUserId, productIds, quoteOnlyProductIds);
+        seedCustomerAddress(customerUserId);
         log.info("DevDataSeeder: done.");
     }
 
@@ -853,6 +857,12 @@ public class DevDataSeeder implements ApplicationRunner {
 
             if ("CUSTOMER".equals(u.role())) {
                 customerUserId = userId;
+                jdbc.update("""
+                    UPDATE auth.users
+                    SET tags = ARRAY['vip', 'repeat-buyer'],
+                        admin_notes = 'Long-time customer, prefers email contact.'
+                    WHERE id = ?
+                    """, userId);
             }
         }
 
@@ -916,12 +926,13 @@ public class DevDataSeeder implements ApplicationRunner {
         // productIds: 0=Tomato($3.99), 1=Lavender($8.99), 2=Sunflower($4.49),
         //             3=Trowel($12.99), 4=Shears($24.99), 5=WateringCan($18.50)
         // variantProductIds: 0=Gloves, 1=CeramicPlanter
-        UUID tomatoVariantId   = firstVariantOf(productIds.get(0));
-        UUID lavenderVariantId = firstVariantOf(productIds.get(1));
-        UUID trowelVariantId   = firstVariantOf(productIds.get(3));
-        UUID shearsVariantId   = firstVariantOf(productIds.get(4));
-        UUID canVariantId      = firstVariantOf(productIds.get(5));
-        UUID glovesVariantId   = firstVariantOf(variantProductIds.get(0));  // S / Forest Green $14.99
+        UUID tomatoVariantId    = firstVariantOf(productIds.get(0));
+        UUID lavenderVariantId  = firstVariantOf(productIds.get(1));
+        UUID sunflowerVariantId = firstVariantOf(productIds.get(2));
+        UUID trowelVariantId    = firstVariantOf(productIds.get(3));
+        UUID shearsVariantId    = firstVariantOf(productIds.get(4));
+        UUID canVariantId       = firstVariantOf(productIds.get(5));
+        UUID glovesVariantId    = firstVariantOf(variantProductIds.get(0));  // S / Forest Green $14.99
 
         String shippingAddr = """
             {"firstName":"Carol","lastName":"Customer","address1":"123 Garden St",
@@ -974,11 +985,27 @@ public class DevDataSeeder implements ApplicationRunner {
             """, order3Id, customerUserId, order3Total, shippingAddr,
                 Timestamp.from(Instant.now().minus(20, ChronoUnit.DAYS)),
                 Timestamp.from(Instant.now().minus(15, ChronoUnit.DAYS)));
-        insertOrderItem(order3Id, canVariantId,    1, new BigDecimal("18.50"));
-        insertOrderItem(order3Id, glovesVariantId, 1, new BigDecimal("14.99"));
+        UUID item3aId = insertOrderItem(order3Id, canVariantId,    1, new BigDecimal("18.50"));
+        UUID item3bId = insertOrderItem(order3Id, glovesVariantId, 1, new BigDecimal("14.99"));
         insertOrderEvent(order3Id, "ORDER_PLACED",    "Order placed");
         insertOrderEvent(order3Id, "PAYMENT_RECEIVED","Payment received via Stripe");
         insertOrderEvent(order3Id, "FULFILLMENT_CREATED", "Shipped via USPS — tracking: 9400111899223397910");
+
+        UUID fulfillmentId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.fulfillments
+              (id, order_id, status, tracking_number, tracking_company, tracking_url)
+            VALUES (?, ?, 'DELIVERED', '9400111899223397910', 'USPS',
+                    'https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899223397910')
+            """, fulfillmentId, order3Id);
+        jdbc.update("""
+            INSERT INTO checkout.fulfillment_items (id, fulfillment_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 1)
+            """, UUID.randomUUID(), fulfillmentId, item3aId);
+        jdbc.update("""
+            INSERT INTO checkout.fulfillment_items (id, fulfillment_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 1)
+            """, UUID.randomUUID(), fulfillmentId, item3bId);
 
         // Order 4: PENDING_PAYMENT — lavender x2
         UUID order4Id = UUID.randomUUID();
@@ -1009,7 +1036,24 @@ public class DevDataSeeder implements ApplicationRunner {
         insertOrderEvent(order5Id, "ORDER_PLACED",   "Order placed");
         insertOrderEvent(order5Id, "ORDER_CANCELLED","Cancelled by customer");
 
-        log.info("DevDataSeeder: seeded 5 sample orders");
+        // Order 6: REFUNDED — sunflower x3
+        UUID order6Id = UUID.randomUUID();
+        BigDecimal order6Total = new BigDecimal("13.47");
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+               total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'REFUNDED', 'cs_test_seed_006', 'pi_test_seed_006',
+                    ?, 'usd', ?::jsonb, ?, ?)
+            """, order6Id, customerUserId, order6Total, shippingAddr,
+                Timestamp.from(Instant.now().minus(7, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(6, ChronoUnit.DAYS)));
+        insertOrderItem(order6Id, sunflowerVariantId, 3, new BigDecimal("4.49"));
+        insertOrderEvent(order6Id, "ORDER_PLACED",    "Order placed");
+        insertOrderEvent(order6Id, "PAYMENT_RECEIVED","Payment received via Stripe");
+        insertOrderEvent(order6Id, "ORDER_REFUNDED",  "Full refund issued — customer request");
+
+        log.info("DevDataSeeder: seeded 6 sample orders");
     }
 
     private UUID firstVariantOf(UUID productId) {
@@ -1018,11 +1062,13 @@ public class DevDataSeeder implements ApplicationRunner {
             """, UUID.class, productId);
     }
 
-    private void insertOrderItem(UUID orderId, UUID variantId, int qty, BigDecimal unitPrice) {
+    private UUID insertOrderItem(UUID orderId, UUID variantId, int qty, BigDecimal unitPrice) {
+        UUID itemId = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.order_items (id, order_id, variant_id, quantity, unit_price)
             VALUES (?, ?, ?, ?, ?)
-            """, UUID.randomUUID(), orderId, variantId, qty, unitPrice);
+            """, itemId, orderId, variantId, qty, unitPrice);
+        return itemId;
     }
 
     private void insertOrderEvent(UUID orderId, String type, String message) {
@@ -1100,7 +1146,8 @@ public class DevDataSeeder implements ApplicationRunner {
     // B2B
     // -------------------------------------------------------------------------
 
-    private void seedB2bCompany(UUID customerUserId) {
+    private void seedB2bCompany(UUID ownerUserId) {
+        // ─── Company ─────────────────────────────────────────────────────────
         UUID companyId = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO b2b.companies
@@ -1111,12 +1158,492 @@ public class DevDataSeeder implements ApplicationRunner {
                     '456 Bloom Ave', 'Portland', 'OR', '97202', 'US')
             """, companyId);
 
+        // ─── Memberships ─────────────────────────────────────────────────────
+        // OWNER = existing customer user (carol@garden.local)
         jdbc.update("""
             INSERT INTO b2b.company_memberships (id, company_id, user_id, role)
-            VALUES (?, ?, ?, 'OWNER')
-            ON CONFLICT DO NOTHING
-            """, UUID.randomUUID(), companyId, customerUserId);
+            VALUES (?, ?, ?, 'OWNER') ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, ownerUserId);
 
-        log.info("DevDataSeeder: seeded B2B company 'Green Thumb Nurseries LLC'");
+        // Seed two extra B2B users (MANAGER and MEMBER)
+        UUID managerId = seedB2bUser("b2b-manager@garden.local", "Marcus", "Manager");
+        UUID memberId  = seedB2bUser("b2b-member@garden.local",  "Maria",  "Member");
+
+        jdbc.update("""
+            INSERT INTO b2b.company_memberships (id, company_id, user_id, role)
+            VALUES (?, ?, ?, 'MANAGER') ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, managerId);
+
+        // MEMBER with a $2,000 spending limit
+        jdbc.update("""
+            INSERT INTO b2b.company_memberships (id, company_id, user_id, role, spending_limit)
+            VALUES (?, ?, ?, 'MEMBER', ?) ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, memberId, new BigDecimal("2000.00"));
+
+        // ─── Credit account (NET-30, $5,000 limit) ────────────────────────
+        jdbc.update("""
+            INSERT INTO b2b.credit_accounts (id, company_id, credit_limit, payment_terms_days)
+            VALUES (?, ?, 5000.00, 30)
+            """, UUID.randomUUID(), companyId);
+
+        // ─── Price list + entries ─────────────────────────────────────────
+        UUID priceListId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO b2b.price_lists (id, company_id, name, currency, priority)
+            VALUES (?, ?, 'Contract Pricing 2026', 'USD', 10)
+            """, priceListId, companyId);
+
+        UUID trowelVid    = variantIdBySku("SKU-004");
+        UUID shearsVid    = variantIdBySku("SKU-005");
+        UUID glovesVid    = variantIdBySku("SKU-G-M-GRN");
+        UUID lavenderVid  = variantIdBySku("SKU-002");
+        UUID sunflowerVid = variantIdBySku("SKU-003");
+
+        insertPriceListEntry(priceListId, trowelVid,   new BigDecimal("9.99"),  1);
+        insertPriceListEntry(priceListId, shearsVid,   new BigDecimal("19.99"), 1);
+        insertPriceListEntry(priceListId, glovesVid,   new BigDecimal("11.99"), 1);
+        insertPriceListEntry(priceListId, glovesVid,   new BigDecimal("9.99"),  10); // volume tier
+        insertPriceListEntry(priceListId, lavenderVid, new BigDecimal("6.99"),  1);
+        insertPriceListEntry(priceListId, sunflowerVid,new BigDecimal("3.49"),  1);
+
+        // ─── Shared delivery address ──────────────────────────────────────
+        String addr  = "456 Bloom Ave";
+        String city  = "Portland";
+        String state = "OR";
+        String zip   = "97202";
+        String ctry  = "US";
+
+        // ─── Quote 1: PENDING — just submitted, awaiting staff assignment ─
+        UUID quote1Id = UUID.randomUUID();
+        UUID grfcVid  = variantIdBySku("SKU-QO-001");
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               customer_notes, created_at, updated_at)
+            VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?,
+                    'Please include care instructions for the trough planter.', ?, ?)
+            """, quote1Id, ownerUserId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().minus(2, ChronoUnit.HOURS)),
+                Timestamp.from(Instant.now().minus(2, ChronoUnit.HOURS)));
+        insertQuoteItem(quote1Id, grfcVid, "GFRC Trough Planter — 48in × 18in × 20in, Charcoal finish", 2, null);
+
+        // ─── Quote 2: SENT — priced by staff, expires in 14 days ─────────
+        UUID quote2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               customer_notes, staff_notes, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'SENT', ?, ?, ?, ?, ?,
+                    'Large-volume order for spring restock.',
+                    'Contract pricing applied. Freight included in unit price.',
+                    ?, ?, ?)
+            """, quote2Id, managerId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().plus(14, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(3, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(1, ChronoUnit.DAYS)));
+        insertQuoteItem(quote2Id, trowelVid,  "Garden Trowel",                        20, new BigDecimal("9.99"));
+        insertQuoteItem(quote2Id, shearsVid,  "Pruning Shears",                       10, new BigDecimal("19.99"));
+        insertQuoteItem(quote2Id, glovesVid,  "Gardening Gloves (M / Forest Green)",  50, new BigDecimal("9.99"));
+
+        // ─── Quote 3: ACCEPTED — invoiced via net terms ───────────────────
+        UUID quote3Id    = UUID.randomUUID();
+        BigDecimal q3Total = new BigDecimal("296.95"); // 30×6.99 + 25×3.49
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'ACCEPTED', ?, ?, ?, ?, ?,
+                    ?, ?, ?)
+            """, quote3Id, memberId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().plus(30, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(15, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS)));
+        insertQuoteItem(quote3Id, lavenderVid,  "Lavender Starter Pack", 30, new BigDecimal("6.99"));
+        insertQuoteItem(quote3Id, sunflowerVid, "Sunflower Mix",          25, new BigDecimal("3.49"));
+
+        // Corresponding INVOICED order and invoice
+        String invoiceAddr = """
+            {"firstName":"Maria","lastName":"Member","address1":"456 Bloom Ave",
+             "city":"Portland","province":"OR","zip":"97202","country":"US"}
+            """.strip();
+        UUID invoiceOrderId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'INVOICED', ?, 'usd', ?::jsonb, ?, ?)
+            """, invoiceOrderId, memberId, q3Total, invoiceAddr,
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS)));
+        insertOrderItem(invoiceOrderId, lavenderVid,  30, new BigDecimal("6.99"));
+        insertOrderItem(invoiceOrderId, sunflowerVid, 25, new BigDecimal("3.49"));
+
+        jdbc.update("UPDATE quote.quote_requests SET order_id = ? WHERE id = ?",
+            invoiceOrderId, quote3Id);
+
+        jdbc.update("""
+            INSERT INTO b2b.invoices
+              (id, company_id, order_id, quote_id, status,
+               total_amount, paid_amount, currency, due_at)
+            VALUES (?, ?, ?, ?, 'ISSUED', ?, 0, 'USD', ?)
+            """, UUID.randomUUID(), companyId, invoiceOrderId, quote3Id,
+                q3Total,
+                Timestamp.from(Instant.now().minus(13, ChronoUnit.DAYS).plus(30, ChronoUnit.DAYS)));
+
+        // ─── Quote 4: CANCELLED ───────────────────────────────────────────
+        UUID quote4Id      = UUID.randomUUID();
+        UUID bluestoneVid  = variantIdBySku("SKU-QO-002");
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               created_at, updated_at)
+            VALUES (?, ?, ?, 'CANCELLED', ?, ?, ?, ?, ?, ?, ?)
+            """, quote4Id, ownerUserId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().minus(20, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(18, ChronoUnit.DAYS)));
+        insertQuoteItem(quote4Id, bluestoneVid,
+            "Bluestone Outdoor Pavers — Natural Cleft, 18×18 in", 200, null);
+
+        // ─── Pending invitation ───────────────────────────────────────────
+        jdbc.update("""
+            INSERT INTO b2b.company_invitations
+              (id, company_id, email, role, spending_limit, token, invited_by, status, expires_at)
+            VALUES (?, ?, 'newbuyer@example.com', 'MEMBER', 1500.00,
+                    '00000000-b2b0-0000-0000-000000000001',
+                    ?, 'PENDING', ?)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), companyId, ownerUserId,
+                Timestamp.from(Instant.now().plus(7, ChronoUnit.DAYS)));
+
+        log.info("DevDataSeeder: seeded B2B company 'Green Thumb Nurseries LLC' " +
+            "with 3 members, price list, 4 quotes, credit account, and pending invitation");
+    }
+
+    /** Seeds a CUSTOMER-role user with password "password" and returns their UUID. */
+    private UUID seedB2bUser(String email, String firstName, String lastName) {
+        String hash = passwordEncoder.encode("password");
+        UUID userId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO auth.users (id, email, first_name, last_name, status, email_verified_at)
+            VALUES (?, ?, ?, ?, 'ACTIVE', clock_timestamp())
+            ON CONFLICT (email) DO NOTHING
+            """, userId, email, firstName, lastName);
+        userId = jdbc.queryForObject("SELECT id FROM auth.users WHERE email = ?", UUID.class, email);
+        jdbc.update("""
+            INSERT INTO auth.identities (id, user_id, provider, account_id, password_hash)
+            VALUES (?, ?, 'CREDENTIALS', ?, ?)
+            ON CONFLICT (provider, account_id) DO NOTHING
+            """, UUID.randomUUID(), userId, userId.toString(), hash);
+        jdbc.update("""
+            INSERT INTO auth.user_roles (user_id, role_id)
+            SELECT ?, r.id FROM auth.roles r WHERE r.name = 'CUSTOMER'
+            ON CONFLICT DO NOTHING
+            """, userId);
+        return userId;
+    }
+
+    private UUID variantIdBySku(String sku) {
+        return jdbc.queryForObject(
+            "SELECT id FROM catalog.product_variants WHERE sku = ?", UUID.class, sku);
+    }
+
+    private void insertPriceListEntry(UUID priceListId, UUID variantId, BigDecimal price, int minQty) {
+        jdbc.update("""
+            INSERT INTO b2b.price_list_entries (id, price_list_id, variant_id, price, min_qty)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT ON CONSTRAINT uq_price_list_entry DO NOTHING
+            """, UUID.randomUUID(), priceListId, variantId, price, minQty);
+    }
+
+    private void insertQuoteItem(UUID quoteRequestId, UUID variantId, String description,
+                                  int quantity, BigDecimal unitPrice) {
+        jdbc.update("""
+            INSERT INTO quote.quote_items
+              (id, quote_request_id, variant_id, description, quantity, unit_price)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, UUID.randomUUID(), quoteRequestId, variantId, description, quantity, unitPrice);
+    }
+
+    // -------------------------------------------------------------------------
+    // Blog + Articles
+    // -------------------------------------------------------------------------
+
+    private void seedBlog() {
+        UUID blogId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO content.blogs (id, title, handle) VALUES (?, 'The Garden Journal', 'garden-journal')
+            ON CONFLICT (handle) DO NOTHING
+            """, blogId);
+        blogId = jdbc.queryForObject("SELECT id FROM content.blogs WHERE handle = 'garden-journal'", UUID.class);
+
+        jdbc.update("INSERT INTO content.content_tags (id, name) VALUES (?, 'Growing Tips') ON CONFLICT (name) DO NOTHING", UUID.randomUUID());
+        jdbc.update("INSERT INTO content.content_tags (id, name) VALUES (?, 'Product Care') ON CONFLICT (name) DO NOTHING", UUID.randomUUID());
+        jdbc.update("INSERT INTO content.content_tags (id, name) VALUES (?, 'Seasonal') ON CONFLICT (name) DO NOTHING",     UUID.randomUUID());
+        UUID tagGrowingTips = jdbc.queryForObject("SELECT id FROM content.content_tags WHERE name = 'Growing Tips'", UUID.class);
+        UUID tagProductCare = jdbc.queryForObject("SELECT id FROM content.content_tags WHERE name = 'Product Care'", UUID.class);
+        UUID tagSeasonal    = jdbc.queryForObject("SELECT id FROM content.content_tags WHERE name = 'Seasonal'",     UUID.class);
+
+        UUID staffId = jdbc.queryForObject("SELECT id FROM auth.users WHERE email = 'staff@garden.local'", UUID.class);
+
+        UUID article1Id = seedArticle(blogId, staffId,
+            "Getting Started with Heirloom Tomatoes", "getting-started-heirloom-tomatoes",
+            "How to grow heirloom tomatoes from seed — variety selection, germination, transplanting, and care.",
+            """
+            ## Growing Heirloom Tomatoes from Seed
+
+            Heirloom tomatoes are open-pollinated varieties passed down through generations of gardeners. \
+            Unlike modern hybrids, their seeds can be saved and replanted year after year — and the flavour is unmatched.
+
+            ### Starting Indoors
+
+            Begin seeds 6–8 weeks before your last frost date. Sow into a well-draining seed-starting mix, \
+            about ¼ inch deep. Keep the medium at 70–80°F for germination; a heat mat helps greatly.
+
+            Once seedlings emerge (typically 5–10 days), move them to bright light — at least 14–16 hours of \
+            artificial light per day if growing indoors.
+
+            ### Transplanting
+
+            Harden off seedlings over one to two weeks before transplanting outdoors. Plant deep: bury the stem \
+            up to the first set of true leaves to encourage a strong root system.
+
+            ### Watering and Feeding
+
+            Inconsistent watering is the most common cause of blossom-end rot. Water deeply and regularly, \
+            and mulch around the base to retain moisture.
+
+            Side-dress with compost or balanced fertiliser every three to four weeks once flowering begins.
+
+            ### Saving Seed
+
+            Select your best fruit from the most vigorous plants. Ferment the seed gel for two to three days, \
+            rinse, dry thoroughly, and store in a cool, dark place.
+            """,
+            "PUBLISHED", Instant.now().minus(21, ChronoUnit.DAYS));
+        linkArticleTag(article1Id, tagGrowingTips);
+        linkArticleTag(article1Id, tagSeasonal);
+
+        UUID article2Id = seedArticle(blogId, staffId,
+            "Essential Tools Every Gardener Needs", "essential-tools-every-gardener-needs",
+            "A guide to the five tools that earn their keep in every garden, season after season.",
+            """
+            ## The Tools That Earn Their Keep
+
+            A well-chosen garden tool lasts for decades. These are the five pieces we reach for every single day — \
+            from sowing in spring to the final tidy before the first frost.
+
+            ### 1. The Trowel
+
+            For transplanting, mixing amendments, and scooping potting mix, nothing beats a good stainless-steel trowel. \
+            Look for a pointed blade to cut through compacted soil easily, and a comfortable rubber-grip handle \
+            that won't blister during a long session.
+
+            ### 2. Bypass Pruning Shears
+
+            A quality pair of bypass shears will outlast a dozen cheap ones. The bypass mechanism — two curved blades \
+            that slide past each other like scissors — makes clean cuts that heal quickly, reducing disease entry points. \
+            Keep them sharp, wiped clean with rubbing alcohol between plants.
+
+            ### 3. Gardening Gloves
+
+            Gloves do more than protect your hands from thorns. A nitrile-coated palm gives grip on wet tools and pots; \
+            a breathable mesh back keeps hands cool. Get a snug fit — too large and you'll drop things, \
+            too small and you'll tire quickly.
+
+            ### 4. Watering Can
+
+            For seedlings and indoor plants, a watering can beats a hose every time. The narrow spout lets you deliver \
+            water precisely to the root zone without dislodging seeds or washing away a freshly sown surface.
+
+            ### 5. Knee Pad or Kneeler
+
+            It sounds unglamorous, but a good kneeler will save your knees through years of planting and weeding.
+            """,
+            "PUBLISHED", Instant.now().minus(14, ChronoUnit.DAYS));
+        linkArticleTag(article2Id, tagProductCare);
+
+        UUID article3Id = seedArticle(blogId, staffId,
+            "How to Choose the Right Planter for Your Plant", "how-to-choose-the-right-planter",
+            "Matching container material and size to plant type — terracotta, ceramic, and glazed planters explained.",
+            """
+            ## Matching Planters to Plants
+
+            The container you choose affects drainage, moisture retention, root temperature, and ultimately \
+            how your plant performs. Here's a quick guide to matching material to plant type.
+
+            ### Terracotta: Mediterranean and Drought-Tolerant Plants
+
+            Unglazed terracotta is porous — it breathes. Moisture evaporates through the walls, which means \
+            the root zone stays cooler and better-aerated. This is ideal for plants that hate wet feet: \
+            cacti, succulents, lavender, rosemary, and most herbs.
+
+            The trade-off: terracotta dries out faster, so you'll water more frequently in summer.
+
+            ### Ceramic and Glazed: Tropical Foliage Plants
+
+            Glazed planters retain moisture longer than terracotta, making them a better fit for tropical plants \
+            that prefer consistent moisture — pothos, ferns, peace lilies, and fiddle-leaf figs.
+
+            ### Size Matters
+
+            Always match pot size to root mass. Overpotting — placing a small plant in a large pot — leaves \
+            too much wet compost around the roots with nowhere to go. Move up one pot size at a time.
+
+            A rough guide:
+            - **Small (4 in):** succulents, herbs, cuttings
+            - **Medium (6–8 in):** most houseplants
+            - **Large (10 in+):** feature plants, shrubs, statement tropicals
+            """,
+            "PUBLISHED", Instant.now().minus(7, ChronoUnit.DAYS));
+        linkArticleTag(article3Id, tagProductCare);
+
+        // Draft article — no published_at, not yet linked to tags
+        seedArticle(blogId, staffId,
+            "Preparing Your Garden for Winter", "preparing-garden-for-winter",
+            "Autumn tasks that set your garden up for a strong spring — cutting back, mulching, and storing tools.",
+            """
+            ## Preparing Your Garden Before the First Frost
+
+            Autumn is the most productive time to spend in the garden — the work you do now pays dividends \
+            for years. Here's what to tackle before the ground freezes.
+
+            ### Cut Back Perennials
+
+            Most perennials benefit from being cut back in autumn. Remove diseased foliage entirely; \
+            healthy stems can be left as habitat for overwintering insects or cut back to 4–6 inches.
+
+            Notable exceptions: ornamental grasses and seed-head plants (echinacea, rudbeckia) — \
+            leave these standing for winter interest and wildlife.
+
+            ### Mulch Tender Roots
+
+            A generous layer of mulch (3–4 inches of straw, shredded leaves, or wood chip) insulates root \
+            systems against freeze-thaw cycles. Apply after the first hard frost to avoid creating a warm \
+            haven for rodents.
+
+            ### Plant Spring Bulbs
+
+            October and November are prime bulb-planting months for tulips, daffodils, alliums, and crocuses. \
+            Plant when soil temperature drops below 50°F but before the ground freezes solid.
+
+            ### Clean and Store Tools
+
+            Scrub off soil, sharpen blade edges, and rub metal surfaces with a light coat of oil to prevent \
+            rust over winter.
+            """,
+            "DRAFT", null);
+
+        log.info("DevDataSeeder: seeded blog 'The Garden Journal' with 4 articles and 3 content tags");
+    }
+
+    private UUID seedArticle(UUID blogId, UUID authorId, String title, String handle,
+                              String excerpt, String body, String status, Instant publishedAt) {
+        UUID articleId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO content.articles
+              (id, blog_id, title, handle, body, excerpt, author_id, author_name, status, published_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'Sam Staff', ?, ?)
+            ON CONFLICT DO NOTHING
+            """, articleId, blogId, title, handle, body, excerpt, authorId, status,
+                publishedAt != null ? Timestamp.from(publishedAt) : null);
+        return articleId;
+    }
+
+    private void linkArticleTag(UUID articleId, UUID tagId) {
+        jdbc.update("""
+            INSERT INTO content.article_content_tags (article_id, content_tag_id) VALUES (?, ?)
+            ON CONFLICT DO NOTHING
+            """, articleId, tagId);
+    }
+
+    // -------------------------------------------------------------------------
+    // Reviews
+    // -------------------------------------------------------------------------
+
+    private void seedReviews(UUID customerUserId, List<UUID> productIds, List<UUID> variantProductIds) {
+        // Carol's verified purchases: tomato(0), lavender(1), trowel(3), shears(4), watering can(5)
+        insertReview(productIds.get(0), customerUserId, (short) 5,
+            "Incredible variety mix",
+            "The Brandywine and Cherokee Purple seeds germinated perfectly. Already seeing strong seedlings — very happy.",
+            true);
+        insertReview(productIds.get(1), customerUserId, (short) 4,
+            "Lovely scent, takes patience",
+            "Lavender is slow to germinate but once established it's beautiful. Great mix of varieties.",
+            true);
+        insertReview(productIds.get(3), customerUserId, (short) 5,
+            "Best trowel I've owned",
+            "Stainless steel, well-balanced, comfortable grip. Worth every penny for daily use.",
+            true);
+        insertReview(productIds.get(4), customerUserId, (short) 4,
+            "Sharp and ergonomic",
+            "The bypass mechanism makes clean cuts. Spring-load reduces fatigue on long pruning sessions.",
+            true);
+        insertReview(productIds.get(5), customerUserId, (short) 5,
+            "Perfect for indoor plants",
+            "The narrow spout lets me water right at the root zone without splashing. Love the compact size.",
+            true);
+        // Not a verified purchase — Carol browsed and bought ceramic planter separately
+        insertReview(variantProductIds.get(1), customerUserId, (short) 3,
+            "Nice design, shipping could improve",
+            "The sage green color is gorgeous but one arrived with a small chip. Still usable, but worth noting.",
+            false);
+
+        log.info("DevDataSeeder: seeded 6 product reviews");
+    }
+
+    private void insertReview(UUID productId, UUID userId, short rating, String title, String body, boolean verifiedPurchase) {
+        jdbc.update("""
+            INSERT INTO catalog.product_reviews
+              (id, product_id, user_id, rating, title, body, verified_purchase, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'PUBLISHED')
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), productId, userId, rating, title, body, verifiedPurchase);
+    }
+
+    // -------------------------------------------------------------------------
+    // Wishlist
+    // -------------------------------------------------------------------------
+
+    private void seedWishlist(UUID customerUserId, List<UUID> productIds, List<UUID> quoteOnlyProductIds) {
+        UUID wishlistId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO catalog.wishlists (id, user_id) VALUES (?, ?)
+            ON CONFLICT (user_id) DO NOTHING
+            """, wishlistId, customerUserId);
+        wishlistId = jdbc.queryForObject("SELECT id FROM catalog.wishlists WHERE user_id = ?", UUID.class, customerUserId);
+
+        for (UUID pid : List.of(productIds.get(7), productIds.get(2), quoteOnlyProductIds.get(0))) {
+            jdbc.update("""
+                INSERT INTO catalog.wishlist_items (id, wishlist_id, product_id) VALUES (?, ?, ?)
+                ON CONFLICT DO NOTHING
+                """, UUID.randomUUID(), wishlistId, pid);
+        }
+
+        log.info("DevDataSeeder: seeded wishlist for Carol with 3 items (Glazed Planter, Sunflower Mix, GFRC Trough)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Saved address
+    // -------------------------------------------------------------------------
+
+    private void seedCustomerAddress(UUID customerUserId) {
+        jdbc.update("""
+            INSERT INTO auth.addresses
+              (id, user_id, first_name, last_name, address1, city, province, zip, country, is_default)
+            VALUES (?, ?, 'Carol', 'Customer', '123 Garden St', 'Portland', 'OR', '97201', 'US', true)
+            """, UUID.randomUUID(), customerUserId);
+
+        log.info("DevDataSeeder: seeded saved address for Carol");
     }
 }

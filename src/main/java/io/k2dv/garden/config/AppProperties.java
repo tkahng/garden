@@ -7,6 +7,7 @@ import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
+import java.math.BigDecimal;
 import java.time.Duration;
 
 @ConfigurationProperties(prefix = "app")
@@ -20,6 +21,9 @@ public class AppProperties {
 
     @Valid
     private Superuser superuser = new Superuser();
+
+    @Valid
+    private Automation automation = new Automation();
 
     @NotBlank
     private String frontendUrl = "http://localhost:3000";
@@ -50,5 +54,18 @@ public class AppProperties {
 
         @NotBlank
         private String password = "changeme";
+    }
+
+    @Getter
+    @Setter
+    public static class Automation {
+        /** How long a cart must be idle before sending an abandoned-cart reminder. */
+        private Duration abandonedCartDelay = Duration.ofHours(1);
+
+        /** Available stock (on_hand - committed) at or below this triggers a low-stock alert. */
+        private int lowStockThreshold = 5;
+
+        /** Cumulative spend in USD at or above this threshold triggers the "vip" tag. */
+        private BigDecimal vipSpendThreshold = new BigDecimal("500");
     }
 }

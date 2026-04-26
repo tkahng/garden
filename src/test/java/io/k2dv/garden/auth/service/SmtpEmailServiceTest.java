@@ -11,6 +11,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.SimpleMailMessage;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.thymeleaf.TemplateEngine;
+
+import java.math.BigDecimal;
+import java.util.List;
 
 import java.util.UUID;
 
@@ -25,13 +29,15 @@ class SmtpEmailServiceTest {
     @Mock JavaMailSender mailSender;
     @Mock AppProperties props;
     @Mock MimeMessage mimeMessage;
+    @Mock TemplateEngine templateEngine;
 
     SmtpEmailService service;
 
     @BeforeEach
     void setUp() {
         lenient().when(props.getFrontendUrl()).thenReturn("https://example.com");
-        service = new SmtpEmailService(mailSender, props);
+        lenient().when(templateEngine.process(any(String.class), any())).thenReturn("<html></html>");
+        service = new SmtpEmailService(mailSender, props, templateEngine);
     }
 
     // ── sendEmailVerification ─────────────────────────────────────────────────
@@ -143,6 +149,37 @@ class SmtpEmailServiceTest {
         doThrow(new MailSendException("SMTP down")).when(mailSender).send(any(MimeMessage.class));
 
         assertThatCode(() -> service.sendQuotePdf("user@example.com", UUID.randomUUID(), new byte[]{1}))
+            .doesNotThrowAnyException();
+    }
+
+    // ── New transactional emails ───────────────────────────────────────────────
+
+    @Test
+    void sendOrderCancelled_doesNotThrow() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        assertThatCode(() -> service.sendOrderCancelled("user@example.com", "#ABCD1234", "https://example.com"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendOrderDelivered_doesNotThrow() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        assertThatCode(() -> service.sendOrderDelivered("user@example.com", "#ABCD1234", null, "https://example.com"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendAbandonedCartReminder_doesNotThrow() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        assertThatCode(() -> service.sendAbandonedCartReminder(
+            "user@example.com", "Jane", List.of("1 × Seeds — $9.99"), "https://example.com/cart"))
+            .doesNotThrowAnyException();
+    }
+
+    @Test
+    void sendLowStockAlert_doesNotThrow() {
+        assertThatCode(() -> service.sendLowStockAlert(
+            "admin@example.com", List.of("Heirloom Tomato Seeds — S/Lagoon: 2 units")))
             .doesNotThrowAnyException();
     }
 }

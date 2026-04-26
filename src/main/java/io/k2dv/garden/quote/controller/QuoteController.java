@@ -43,6 +43,15 @@ public class QuoteController {
             quoteService.listForUser(user.getId(), PageRequest.of(page, size))));
     }
 
+    @GetMapping("/pending-approvals")
+    public ResponseEntity<ApiResponse<PagedResult<QuoteRequestResponse>>> listPendingApprovals(
+        @CurrentUser User user,
+        @RequestParam(defaultValue = "0") int page,
+        @RequestParam(defaultValue = "20") int size) {
+        return ResponseEntity.ok(ApiResponse.of(
+            quoteService.listPendingApprovals(user.getId(), PageRequest.of(page, size))));
+    }
+
     @GetMapping("/{id}")
     public ResponseEntity<ApiResponse<QuoteRequestResponse>> get(
         @CurrentUser User user,
@@ -69,6 +78,20 @@ public class QuoteController {
         @CurrentUser User user,
         @PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.of(quoteService.cancelForUser(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/approve")
+    public ResponseEntity<ApiResponse<QuoteAcceptResponse>> approveSpend(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(quoteService.approveSpend(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/reject-approval")
+    public ResponseEntity<ApiResponse<QuoteRequestResponse>> rejectSpend(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(quoteService.rejectSpend(id, user.getId())));
     }
 
     @GetMapping("/{id}/pdf")

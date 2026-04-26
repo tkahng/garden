@@ -4,5 +4,7 @@ import java.util.UUID;
 
 public record QuoteAcceptResponse(
     String checkoutUrl,
-    UUID orderId
+    UUID orderId,
+    boolean pendingApproval,
+    UUID invoiceId
 ) {}

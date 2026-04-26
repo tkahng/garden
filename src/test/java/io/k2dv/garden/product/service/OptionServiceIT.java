@@ -34,7 +34,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createOption_persistsNameAndPosition() {
-        var product = productService.create(new CreateProductRequest("Shirt", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Shirt", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
 
         assertThat(opt.id()).isNotNull();
@@ -47,7 +47,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void renameOption_updatesName() {
-        var product = productService.create(new CreateProductRequest("Pants", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Pants", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Colour", 1));
 
         var renamed = optionService.renameOption(product.id(), opt.id(), new RenameOptionRequest("Color"));
@@ -58,7 +58,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void renameOption_wrongProductId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Jacket", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Jacket", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 1));
 
         assertThatThrownBy(() ->
@@ -68,7 +68,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void renameOption_unknownOptionId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Hat", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Hat", null, null, null, null, List.of(), null, null));
 
         assertThatThrownBy(() ->
             optionService.renameOption(product.id(), UUID.randomUUID(), new RenameOptionRequest("X"))
@@ -79,7 +79,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOption_removesFromDb() {
-        var product = productService.create(new CreateProductRequest("Scarf", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Scarf", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Material", 1));
 
         optionService.deleteOption(product.id(), opt.id());
@@ -89,7 +89,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOption_wrongProductId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Gloves", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Gloves", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 1));
 
         assertThatThrownBy(() -> optionService.deleteOption(UUID.randomUUID(), opt.id()))
@@ -98,7 +98,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOption_unknownOptionId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Belt", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Belt", null, null, null, null, List.of(), null, null));
 
         assertThatThrownBy(() -> optionService.deleteOption(product.id(), UUID.randomUUID()))
             .isInstanceOf(NotFoundException.class);
@@ -108,7 +108,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createOptionValue_persistsLabelAndPosition() {
-        var product = productService.create(new CreateProductRequest("Dress", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Dress", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
 
         var val = optionService.createOptionValue(product.id(), opt.id(), new CreateOptionValueRequest("Blue", 1));
@@ -121,7 +121,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createOptionValue_optionNotFound_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Coat", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Coat", null, null, null, null, List.of(), null, null));
 
         assertThatThrownBy(() ->
             optionService.createOptionValue(product.id(), UUID.randomUUID(), new CreateOptionValueRequest("Red", 1))
@@ -130,7 +130,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createOptionValue_wrongProductId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Vest", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Vest", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
 
         assertThatThrownBy(() ->
@@ -142,7 +142,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOptionValue_removesValueFromDb() {
-        var product = productService.create(new CreateProductRequest("Hoodie", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Hoodie", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var val = optionService.createOptionValue(product.id(), opt.id(), new CreateOptionValueRequest("Black", 1));
 
@@ -153,7 +153,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOptionValue_stripsValueFromVariantAndRecomputesTitle() {
-        var product = productService.create(new CreateProductRequest("Hoodie", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Hoodie", null, null, null, null, List.of(), null, null));
         var colorOpt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var black = optionService.createOptionValue(product.id(), colorOpt.id(), new CreateOptionValueRequest("Black", 1));
         var sizeOpt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 2));
@@ -173,7 +173,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOptionValue_lastValueOnVariant_recomputesToDefaultTitle() {
-        var product = productService.create(new CreateProductRequest("Sock", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Sock", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 1));
         var sm = optionService.createOptionValue(product.id(), opt.id(), new CreateOptionValueRequest("Small", 1));
 
@@ -189,7 +189,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOptionValue_optionNotFound_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Scarf", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Scarf", null, null, null, null, List.of(), null, null));
 
         assertThatThrownBy(() ->
             optionService.deleteOptionValue(product.id(), UUID.randomUUID(), UUID.randomUUID())
@@ -198,7 +198,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOptionValue_valueNotFound_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Tie", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Tie", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
 
         assertThatThrownBy(() ->
@@ -208,7 +208,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteOptionValue_valueBelongsToDifferentOption_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Glove", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Glove", null, null, null, null, List.of(), null, null));
         var opt1 = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var opt2 = optionService.createOption(product.id(), new CreateOptionRequest("Size", 2));
         var valOnOpt2 = optionService.createOptionValue(product.id(), opt2.id(), new CreateOptionValueRequest("L", 1));
@@ -223,7 +223,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void renameOptionValue_updatesLabelAndRecomputesVariantTitle() {
-        var product = productService.create(new CreateProductRequest("Cap", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Cap", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var val = optionService.createOptionValue(product.id(), opt.id(), new CreateOptionValueRequest("Blu", 1));
 
@@ -239,7 +239,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void renameOptionValue_valueNotFound_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Bag", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Bag", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
 
         assertThatThrownBy(() ->
@@ -249,7 +249,7 @@ class OptionServiceIT extends AbstractIntegrationTest {
 
     @Test
     void renameOptionValue_valueBelongsToDifferentOption_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Scarf", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Scarf", null, null, null, null, List.of(), null, null));
         var opt1 = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var opt2 = optionService.createOption(product.id(), new CreateOptionRequest("Size", 2));
         var valOnOpt2 = optionService.createOptionValue(product.id(), opt2.id(), new CreateOptionValueRequest("L", 1));

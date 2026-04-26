@@ -3,7 +3,10 @@ package io.k2dv.garden.b2b.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.CompanyRole;
+import io.k2dv.garden.b2b.service.CompanyInvitationService;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.InvoiceService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.config.TestCurrentUserConfig;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.shared.dto.ApiResponse;
@@ -38,6 +41,12 @@ class CompanyControllerTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
     @MockitoBean
     CompanyService companyService;
+    @MockitoBean
+    CompanyInvitationService invitationService;
+    @MockitoBean
+    PriceListService priceListService;
+    @MockitoBean
+    InvoiceService invoiceService;
 
     private CompanyResponse stubCompany(UUID id) {
         return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null,
@@ -46,7 +55,7 @@ class CompanyControllerTest {
 
     private CompanyMemberResponse stubMember(UUID userId) {
         return new CompanyMemberResponse(UUID.randomUUID(), userId, "user@example.com",
-            "Test", "User", CompanyRole.MEMBER, Instant.now());
+            "Test", "User", CompanyRole.MEMBER, null, Instant.now());
     }
 
     @Test
@@ -121,7 +130,7 @@ class CompanyControllerTest {
 
         mvc.perform(post("/api/v1/companies/{id}/members", companyId)
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(new AddMemberRequest("user@example.com"))))
+                .content(objectMapper.writeValueAsString(new AddMemberRequest("user@example.com", null))))
             .andExpect(status().isOk());
     }
 
@@ -132,8 +141,23 @@ class CompanyControllerTest {
 
         mvc.perform(post("/api/v1/companies/{id}/members", UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(new AddMemberRequest("nobody@example.com"))))
+                .content(objectMapper.writeValueAsString(new AddMemberRequest("nobody@example.com", null))))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void updateMemberRole_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID memberId = UUID.randomUUID();
+        when(companyService.updateMemberRole(eq(companyId), eq(memberId), any(), any()))
+            .thenReturn(stubMember(memberId));
+
+        mvc.perform(put("/api/v1/companies/{id}/members/{userId}/role", companyId, memberId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(
+                    new io.k2dv.garden.b2b.dto.UpdateMemberRoleRequest(
+                        io.k2dv.garden.b2b.model.CompanyRole.MANAGER))))
+            .andExpect(status().isOk());
     }
 
     @Test

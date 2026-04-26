@@ -41,7 +41,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void create_compareAtPriceEqualToPrice_throwsValidationException() {
-        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of(), null, null));
         var req = new CreateVariantRequest(
             new BigDecimal("10.00"), new BigDecimal("10.00"), null, null, null, null, List.of());
         assertThatThrownBy(() -> variantService.create(product.id(), req))
@@ -50,7 +50,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void create_compareAtPriceLessThanPrice_throwsValidationException() {
-        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of(), null, null));
         var req = new CreateVariantRequest(
             new BigDecimal("10.00"), new BigDecimal("5.00"), null, null, null, null, List.of());
         assertThatThrownBy(() -> variantService.create(product.id(), req))
@@ -59,7 +59,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void create_invalidOptionValueId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of(), null, null));
         var req = new CreateVariantRequest(
             new BigDecimal("9.99"), null, null, null, null, null, List.of(UUID.randomUUID()));
         assertThatThrownBy(() -> variantService.create(product.id(), req))
@@ -68,7 +68,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void create_noOptionValues_defaultTitle() {
-        var product = productService.create(new CreateProductRequest("Mug", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Mug", null, null, null, null, List.of(), null, null));
         var req = new CreateVariantRequest(new BigDecimal("12.00"), null, null, null, null, null, List.of());
         var variant = variantService.create(product.id(), req);
 
@@ -80,7 +80,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void update_patchesFields() {
-        var product = productService.create(new CreateProductRequest("Bag", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Bag", null, null, null, null, List.of(), null, null));
         var created = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("20.00"), null, null, null, null, null, List.of()));
 
@@ -100,7 +100,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void update_wrongProductId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Lamp", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Lamp", null, null, null, null, List.of(), null, null));
         var variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("15.00"), null, null, null, null, null, List.of()));
 
@@ -111,7 +111,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void update_compareAtPriceValidatedAgainstEffectivePrice() {
-        var product = productService.create(new CreateProductRequest("Chair", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Chair", null, null, null, null, List.of(), null, null));
         var variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("100.00"), null, null, null, null, null, List.of()));
 
@@ -124,7 +124,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void update_compareAtPriceValidatedAgainstExistingPriceWhenNoPriceInRequest() {
-        var product = productService.create(new CreateProductRequest("Desk", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Desk", null, null, null, null, List.of(), null, null));
         var variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("50.00"), null, null, null, null, null, List.of()));
 
@@ -139,7 +139,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void softDelete_wrongProductId_throwsNotFoundException() {
-        var product = productService.create(new CreateProductRequest("Fan", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Fan", null, null, null, null, List.of(), null, null));
         var variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("30.00"), null, null, null, null, null, List.of()));
 
@@ -149,7 +149,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void softDelete_setsDeletedAt() {
-        var product = productService.create(new CreateProductRequest("Clock", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Clock", null, null, null, null, List.of(), null, null));
         var variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("45.00"), null, null, null, null, null, List.of()));
 
@@ -163,7 +163,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void getInventoryForProduct_returnsOneEntryPerVariant() {
-        var product = productService.create(new CreateProductRequest("Shelf", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Shelf", null, null, null, null, List.of(), null, null));
         variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("10.00"), null, "S1", null, null, null, List.of()));
         variantService.create(product.id(),
@@ -177,7 +177,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void getInventoryForProduct_excludesSoftDeletedVariants() {
-        var product = productService.create(new CreateProductRequest("Rack", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Rack", null, null, null, null, List.of(), null, null));
         var v1 = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("10.00"), null, null, null, null, null, List.of()));
         variantService.create(product.id(),
@@ -199,7 +199,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
     @Test
     void buildTitle_multipleValues_joinsWithSlash() {
-        var product = productService.create(new CreateProductRequest("Tee", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Tee", null, null, null, null, List.of(), null, null));
         var colorOpt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var red = optionService.createOptionValue(product.id(), colorOpt.id(), new CreateOptionValueRequest("Red", 1));
         var sizeOpt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 2));

@@ -10,6 +10,7 @@ import java.util.UUID;
 public record OrderResponse(
     UUID id,
     UUID userId,
+    String guestEmail,
     OrderStatus status,
     BigDecimal totalAmount,
     String currency,
@@ -20,6 +21,9 @@ public record OrderResponse(
     BigDecimal giftCardAmount,
     String adminNotes,
     String shippingAddress,
+    BigDecimal shippingCost,
+    UUID shippingRateId,
     List<OrderItemResponse> items,
+    BigDecimal taxAmount,
     Instant createdAt
 ) {}

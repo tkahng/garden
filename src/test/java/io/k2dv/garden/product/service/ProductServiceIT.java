@@ -31,7 +31,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createProduct_persistsWithDraftStatusAndAutoHandle() {
-        var req = new CreateProductRequest("My Product!", null, null, null, null, List.of());
+        var req = new CreateProductRequest("My Product!", null, null, null, null, List.of(), null, null);
         var resp = productService.create(req);
 
         assertThat(resp.title()).isEqualTo("My Product!");
@@ -42,29 +42,29 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createProduct_withExplicitHandle_usesProvidedHandle() {
-        var req = new CreateProductRequest("T-Shirt", null, "custom-tee", null, null, List.of());
+        var req = new CreateProductRequest("T-Shirt", null, "custom-tee", null, null, List.of(), null, null);
         var resp = productService.create(req);
         assertThat(resp.handle()).isEqualTo("custom-tee");
     }
 
     @Test
     void createProduct_duplicateHandle_throwsConflictException() {
-        productService.create(new CreateProductRequest("First", null, null, null, null, List.of()));
+        productService.create(new CreateProductRequest("First", null, null, null, null, List.of(), null, null));
         assertThatThrownBy(() ->
-            productService.create(new CreateProductRequest("First", null, null, null, null, List.of()))
+            productService.create(new CreateProductRequest("First", null, null, null, null, List.of(), null, null))
         ).isInstanceOf(ConflictException.class);
     }
 
     @Test
     void softDeleteProduct_excludedFromListQueries() {
-        var resp = productService.create(new CreateProductRequest("Gone", null, null, null, null, List.of()));
+        var resp = productService.create(new CreateProductRequest("Gone", null, null, null, null, List.of(), null, null));
         productService.softDelete(resp.id());
         assertThat(productRepo.findByIdAndDeletedAtIsNull(resp.id())).isEmpty();
     }
 
     @Test
     void changeStatus_updatesProductStatus() {
-        var resp = productService.create(new CreateProductRequest("T-Shirt", null, null, null, null, List.of()));
+        var resp = productService.create(new CreateProductRequest("T-Shirt", null, null, null, null, List.of(), null, null));
         productService.changeStatus(resp.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         var updated = productService.getAdmin(resp.id());
         assertThat(updated.status()).isEqualTo(ProductStatus.ACTIVE);
@@ -79,7 +79,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
         blob.setSize(50000L);
         var blobId = blobRepo.save(blob).getId();
 
-        var product = productService.create(new CreateProductRequest("Image Product", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Image Product", null, null, null, null, List.of(), null, null));
         imageService.addImage(product.id(), new CreateImageRequest(blobId, "alt text"));
         productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
 
@@ -93,8 +93,8 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
     @Test
     void storefrontList_returnsOnlyActiveProducts() {
-        productService.create(new CreateProductRequest("Draft Product", null, null, null, null, List.of()));
-        var active = productService.create(new CreateProductRequest("Active Product", null, null, null, null, List.of()));
+        productService.create(new CreateProductRequest("Draft Product", null, null, null, null, List.of(), null, null));
+        var active = productService.create(new CreateProductRequest("Active Product", null, null, null, null, List.of(), null, null));
         productService.changeStatus(active.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
 
         var result = productService.listStorefront(null, PageRequest.of(0, 100));
@@ -104,7 +104,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createVariant_autoCreatesInventoryItem() {
-        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Widget", null, null, null, null, List.of(), null, null));
         var req = new CreateVariantRequest(new java.math.BigDecimal("9.99"), null, null, null, null, null, List.of());
         var variant = variantService.create(product.id(), req);
 
@@ -115,7 +115,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
     @Test
     void createVariant_withOptionValues_generatesTitle() {
-        var product = productService.create(new CreateProductRequest("Shirt", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Shirt", null, null, null, null, List.of(), null, null));
         var colorOpt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var redVal = optionService.createOptionValue(product.id(), colorOpt.id(), new CreateOptionValueRequest("Red", 1));
         var sizeOpt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 2));
@@ -130,7 +130,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
     @Test
     void renameOptionValue_recomputesVariantTitles() {
-        var product = productService.create(new CreateProductRequest("Hat", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Hat", null, null, null, null, List.of(), null, null));
         var opt = optionService.createOption(product.id(), new CreateOptionRequest("Color", 1));
         var val = optionService.createOptionValue(product.id(), opt.id(), new CreateOptionValueRequest("Blu", 1)); // typo
 
@@ -146,7 +146,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
     @Test
     void softDeleteVariant_excludedFromProductVariants() {
-        var product = productService.create(new CreateProductRequest("Cap", null, null, null, null, List.of()));
+        var product = productService.create(new CreateProductRequest("Cap", null, null, null, null, List.of(), null, null));
         var req = new CreateVariantRequest(new java.math.BigDecimal("15.00"), null, null, null, null, null, List.of());
         var variant = variantService.create(product.id(), req);
         variantService.softDelete(product.id(), variant.id());
