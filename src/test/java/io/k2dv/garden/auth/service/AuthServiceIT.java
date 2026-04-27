@@ -6,6 +6,7 @@ import io.k2dv.garden.auth.repository.IdentityRepository;
 import io.k2dv.garden.auth.repository.TokenRepository;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.UnauthorizedException;
 import io.k2dv.garden.user.model.UserStatus;
 import io.k2dv.garden.user.repository.UserRepository;
@@ -69,6 +70,30 @@ class AuthServiceIT extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("carol@example.com", "wrong")))
             .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void login_suspendedUser_throwsForbidden() {
+        authService.register(new RegisterRequest("suspended@example.com", "pass1234", "Sus", "Pended"));
+        var user = userRepo.findByEmail("suspended@example.com").orElseThrow();
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepo.save(user);
+
+        assertThatThrownBy(() -> authService.login(new LoginRequest("suspended@example.com", "pass1234")))
+            .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void refresh_suspendedUser_throwsForbidden() {
+        authService.register(new RegisterRequest("suspended2@example.com", "pass1234", "Sus", "Two"));
+        var tokens = authService.login(new LoginRequest("suspended2@example.com", "pass1234"));
+
+        var user = userRepo.findByEmail("suspended2@example.com").orElseThrow();
+        user.setStatus(UserStatus.SUSPENDED);
+        userRepo.save(user);
+
+        assertThatThrownBy(() -> authService.refresh(new RefreshRequest(tokens.refreshToken())))
+            .isInstanceOf(ForbiddenException.class);
     }
 
     @Test

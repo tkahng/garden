@@ -8,6 +8,7 @@ import io.k2dv.garden.auth.repository.IdentityRepository;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.iam.service.IamService;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.UnauthorizedException;
 import io.k2dv.garden.user.model.User;
@@ -77,6 +78,10 @@ public class AuthService {
             throw new UnauthorizedException("INVALID_CREDENTIALS", "Invalid email or password");
         }
 
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new ForbiddenException("ACCOUNT_SUSPENDED", "Your account has been suspended");
+        }
+
         return mintTokenPair(user);
     }
 
@@ -85,6 +90,9 @@ public class AuthService {
         UUID userId = tokenService.validateAndConsume(req.refreshToken(), TokenType.REFRESH_TOKEN);
         User user = userRepo.findById(userId)
             .orElseThrow(() -> new UnauthorizedException("USER_NOT_FOUND", "User not found"));
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new ForbiddenException("ACCOUNT_SUSPENDED", "Your account has been suspended");
+        }
         return mintTokenPair(user);
     }
 
