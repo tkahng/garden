@@ -76,6 +76,16 @@ class StorefrontOrderControllerTest {
     }
 
     @Test
+    void getOrder_guestOrder_returns400() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.getOrderResponse(id)).thenReturn(stubOrder(id, null, OrderStatus.PAID));
+
+        mvc.perform(get("/api/v1/storefront/orders/{id}", id))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("ORDER_NOT_OWNED"));
+    }
+
+    @Test
     void getOrder_notFound_returns404() throws Exception {
         when(orderService.getOrderResponse(any()))
             .thenThrow(new NotFoundException("ORDER_NOT_FOUND", "Not found"));
@@ -102,6 +112,16 @@ class StorefrontOrderControllerTest {
         UUID id = UUID.randomUUID();
         when(orderService.getOrderResponse(id))
             .thenReturn(stubOrder(id, UUID.randomUUID(), OrderStatus.PENDING_PAYMENT));
+
+        mvc.perform(put("/api/v1/storefront/orders/{id}/cancel", id))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("ORDER_NOT_OWNED"));
+    }
+
+    @Test
+    void cancelOrder_guestOrder_returns400() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.getOrderResponse(id)).thenReturn(stubOrder(id, null, OrderStatus.PENDING_PAYMENT));
 
         mvc.perform(put("/api/v1/storefront/orders/{id}/cancel", id))
             .andExpect(status().isBadRequest())
