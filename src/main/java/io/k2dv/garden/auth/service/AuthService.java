@@ -117,15 +117,14 @@ public class AuthService {
 
     @Transactional
     public void resendVerification(String email) {
-        User user = userRepo.findByEmail(email)
-            .orElseThrow(() -> new NotFoundException("USER_NOT_FOUND", "User not found"));
-        if (user.getEmailVerifiedAt() != null) {
-            return; // Already verified — silently ignore
-        }
-        String token = tokenService.createToken(
-            user.getId(), TokenType.EMAIL_VERIFICATION,
-            props.getJwt().getEmailVerificationTtl());
-        emailService.sendEmailVerification(user.getEmail(), token);
+        userRepo.findByEmail(email).ifPresent(user -> {
+            if (user.getEmailVerifiedAt() != null) return;
+            String token = tokenService.createToken(
+                user.getId(), TokenType.EMAIL_VERIFICATION,
+                props.getJwt().getEmailVerificationTtl());
+            emailService.sendEmailVerification(user.getEmail(), token);
+        });
+        // Silent if email not found — prevents account enumeration
     }
 
     @Transactional

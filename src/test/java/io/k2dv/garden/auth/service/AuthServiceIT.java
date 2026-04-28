@@ -15,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
@@ -70,6 +71,13 @@ class AuthServiceIT extends AbstractIntegrationTest {
 
         assertThatThrownBy(() -> authService.login(new LoginRequest("carol@example.com", "wrong")))
             .isInstanceOf(UnauthorizedException.class);
+    }
+
+    @Test
+    void resendVerification_unknownEmail_doesNotThrow() {
+        // Must be silent — not reveal whether the account exists
+        assertThatCode(() -> authService.resendVerification("nobody@example.com"))
+            .doesNotThrowAnyException();
     }
 
     @Test
