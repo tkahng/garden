@@ -57,7 +57,7 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
             user.getId(), TokenType.REFRESH_TOKEN, props.getJwt().getRefreshTokenTtl());
 
         String redirect = props.getFrontendUrl() + "/auth/callback"
-            + "?accessToken=" + accessToken
+            + "#accessToken=" + accessToken
             + "&refreshToken=" + refreshToken;
         getRedirectStrategy().sendRedirect(request, response, redirect);
     }
