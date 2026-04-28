@@ -34,13 +34,13 @@ public class SearchController {
             @RequestParam String q,
             @RequestParam(required = false) List<String> types,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "10") int size) {
+            @RequestParam(defaultValue = "10") int limit) {
         if (q == null || q.isBlank()) {
             throw new ValidationException("QUERY_REQUIRED", "Search query must not be blank");
         }
-        int clampedSize = Math.min(size, 50);
+        int clampedLimit = Math.min(limit, 50);
         Set<String> resolvedTypes = (types == null || types.isEmpty()) ? ALL_TYPES : Set.copyOf(types);
-        var pageable = PageRequest.of(page, clampedSize, Sort.by("createdAt").descending());
+        var pageable = PageRequest.of(page, clampedLimit, Sort.by("createdAt").descending());
         return ResponseEntity.ok(ApiResponse.of(searchService.search(q, resolvedTypes, pageable)));
     }
 }
