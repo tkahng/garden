@@ -286,9 +286,32 @@ public class PaymentService {
                             Order order, ShippingRate shippingRate, boolean discountApplied) {
     String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
 
-    if (discountApplied) {
-      // Single line item = full discounted+shipping total
-      long totalCents = order.getTotalAmount()
+    for (CartItem cartItem : cartItems) {
+      ProductVariant variant = variantRepo.findById(cartItem.getVariantId())
+          .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
+              "Variant not found: " + cartItem.getVariantId()));
+      long unitAmountCents = cartItem.getUnitPrice()
+          .multiply(BigDecimal.valueOf(100))
+          .setScale(0, RoundingMode.HALF_UP)
+          .longValueExact();
+
+      builder.addLineItem(
+          SessionCreateParams.LineItem.builder()
+              .setQuantity((long) cartItem.getQuantity())
+              .setPriceData(
+                  SessionCreateParams.LineItem.PriceData.builder()
+                      .setCurrency(currency)
+                      .setUnitAmount(unitAmountCents)
+                      .setProductData(
+                          SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                              .setName(variant.getTitle())
+                              .build())
+                      .build())
+              .build());
+    }
+
+    if (shippingRate != null && shippingRate.getPrice().compareTo(BigDecimal.ZERO) > 0) {
+      long shippingCents = shippingRate.getPrice()
           .multiply(BigDecimal.valueOf(100))
           .setScale(0, RoundingMode.HALF_UP)
           .longValueExact();
@@ -298,57 +321,34 @@ public class PaymentService {
               .setPriceData(
                   SessionCreateParams.LineItem.PriceData.builder()
                       .setCurrency(currency)
-                      .setUnitAmount(totalCents)
+                      .setUnitAmount(shippingCents)
                       .setProductData(
                           SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                              .setName("Order Total (discount applied)")
+                              .setName("Shipping — " + shippingRate.getName())
                               .build())
                       .build())
               .build());
-    } else {
-      for (CartItem cartItem : cartItems) {
-        ProductVariant variant = variantRepo.findById(cartItem.getVariantId())
-            .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
-                "Variant not found: " + cartItem.getVariantId()));
-        long unitAmountCents = cartItem.getUnitPrice()
-            .multiply(BigDecimal.valueOf(100))
-            .setScale(0, RoundingMode.HALF_UP)
-            .longValueExact();
+    }
 
-        builder.addLineItem(
-            SessionCreateParams.LineItem.builder()
-                .setQuantity((long) cartItem.getQuantity())
-                .setPriceData(
-                    SessionCreateParams.LineItem.PriceData.builder()
-                        .setCurrency(currency)
-                        .setUnitAmount(unitAmountCents)
-                        .setProductData(
-                            SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                .setName(variant.getTitle())
-                                .build())
-                        .build())
-                .build());
-      }
-
-      if (shippingRate != null && shippingRate.getPrice().compareTo(BigDecimal.ZERO) > 0) {
-        long shippingCents = shippingRate.getPrice()
-            .multiply(BigDecimal.valueOf(100))
-            .setScale(0, RoundingMode.HALF_UP)
-            .longValueExact();
-        builder.addLineItem(
-            SessionCreateParams.LineItem.builder()
-                .setQuantity(1L)
-                .setPriceData(
-                    SessionCreateParams.LineItem.PriceData.builder()
-                        .setCurrency(currency)
-                        .setUnitAmount(shippingCents)
-                        .setProductData(
-                            SessionCreateParams.LineItem.PriceData.ProductData.builder()
-                                .setName("Shipping — " + shippingRate.getName())
-                                .build())
-                        .build())
-                .build());
-      }
+    if (discountApplied && order.getDiscountAmount() != null
+        && order.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
+      long discountCents = order.getDiscountAmount()
+          .multiply(BigDecimal.valueOf(100))
+          .setScale(0, RoundingMode.HALF_UP)
+          .longValueExact();
+      builder.addLineItem(
+          SessionCreateParams.LineItem.builder()
+              .setQuantity(1L)
+              .setPriceData(
+                  SessionCreateParams.LineItem.PriceData.builder()
+                      .setCurrency(currency)
+                      .setUnitAmount(-discountCents)
+                      .setProductData(
+                          SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                              .setName("Discount")
+                              .build())
+                      .build())
+              .build());
     }
   }
 
