@@ -109,7 +109,7 @@ public class DiscountService {
 
     @Transactional
     public DiscountApplication redeem(String code, BigDecimal orderAmount) {
-        Discount d = discountRepo.findByCodeIgnoreCase(code)
+        Discount d = discountRepo.findByCodeIgnoreCaseForUpdate(code)
             .orElseThrow(() -> new ValidationException("DISCOUNT_NOT_FOUND", "Discount code not found: " + code));
 
         String reason = checkEligibility(d, orderAmount);
