@@ -34,7 +34,7 @@ public class AuthService {
     private final IamService iamService;
     private final EmailService emailService;
     private final AppProperties props;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final BCryptPasswordEncoder passwordEncoder;
 
     @Transactional
     public AuthTokenResponse register(RegisterRequest req) {
