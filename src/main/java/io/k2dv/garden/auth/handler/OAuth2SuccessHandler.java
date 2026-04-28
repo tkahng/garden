@@ -46,6 +46,11 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
             .map(identity -> userRepo.findById(identity.getUserId()).orElseThrow())
             .orElseGet(() -> createOrLinkUser(oidcUser));
 
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, "Account suspended");
+            return;
+        }
+
         List<String> permissions = iamService.loadPermissionsForUser(user.getId());
         String accessToken = jwtService.mintAccessToken(user, permissions);
         String refreshToken = tokenService.createToken(
@@ -79,11 +84,15 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
             user = userRepo.save(user);
         }
 
-        Identity identity = new Identity();
-        identity.setUserId(user.getId());
-        identity.setProvider(IdentityProvider.GOOGLE);
-        identity.setAccountId(googleSub);
-        identityRepo.save(identity);
+        final User savedUser = user;
+        identityRepo.findByProviderAndAccountId(IdentityProvider.GOOGLE, googleSub)
+            .orElseGet(() -> {
+                Identity identity = new Identity();
+                identity.setUserId(savedUser.getId());
+                identity.setProvider(IdentityProvider.GOOGLE);
+                identity.setAccountId(googleSub);
+                return identityRepo.save(identity);
+            });
 
         return user;
     }
