@@ -104,7 +104,7 @@ public class AdminUserController {
     @HasPermission("user:write")
     public ApiResponse<AdminUserResponse> updateNotes(
             @PathVariable UUID id,
-            @RequestBody UpdateNotesRequest req) {
+            @Valid @RequestBody UpdateNotesRequest req) {
         return ApiResponse.of(adminUserService.updateNotes(id, req.adminNotes()));
     }
 
@@ -112,7 +112,7 @@ public class AdminUserController {
     @HasPermission("user:write")
     public ApiResponse<AdminUserResponse> updateTags(
             @PathVariable UUID id,
-            @RequestBody UpdateTagsRequest req) {
+            @Valid @RequestBody UpdateTagsRequest req) {
         return ApiResponse.of(adminUserService.updateTags(id, req.tags()));
     }
 

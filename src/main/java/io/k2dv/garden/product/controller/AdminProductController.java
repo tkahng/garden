@@ -61,7 +61,7 @@ public class AdminProductController {
     @PatchMapping("/{id}")
     @HasPermission("product:write")
     public ResponseEntity<ApiResponse<AdminProductResponse>> update(
-            @PathVariable UUID id, @RequestBody UpdateProductRequest req) {
+            @PathVariable UUID id, @Valid @RequestBody UpdateProductRequest req) {
         return ResponseEntity.ok(ApiResponse.of(productService.update(id, req)));
     }
 
@@ -104,7 +104,7 @@ public class AdminProductController {
     @PatchMapping("/{id}/variants/{vId}")
     @HasPermission("product:write")
     public ResponseEntity<ApiResponse<AdminVariantResponse>> updateVariant(
-            @PathVariable UUID id, @PathVariable UUID vId, @RequestBody UpdateVariantRequest req) {
+            @PathVariable UUID id, @PathVariable UUID vId, @Valid @RequestBody UpdateVariantRequest req) {
         return ResponseEntity.ok(ApiResponse.of(variantService.update(id, vId, req)));
     }
 
@@ -126,7 +126,7 @@ public class AdminProductController {
     @PatchMapping("/{id}/images/positions")
     @HasPermission("product:write")
     public ResponseEntity<Void> reorderImages(
-            @PathVariable UUID id, @RequestBody List<ImagePositionItem> items) {
+            @PathVariable UUID id, @Valid @RequestBody List<ImagePositionItem> items) {
         imageService.reorderImages(id, items);
         return ResponseEntity.ok().build();
     }

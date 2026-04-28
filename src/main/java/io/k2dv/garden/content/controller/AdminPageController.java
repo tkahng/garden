@@ -54,7 +54,7 @@ public class AdminPageController {
     @PutMapping("/{id}")
     @HasPermission("content:write")
     public ResponseEntity<ApiResponse<AdminPageResponse>> update(
-            @PathVariable UUID id, @RequestBody UpdatePageRequest req) {
+            @PathVariable UUID id, @Valid @RequestBody UpdatePageRequest req) {
         return ResponseEntity.ok(ApiResponse.of(pageService.update(id, req)));
     }
 

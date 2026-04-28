@@ -25,7 +25,7 @@ public class AdminInventoryController {
     @PatchMapping("/{itemId}")
     @HasPermission("inventory:write")
     public ResponseEntity<ApiResponse<InventoryItemResponse>> update(
-            @PathVariable UUID itemId, @RequestBody UpdateInventoryRequest req) {
+            @PathVariable UUID itemId, @Valid @RequestBody UpdateInventoryRequest req) {
         InventoryItem inv = inventoryRepo.findById(itemId)
             .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND", "Inventory item not found"));
         inv.setRequiresShipping(req.requiresShipping());

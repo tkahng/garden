@@ -81,7 +81,7 @@ public class AdminOrderController {
     @HasPermission("order:write")
     public ResponseEntity<ApiResponse<OrderResponse>> updateOrder(
             @PathVariable UUID id,
-            @RequestBody UpdateOrderRequest req) {
+            @Valid @RequestBody UpdateOrderRequest req) {
         return ResponseEntity.ok(ApiResponse.of(orderService.updateOrder(id, req)));
     }
 

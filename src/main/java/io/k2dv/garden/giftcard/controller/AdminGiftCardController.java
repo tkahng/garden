@@ -63,7 +63,7 @@ public class AdminGiftCardController {
     @HasPermission("gift_card:write")
     public ApiResponse<GiftCardResponse> update(
             @PathVariable UUID id,
-            @RequestBody UpdateGiftCardRequest req) {
+            @Valid @RequestBody UpdateGiftCardRequest req) {
         return ApiResponse.of(giftCardService.update(id, req));
     }
 
