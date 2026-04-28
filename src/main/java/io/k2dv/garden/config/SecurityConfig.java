@@ -18,7 +18,9 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import javax.crypto.spec.SecretKeySpec;
+import java.security.KeyFactory;
+import java.security.interfaces.RSAPublicKey;
+import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.List;
 
@@ -105,10 +107,13 @@ public class SecurityConfig {
 
     @Bean
     NimbusJwtDecoder jwtDecoder() {
-        byte[] keyBytes = Base64.getDecoder().decode(props.getJwt().getSecret());
-        var key = new SecretKeySpec(keyBytes, "HmacSHA256");
-        return NimbusJwtDecoder.withSecretKey(key)
-            .macAlgorithm(org.springframework.security.oauth2.jose.jws.MacAlgorithm.HS256)
-            .build();
+        try {
+            byte[] pubBytes = Base64.getDecoder().decode(props.getJwt().getPublicKey());
+            RSAPublicKey publicKey = (RSAPublicKey) KeyFactory.getInstance("RSA")
+                .generatePublic(new X509EncodedKeySpec(pubBytes));
+            return NimbusJwtDecoder.withPublicKey(publicKey).build();
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to initialize JWT decoder", e);
+        }
     }
 }
