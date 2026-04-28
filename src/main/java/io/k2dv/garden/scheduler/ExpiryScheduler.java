@@ -22,18 +22,26 @@ public class ExpiryScheduler {
     @Scheduled(cron = "0 */15 * * * *")
     @Transactional
     public void expireQuotes() {
-        int count = quoteRepo.expireByStatus(QuoteStatus.SENT, QuoteStatus.EXPIRED, Instant.now());
-        if (count > 0) {
-            log.info("Expired {} quote(s)", count);
+        try {
+            int count = quoteRepo.expireByStatus(QuoteStatus.SENT, QuoteStatus.EXPIRED, Instant.now());
+            if (count > 0) {
+                log.info("Expired {} quote(s)", count);
+            }
+        } catch (Exception e) {
+            log.error("Failed to expire quotes", e);
         }
     }
 
     @Scheduled(cron = "0 */15 * * * *")
     @Transactional
     public void markInvoicesOverdue() {
-        int count = invoiceRepo.markOverduePastDue(Instant.now());
-        if (count > 0) {
-            log.info("Marked {} invoice(s) overdue", count);
+        try {
+            int count = invoiceRepo.markOverduePastDue(Instant.now());
+            if (count > 0) {
+                log.info("Marked {} invoice(s) overdue", count);
+            }
+        } catch (Exception e) {
+            log.error("Failed to mark invoices overdue", e);
         }
     }
 }
