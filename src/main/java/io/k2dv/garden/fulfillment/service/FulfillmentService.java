@@ -146,8 +146,18 @@ public class FulfillmentService {
 
     @Transactional(readOnly = true)
     public List<FulfillmentResponse> list(UUID orderId) {
-        return fulfillmentRepo.findByOrderId(orderId).stream()
-            .map(this::toResponse)
+        List<Fulfillment> fulfillments = fulfillmentRepo.findByOrderId(orderId);
+        if (fulfillments.isEmpty()) return List.of();
+
+        List<UUID> ids = fulfillments.stream().map(Fulfillment::getId).toList();
+        Map<UUID, List<FulfillmentItem>> itemsByFulfillmentId = fulfillmentItemRepo
+            .findByFulfillmentIdIn(ids).stream()
+            .collect(Collectors.groupingBy(FulfillmentItem::getFulfillmentId));
+
+        return fulfillments.stream()
+            .map(f -> FulfillmentResponse.from(f,
+                itemsByFulfillmentId.getOrDefault(f.getId(), List.of()).stream()
+                    .map(FulfillmentItemResponse::from).toList()))
             .toList();
     }
 
