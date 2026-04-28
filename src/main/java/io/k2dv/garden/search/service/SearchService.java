@@ -16,12 +16,11 @@ import io.k2dv.garden.content.repository.BlogRepository;
 import io.k2dv.garden.content.repository.PageRepository;
 import io.k2dv.garden.product.dto.ProductSummaryResponse;
 import io.k2dv.garden.product.model.Product;
-import io.k2dv.garden.product.model.ProductImage;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
-import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.search.dto.SearchArticleResult;
 import io.k2dv.garden.search.dto.SearchPageResult;
 import io.k2dv.garden.search.dto.SearchResponse;
@@ -49,7 +48,7 @@ public class SearchService {
 
     private final ProductRepository productRepo;
     private final ProductVariantRepository variantRepo;
-    private final ProductImageRepository imageRepo;
+    private final ProductImageResolver imageResolver;
     private final CollectionRepository collectionRepo;
     private final ArticleRepository articleRepo;
     private final BlogRepository blogRepo;
@@ -104,7 +103,7 @@ public class SearchService {
             variantRepo.findByProductIdInAndDeletedAtIsNull(productIds).stream()
                 .collect(Collectors.groupingBy(ProductVariant::getProductId));
 
-        Map<UUID, String> featuredImageUrls = resolveFeaturedImageUrls(products);
+        Map<UUID, String> imageUrlByProductId = imageResolver.resolveByProductId(products);
 
         return PagedResult.of(page, p -> {
             List<ProductVariant> variants = variantsByProduct.getOrDefault(p.getId(), List.of());
@@ -116,7 +115,7 @@ public class SearchService {
                 .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
             BigDecimal compareAtPriceMax = variants.stream().map(ProductVariant::getCompareAtPrice)
                 .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
-            String imageUrl = p.getFeaturedImageId() != null ? featuredImageUrls.get(p.getFeaturedImageId()) : null;
+            String imageUrl = imageUrlByProductId.get(p.getId());
             return new ProductSummaryResponse(p.getId(), p.getTitle(), p.getHandle(), p.getVendor(),
                 imageUrl, priceMin, priceMax, compareAtPriceMin, compareAtPriceMax);
         });
@@ -188,18 +187,4 @@ public class SearchService {
         return PagedResult.of(page, p -> new SearchPageResult(p.getId(), p.getTitle(), p.getHandle(), p.getPublishedAt()));
     }
 
-    private Map<UUID, String> resolveFeaturedImageUrls(List<Product> products) {
-        Set<UUID> featuredImageIds = products.stream()
-            .map(Product::getFeaturedImageId).filter(Objects::nonNull).collect(Collectors.toSet());
-        if (featuredImageIds.isEmpty()) return Map.of();
-        Map<UUID, ProductImage> imagesById = imageRepo.findAllById(featuredImageIds).stream()
-            .collect(Collectors.toMap(ProductImage::getId, img -> img));
-        Set<UUID> blobIds = imagesById.values().stream()
-            .map(ProductImage::getBlobId).collect(Collectors.toSet());
-        Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
-            .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
-        return imagesById.entrySet().stream()
-            .filter(e -> blobUrls.containsKey(e.getValue().getBlobId()))
-            .collect(Collectors.toMap(Map.Entry::getKey, e -> blobUrls.get(e.getValue().getBlobId())));
-    }
 }
