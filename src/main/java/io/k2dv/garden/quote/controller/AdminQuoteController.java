@@ -80,7 +80,7 @@ public class AdminQuoteController {
     @HasPermission("quote:write")
     public ResponseEntity<ApiResponse<QuoteRequestResponse>> updateNotes(
         @PathVariable UUID id,
-        @RequestBody UpdateStaffNotesRequest req) {
+        @Valid @RequestBody UpdateStaffNotesRequest req) {
         return ResponseEntity.ok(ApiResponse.of(quoteService.updateNotes(id, req)));
     }
 

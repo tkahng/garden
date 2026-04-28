@@ -2,8 +2,6 @@ package io.k2dv.garden.order.service;
 
 import com.stripe.exception.StripeException;
 import com.stripe.param.RefundCreateParams;
-import io.k2dv.garden.blob.repository.BlobObjectRepository;
-import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
@@ -24,12 +22,11 @@ import io.k2dv.garden.order.repository.OrderRepository;
 import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.Product;
-import io.k2dv.garden.product.model.ProductImage;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
-import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
@@ -69,9 +66,7 @@ public class OrderService {
     private final EmailService emailService;
     private final AppProperties appProperties;
     private final AutoTagService autoTagService;
-    private final ProductImageRepository imageRepo;
-    private final BlobObjectRepository blobRepo;
-    private final StorageService storageService;
+    private final ProductImageResolver imageResolver;
     private final InventoryService inventoryService;
     private final StripeGateway stripeGateway;
     private final OrderEventService orderEventService;
@@ -536,25 +531,7 @@ public class OrderService {
         Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
             .collect(Collectors.toMap(Product::getId, p -> p));
 
-        Set<UUID> featuredImageIds = productsById.values().stream()
-            .map(Product::getFeaturedImageId).filter(Objects::nonNull).collect(Collectors.toSet());
-        Map<UUID, String> imageUrlByProductId = Map.of();
-        if (!featuredImageIds.isEmpty()) {
-            Map<UUID, ProductImage> imagesById = imageRepo.findAllById(featuredImageIds).stream()
-                .collect(Collectors.toMap(ProductImage::getId, img -> img));
-            Set<UUID> blobIds = imagesById.values().stream()
-                .map(ProductImage::getBlobId).collect(Collectors.toSet());
-            Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
-                .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
-            imageUrlByProductId = productsById.entrySet().stream()
-                .filter(e -> e.getValue().getFeaturedImageId() != null)
-                .filter(e -> imagesById.containsKey(e.getValue().getFeaturedImageId()))
-                .filter(e -> blobUrls.containsKey(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId()))
-                .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    e -> blobUrls.get(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId())));
-        }
-        final Map<UUID, String> resolvedImageUrls = imageUrlByProductId;
+        Map<UUID, String> resolvedImageUrls = imageResolver.resolveByProductId(productsById.values());
 
         List<OrderItemResponse> items = orderItems.stream().map(i -> {
             OrderItemProductInfo productInfo = null;

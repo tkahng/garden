@@ -56,7 +56,7 @@ public class AdminShippingController {
     @HasPermission("shipping:write")
     public ApiResponse<ShippingZoneResponse> updateZone(
             @PathVariable UUID id,
-            @RequestBody UpdateShippingZoneRequest req) {
+            @Valid @RequestBody UpdateShippingZoneRequest req) {
         return ApiResponse.of(shippingService.updateZone(id, req));
     }
 
@@ -97,7 +97,7 @@ public class AdminShippingController {
     public ApiResponse<ShippingRateResponse> updateRate(
             @PathVariable UUID zoneId,
             @PathVariable UUID rateId,
-            @RequestBody UpdateShippingRateRequest req) {
+            @Valid @RequestBody UpdateShippingRateRequest req) {
         return ApiResponse.of(shippingService.updateRate(zoneId, rateId, req));
     }
 

@@ -8,6 +8,7 @@ import io.k2dv.garden.inventory.repository.InventoryItemRepository;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -25,7 +26,7 @@ public class AdminInventoryController {
     @PatchMapping("/{itemId}")
     @HasPermission("inventory:write")
     public ResponseEntity<ApiResponse<InventoryItemResponse>> update(
-            @PathVariable UUID itemId, @RequestBody UpdateInventoryRequest req) {
+            @PathVariable UUID itemId, @Valid @RequestBody UpdateInventoryRequest req) {
         InventoryItem inv = inventoryRepo.findById(itemId)
             .orElseThrow(() -> new NotFoundException("INVENTORY_NOT_FOUND", "Inventory item not found"));
         inv.setRequiresShipping(req.requiresShipping());

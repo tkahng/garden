@@ -57,7 +57,7 @@ public class AdminBlogController {
     @PutMapping("/{id}")
     @HasPermission("content:write")
     public ResponseEntity<ApiResponse<AdminBlogResponse>> updateBlog(
-            @PathVariable UUID id, @RequestBody UpdateBlogRequest req) {
+            @PathVariable UUID id, @Valid @RequestBody UpdateBlogRequest req) {
         return ResponseEntity.ok(ApiResponse.of(articleService.updateBlog(id, req)));
     }
 
@@ -105,7 +105,7 @@ public class AdminBlogController {
     @HasPermission("content:write")
     public ResponseEntity<ApiResponse<AdminArticleResponse>> updateArticle(
             @PathVariable UUID id, @PathVariable UUID articleId,
-            @RequestBody UpdateArticleRequest req) {
+            @Valid @RequestBody UpdateArticleRequest req) {
         return ResponseEntity.ok(ApiResponse.of(articleService.updateArticle(id, articleId, req)));
     }
 
@@ -139,7 +139,7 @@ public class AdminBlogController {
     @HasPermission("content:write")
     public ResponseEntity<Void> reorderImages(
             @PathVariable UUID id, @PathVariable UUID articleId,
-            @RequestBody List<ArticleImagePositionItem> items) {
+            @Valid @RequestBody List<ArticleImagePositionItem> items) {
         articleImageService.reorderImages(id, articleId, items);
         return ResponseEntity.ok().build();
     }

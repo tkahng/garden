@@ -23,6 +23,8 @@ import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
+import io.k2dv.garden.discount.dto.DiscountApplication;
+import io.k2dv.garden.discount.model.DiscountType;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.Address;
@@ -369,6 +371,53 @@ class PaymentServiceTest {
     paymentService.handleWebhook("payload", "sig", "secret");
 
     verifyNoInteractions(orderService);
+  }
+
+  @Test
+  void initiateCheckout_withDiscount_addsNegativeDiscountLineItem() throws StripeException {
+    UUID userId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    UUID discountId = UUID.randomUUID();
+    Cart cart = stubCart(userId);
+    CartItem cartItem = stubCartItem(variantId); // unitPrice = 49.99, qty = 2
+
+    Order orderAfterCreate = stubOrder(UUID.randomUUID(), userId); // total = 99.98
+    Order orderAfterDiscount = stubOrder(orderAfterCreate.getId(), userId);
+    orderAfterDiscount.setDiscountAmount(new BigDecimal("10.00"));
+    orderAfterDiscount.setTotalAmount(new BigDecimal("89.98"));
+
+    ProductVariant variant = new ProductVariant();
+    variant.setTitle("Widget");
+    variant.setPrice(new BigDecimal("49.99"));
+
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_test_discount");
+    when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_discount");
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createFromCart(eq(userId), any(), any(), any(), any())).thenReturn(orderAfterCreate);
+    when(discountService.redeem(eq("SAVE10"), any()))
+        .thenReturn(new DiscountApplication(discountId, "SAVE10", DiscountType.FIXED_AMOUNT, new BigDecimal("10.00"), new BigDecimal("10.00")));
+    when(orderService.getById(orderAfterCreate.getId())).thenReturn(orderAfterDiscount);
+    when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
+    when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
+
+    paymentService.initiateCheckout(userId, "SAVE10", null);
+
+    ArgumentCaptor<SessionCreateParams> captor = ArgumentCaptor.forClass(SessionCreateParams.class);
+    verify(stripeGateway).createCheckoutSession(captor.capture());
+    SessionCreateParams params = captor.getValue();
+    List<SessionCreateParams.LineItem> lineItems = params.getLineItems();
+
+    // product line item present
+    assertThat(lineItems).anyMatch(li -> li.getPriceData().getUnitAmount() == 4999L);
+    // negative discount line item present
+    assertThat(lineItems).anyMatch(li -> li.getPriceData().getUnitAmount() == -1000L);
+    // no collapsed single "Order Total" item
+    assertThat(lineItems).noneMatch(li ->
+        li.getPriceData().getProductData().getName().contains("Order Total"));
   }
 
   @Test

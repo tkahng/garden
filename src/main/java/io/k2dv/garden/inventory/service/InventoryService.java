@@ -177,7 +177,7 @@ public class InventoryService {
     public void reserveStock(UUID variantId, int quantity) {
         InventoryItem item = findItemByVariant(variantId);
 
-        List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
+        List<InventoryLevel> levels = levelRepo.findByInventoryItemIdForUpdate(item.getId());
         int totalAvailable = levels.stream()
             .mapToInt(l -> l.getQuantityOnHand() - l.getQuantityCommitted())
             .sum();
@@ -204,7 +204,7 @@ public class InventoryService {
     public void releaseReservation(UUID variantId, int quantity) {
         InventoryItem item = findItemByVariant(variantId);
 
-        List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
+        List<InventoryLevel> levels = levelRepo.findByInventoryItemIdForUpdate(item.getId());
         int remaining = quantity;
         for (InventoryLevel level : levels) {
             if (remaining <= 0) break;
@@ -221,7 +221,7 @@ public class InventoryService {
     public void confirmSale(UUID variantId, int quantity) {
         InventoryItem item = findItemByVariant(variantId);
 
-        List<InventoryLevel> levels = levelRepo.findByInventoryItemId(item.getId());
+        List<InventoryLevel> levels = levelRepo.findByInventoryItemIdForUpdate(item.getId());
         int remaining = quantity;
         for (InventoryLevel level : levels) {
             if (remaining <= 0) break;

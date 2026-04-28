@@ -35,7 +35,10 @@ public class AppProperties {
     @Setter
     public static class Jwt {
         @NotBlank
-        private String secret;
+        private String privateKey;
+
+        @NotBlank
+        private String publicKey;
 
         private Duration accessTokenTtl = Duration.ofMinutes(15);
 

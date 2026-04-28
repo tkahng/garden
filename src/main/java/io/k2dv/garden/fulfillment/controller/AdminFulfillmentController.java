@@ -55,7 +55,7 @@ public class AdminFulfillmentController {
     public ApiResponse<FulfillmentResponse> update(
             @PathVariable UUID orderId,
             @PathVariable UUID fulfillmentId,
-            @RequestBody UpdateFulfillmentRequest req) {
+            @Valid @RequestBody UpdateFulfillmentRequest req) {
         return ApiResponse.of(fulfillmentService.update(orderId, fulfillmentId, req));
     }
 }

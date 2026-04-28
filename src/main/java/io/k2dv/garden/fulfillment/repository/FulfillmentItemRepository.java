@@ -12,6 +12,8 @@ public interface FulfillmentItemRepository extends JpaRepository<FulfillmentItem
 
     List<FulfillmentItem> findByFulfillmentId(UUID fulfillmentId);
 
+    List<FulfillmentItem> findByFulfillmentIdIn(List<UUID> fulfillmentIds);
+
     @Query("""
         SELECT fi FROM FulfillmentItem fi
         JOIN Fulfillment f ON f.id = fi.fulfillmentId

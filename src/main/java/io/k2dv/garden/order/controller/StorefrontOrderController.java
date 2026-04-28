@@ -16,6 +16,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Objects;
 import java.util.UUID;
 
 @Tag(name = "Storefront Orders", description = "User order history and self-service actions")
@@ -44,7 +45,7 @@ public class StorefrontOrderController {
             @CurrentUser User user,
             @PathVariable UUID id) {
         OrderResponse order = orderService.getOrderResponse(id);
-        if (!order.userId().equals(user.getId())) {
+        if (!Objects.equals(order.userId(), user.getId())) {
             throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
         }
         return ResponseEntity.ok(ApiResponse.of(order));
@@ -55,7 +56,7 @@ public class StorefrontOrderController {
             @CurrentUser User user,
             @PathVariable UUID id) {
         OrderResponse order = orderService.getOrderResponse(id);
-        if (!order.userId().equals(user.getId())) {
+        if (!Objects.equals(order.userId(), user.getId())) {
             throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
         }
         return ResponseEntity.ok(ApiResponse.of(orderService.cancelAndReturn(id)));

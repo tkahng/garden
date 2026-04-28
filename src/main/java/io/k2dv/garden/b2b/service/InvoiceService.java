@@ -83,17 +83,18 @@ public class InvoiceService {
         paymentRepo.save(payment);
 
         invoice.setPaidAmount(invoice.getPaidAmount().add(req.amount()));
-        if (invoice.getPaidAmount().compareTo(invoice.getTotalAmount()) >= 0) {
-            invoice.setStatus(InvoiceStatus.PAID);
-            Order order = orderRepo.findById(invoice.getOrderId()).orElse(null);
-            if (order != null) {
+        boolean fullyPaid = invoice.getPaidAmount().compareTo(invoice.getTotalAmount()) >= 0;
+        invoice.setStatus(fullyPaid ? InvoiceStatus.PAID : InvoiceStatus.PARTIAL);
+        invoiceRepo.save(invoice);
+
+        if (fullyPaid) {
+            orderRepo.findById(invoice.getOrderId()).ifPresent(order -> {
                 order.setStatus(OrderStatus.PAID);
                 orderRepo.save(order);
-            }
-        } else {
-            invoice.setStatus(InvoiceStatus.PARTIAL);
+            });
         }
-        return toResponse(invoiceRepo.save(invoice));
+
+        return toResponse(invoice);
     }
 
     @Transactional

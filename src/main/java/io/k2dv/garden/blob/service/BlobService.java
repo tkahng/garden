@@ -21,6 +21,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -77,11 +78,14 @@ public class BlobService {
         String sanitized = sanitize(file.getOriginalFilename());
         String key = "uploads/" + UUID.randomUUID() + "-" + sanitized;
         String contentType = contentType(file);
+        byte[] bytes;
         try {
-            storageService.store(key, contentType, file.getInputStream(), file.getSize());
+            bytes = file.getBytes();
         } catch (IOException e) {
             throw new RuntimeException("Failed to read upload stream", e);
         }
+        storageService.store(key, contentType, new ByteArrayInputStream(bytes), bytes.length);
+
         BlobObject blob = new BlobObject();
         blob.setKey(key);
         blob.setFilename(file.getOriginalFilename() != null ? file.getOriginalFilename() : "unknown");
@@ -90,7 +94,7 @@ public class BlobService {
 
         if (IMAGE_TYPES.contains(contentType)) {
             try {
-                BufferedImage img = ImageIO.read(file.getInputStream());
+                BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
                 if (img != null) {
                     blob.setWidth(img.getWidth());
                     blob.setHeight(img.getHeight());

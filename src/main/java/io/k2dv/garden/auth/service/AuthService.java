@@ -8,6 +8,7 @@ import io.k2dv.garden.auth.repository.IdentityRepository;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.iam.service.IamService;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.UnauthorizedException;
 import io.k2dv.garden.user.model.User;
@@ -33,7 +34,7 @@ public class AuthService {
     private final IamService iamService;
     private final EmailService emailService;
     private final AppProperties props;
-    private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+    private final BCryptPasswordEncoder passwordEncoder;
 
     @Transactional
     public AuthTokenResponse register(RegisterRequest req) {
@@ -77,6 +78,10 @@ public class AuthService {
             throw new UnauthorizedException("INVALID_CREDENTIALS", "Invalid email or password");
         }
 
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new ForbiddenException("ACCOUNT_SUSPENDED", "Your account has been suspended");
+        }
+
         return mintTokenPair(user);
     }
 
@@ -85,6 +90,9 @@ public class AuthService {
         UUID userId = tokenService.validateAndConsume(req.refreshToken(), TokenType.REFRESH_TOKEN);
         User user = userRepo.findById(userId)
             .orElseThrow(() -> new UnauthorizedException("USER_NOT_FOUND", "User not found"));
+        if (user.getStatus() == UserStatus.SUSPENDED) {
+            throw new ForbiddenException("ACCOUNT_SUSPENDED", "Your account has been suspended");
+        }
         return mintTokenPair(user);
     }
 
@@ -109,15 +117,14 @@ public class AuthService {
 
     @Transactional
     public void resendVerification(String email) {
-        User user = userRepo.findByEmail(email)
-            .orElseThrow(() -> new NotFoundException("USER_NOT_FOUND", "User not found"));
-        if (user.getEmailVerifiedAt() != null) {
-            return; // Already verified — silently ignore
-        }
-        String token = tokenService.createToken(
-            user.getId(), TokenType.EMAIL_VERIFICATION,
-            props.getJwt().getEmailVerificationTtl());
-        emailService.sendEmailVerification(user.getEmail(), token);
+        userRepo.findByEmail(email).ifPresent(user -> {
+            if (user.getEmailVerifiedAt() != null) return;
+            String token = tokenService.createToken(
+                user.getId(), TokenType.EMAIL_VERIFICATION,
+                props.getJwt().getEmailVerificationTtl());
+            emailService.sendEmailVerification(user.getEmail(), token);
+        });
+        // Silent if email not found — prevents account enumeration
     }
 
     @Transactional

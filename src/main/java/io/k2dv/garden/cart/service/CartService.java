@@ -1,7 +1,5 @@
 package io.k2dv.garden.cart.service;
 
-import io.k2dv.garden.blob.repository.BlobObjectRepository;
-import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
 import io.k2dv.garden.cart.dto.CartItemProductInfo;
 import io.k2dv.garden.cart.dto.CartItemResponse;
@@ -13,12 +11,11 @@ import io.k2dv.garden.cart.model.CartStatus;
 import io.k2dv.garden.cart.repository.CartItemRepository;
 import io.k2dv.garden.cart.repository.CartRepository;
 import io.k2dv.garden.product.model.Product;
-import io.k2dv.garden.product.model.ProductImage;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
-import io.k2dv.garden.product.repository.ProductImageRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
@@ -40,9 +37,7 @@ public class CartService {
     private final CartItemRepository cartItemRepo;
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
-    private final ProductImageRepository imageRepo;
-    private final BlobObjectRepository blobRepo;
-    private final StorageService storageService;
+    private final ProductImageResolver imageResolver;
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
@@ -229,28 +224,7 @@ public class CartService {
         Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
             .collect(Collectors.toMap(Product::getId, p -> p));
 
-        // Batch-load featured images → resolve blob URLs
-        Set<UUID> featuredImageIds = productsById.values().stream()
-            .map(Product::getFeaturedImageId)
-            .filter(Objects::nonNull)
-            .collect(Collectors.toSet());
-        Map<UUID, String> imageUrlByProductId = Map.of();
-        if (!featuredImageIds.isEmpty()) {
-            Map<UUID, ProductImage> imagesById = imageRepo.findAllById(featuredImageIds).stream()
-                .collect(Collectors.toMap(ProductImage::getId, img -> img));
-            Set<UUID> blobIds = imagesById.values().stream()
-                .map(ProductImage::getBlobId).collect(Collectors.toSet());
-            Map<UUID, String> blobUrls = blobRepo.findAllById(blobIds).stream()
-                .collect(Collectors.toMap(b -> b.getId(), b -> storageService.resolveUrl(b.getKey())));
-            imageUrlByProductId = productsById.entrySet().stream()
-                .filter(e -> e.getValue().getFeaturedImageId() != null)
-                .filter(e -> imagesById.containsKey(e.getValue().getFeaturedImageId()))
-                .filter(e -> blobUrls.containsKey(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId()))
-                .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    e -> blobUrls.get(imagesById.get(e.getValue().getFeaturedImageId()).getBlobId())));
-        }
-        final Map<UUID, String> resolvedImageUrls = imageUrlByProductId;
+        Map<UUID, String> resolvedImageUrls = imageResolver.resolveByProductId(productsById.values());
 
         List<CartItemResponse> items = cartItems.stream().map(i -> {
             ProductVariant variant = variantsById.get(i.getVariantId());
