@@ -9,6 +9,7 @@ import java.util.UUID;
 public record CartResponse(
     UUID id,
     CartStatus status,
+    UUID companyId,
     List<CartItemResponse> items,
     Instant createdAt
 ) {}
