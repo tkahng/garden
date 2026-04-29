@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8"/>
+    <title>Invoice</title>
+    <style>
+        body { font-family: Arial, sans-serif; font-size: 12px; color: #333; margin: 40px; }
+        h1 { color: #2c3e50; font-size: 24px; margin-bottom: 4px; }
+        .subtitle { color: #7f8c8d; font-size: 13px; margin-bottom: 30px; }
+        .section { margin-bottom: 20px; }
+        .section-title { font-weight: bold; font-size: 13px; color: #2c3e50; border-bottom: 1px solid #bdc3c7; padding-bottom: 4px; margin-bottom: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th { background: #2c3e50; color: #fff; padding: 8px; text-align: left; font-size: 11px; }
+        td { padding: 7px 8px; border-bottom: 1px solid #ecf0f1; font-size: 11px; }
+        tr:nth-child(even) td { background: #f9f9f9; }
+        .total-row td { font-weight: bold; border-top: 2px solid #2c3e50; }
+        .meta-table td { padding: 3px 8px; }
+        .meta-label { font-weight: bold; width: 160px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
+        .badge-issued { background: #d5e8f7; color: #1a6fa0; }
+        .badge-partial { background: #fff3cd; color: #856404; }
+        .badge-paid { background: #d4edda; color: #155724; }
+        .badge-overdue { background: #f8d7da; color: #721c24; }
+        .badge-void { background: #e2e3e5; color: #383d41; }
+        .text-right { text-align: right; }
+        .footer { margin-top: 40px; font-size: 10px; color: #95a5a6; text-align: center; }
+    </style>
+</head>
+<body>
+
+<h1>Invoice</h1>
+<p class="subtitle">
+    # <strong th:text="${invoice.id}">INVOICE-ID</strong>
+    &#160;
+    <span class="badge"
+          th:classappend="'badge-' + ${invoice.status.name().toLowerCase()}"
+          th:text="${invoice.status}">ISSUED</span>
+</p>
+
+<div class="section">
+    <table class="meta-table">
+        <tr>
+            <td class="meta-label">Issue Date:</td>
+            <td th:text="${issuedDate}">2026-01-01</td>
+            <td class="meta-label">Due Date:</td>
+            <td th:text="${dueDate}">2026-02-01</td>
+        </tr>
+        <tr>
+            <td class="meta-label">Order #:</td>
+            <td th:text="${order.id}">ORDER-ID</td>
+            <td class="meta-label" th:if="${order.poNumber != null}">PO Number:</td>
+            <td th:if="${order.poNumber != null}" th:text="${order.poNumber}"></td>
+        </tr>
+    </table>
+</div>
+
+<div class="section" th:if="${company != null}">
+    <div class="section-title">Bill To</div>
+    <table class="meta-table">
+        <tr>
+            <td class="meta-label">Company:</td>
+            <td th:text="${company.name}">Acme Corp</td>
+        </tr>
+        <tr th:if="${company.taxId != null}">
+            <td class="meta-label">Tax ID:</td>
+            <td th:text="${company.taxId}"></td>
+        </tr>
+        <tr th:if="${company.billingAddressLine1 != null}">
+            <td class="meta-label">Billing Address:</td>
+            <td>
+                <span th:text="${company.billingAddressLine1}"></span>
+                <span th:if="${company.billingAddressLine2 != null}" th:text="', ' + ${company.billingAddressLine2}"></span><br/>
+                <span th:text="${company.billingCity}"></span>
+                <span th:if="${company.billingState != null}" th:text="', ' + ${company.billingState}"></span>
+                <span th:text="' ' + ${company.billingPostalCode}"></span><br/>
+                <span th:text="${company.billingCountry}"></span>
+            </td>
+        </tr>
+        <tr th:if="${company.phone != null}">
+            <td class="meta-label">Phone:</td>
+            <td th:text="${company.phone}"></td>
+        </tr>
+    </table>
+</div>
+
+<div class="section">
+    <div class="section-title">Line Items</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Description</th>
+                <th>Qty</th>
+                <th class="text-right">Unit Price</th>
+                <th class="text-right">Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="item : ${lineItems}">
+                <td th:text="${item.description}">Product</td>
+                <td th:text="${item.quantity}">1</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(item.unitPrice, 1, 2)}">0.00</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(item.lineTotal, 1, 2)}">0.00</td>
+            </tr>
+        </tbody>
+        <tfoot>
+            <tr>
+                <td colspan="3" class="text-right">Subtotal</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(subtotal, 1, 2)}">0.00</td>
+            </tr>
+            <tr th:if="${order.shippingCost != null and order.shippingCost.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+                <td colspan="3" class="text-right">Shipping</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(order.shippingCost, 1, 2)}">0.00</td>
+            </tr>
+            <tr th:if="${order.discountAmount != null and order.discountAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+                <td colspan="3" class="text-right">Discount</td>
+                <td class="text-right" th:text="'−' + invoice.currency + ' ' + #numbers.formatDecimal(order.discountAmount, 1, 2)">0.00</td>
+            </tr>
+            <tr th:if="${order.taxAmount != null and order.taxAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+                <td colspan="3" class="text-right">Tax</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(order.taxAmount, 1, 2)}">0.00</td>
+            </tr>
+            <tr class="total-row">
+                <td colspan="3" class="text-right">Total</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(invoice.totalAmount, 1, 2)}">0.00</td>
+            </tr>
+            <tr th:if="${invoice.paidAmount.compareTo(T(java.math.BigDecimal).ZERO) > 0}">
+                <td colspan="3" class="text-right">Paid</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(invoice.paidAmount, 1, 2)}">0.00</td>
+            </tr>
+            <tr th:if="${invoice.paidAmount.compareTo(invoice.totalAmount) < 0}" class="total-row">
+                <td colspan="3" class="text-right">Balance Due</td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(invoice.totalAmount.subtract(invoice.paidAmount), 1, 2)}">0.00</td>
+            </tr>
+        </tfoot>
+    </table>
+</div>
+
+<div class="section" th:if="${!paymentRows.isEmpty()}">
+    <div class="section-title">Payment History</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Reference</th>
+                <th class="text-right">Amount</th>
+                <th>Notes</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr th:each="p : ${paymentRows}">
+                <td th:text="${p.paidAt}"></td>
+                <td th:text="${p.paymentReference}"></td>
+                <td class="text-right" th:text="${invoice.currency + ' ' + #numbers.formatDecimal(p.amount, 1, 2)}"></td>
+                <td th:text="${p.notes}"></td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+
+<div class="footer">
+    Generated by Garden
+</div>
+
+</body>
+</html>
