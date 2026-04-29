@@ -25,5 +25,6 @@ public record OrderResponse(
     UUID shippingRateId,
     List<OrderItemResponse> items,
     BigDecimal taxAmount,
+    String poNumber,
     Instant createdAt
 ) {}

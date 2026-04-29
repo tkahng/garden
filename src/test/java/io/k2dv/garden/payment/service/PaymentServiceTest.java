@@ -74,13 +74,17 @@ class PaymentServiceTest {
   io.k2dv.garden.shipping.repository.ShippingRateRepository shippingRateRepo;
   @Mock
   io.k2dv.garden.user.repository.UserRepository userRepo;
+  @Mock
+  io.k2dv.garden.b2b.service.InvoiceService invoiceService;
+  @Mock
+  io.k2dv.garden.shipping.service.ShippingService shippingService;
 
   PaymentService paymentService;
 
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService);
   }
 
   private Cart stubCart(UUID userId) {
@@ -125,7 +129,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
@@ -152,7 +156,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(stubCartItem(variantId)));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any()))
         .thenThrow(mock(StripeException.class));
@@ -182,7 +186,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(item));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
@@ -397,8 +401,8 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any())).thenReturn(orderAfterCreate);
-    when(discountService.redeem(eq("SAVE10"), any()))
+    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(orderAfterCreate);
+    when(discountService.redeem(eq("SAVE10"), any(), any()))
         .thenReturn(new DiscountApplication(discountId, "SAVE10", DiscountType.FIXED_AMOUNT, new BigDecimal("10.00"), new BigDecimal("10.00")));
     when(orderService.getById(orderAfterCreate.getId())).thenReturn(orderAfterDiscount);
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));

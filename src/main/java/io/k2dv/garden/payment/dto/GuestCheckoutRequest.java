@@ -12,5 +12,6 @@ public record GuestCheckoutRequest(
     @NotNull @Valid GuestAddressRequest shippingAddress,
     @NotNull UUID shippingRateId,
     String discountCode,
-    String giftCardCode
+    String giftCardCode,
+    String poNumber
 ) {}

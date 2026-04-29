@@ -73,23 +73,38 @@ public class OrderService {
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
-        return createFromCart(userId, cartItems, null, null, null);
+        return createFromCart(userId, cartItems, null, null, null, null);
     }
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems,
                                 UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
-        return buildOrder(userId, null, cartItems, shippingRateId, shippingCost, shippingAddress);
+        return createFromCart(userId, cartItems, shippingRateId, shippingCost, shippingAddress, null);
+    }
+
+    @Transactional
+    public Order createFromCart(UUID userId, List<CartItem> cartItems,
+                                UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
+                                String poNumber) {
+        return buildOrder(userId, null, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
     }
 
     @Transactional
     public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
                                   UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
-        return buildOrder(null, guestEmail, cartItems, shippingRateId, shippingCost, shippingAddress);
+        return createGuestOrder(guestEmail, cartItems, shippingRateId, shippingCost, shippingAddress, null);
+    }
+
+    @Transactional
+    public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
+                                  UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
+                                  String poNumber) {
+        return buildOrder(null, guestEmail, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
     }
 
     private Order buildOrder(UUID userId, String guestEmail, List<CartItem> cartItems,
-                             UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
+                             UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
+                             String poNumber) {
         if (cartItems.isEmpty()) {
             throw new ValidationException("EMPTY_CART", "Cart is empty");
         }
@@ -126,6 +141,7 @@ public class OrderService {
         order.setShippingCost(shippingCost);
         order.setShippingRateId(shippingRateId);
         order.setShippingAddress(shippingAddress);
+        order.setPoNumber(poNumber);
         order = orderRepo.save(order);
 
         for (CartItem cartItem : cartItems) {
@@ -483,6 +499,9 @@ public class OrderService {
             orderEventService.emit(orderId, OrderEventType.NOTE_ADDED,
                 "Admin note added", null, "admin", null);
         }
+        if (req.poNumber() != null) {
+            order.setPoNumber(req.poNumber());
+        }
         return toResponse(orderRepo.save(order));
     }
 
@@ -556,6 +575,6 @@ public class OrderService {
             order.getStripeSessionId(), order.getDiscountId(), order.getDiscountAmount(),
             order.getGiftCardId(), order.getGiftCardAmount(), order.getAdminNotes(),
             order.getShippingAddress(), order.getShippingCost(), order.getShippingRateId(),
-            items, order.getTaxAmount(), order.getCreatedAt());
+            items, order.getTaxAmount(), order.getPoNumber(), order.getCreatedAt());
     }
 }

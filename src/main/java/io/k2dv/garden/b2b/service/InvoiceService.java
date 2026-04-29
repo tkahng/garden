@@ -15,6 +15,8 @@ import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.webhook.model.WebhookEventType;
+import io.k2dv.garden.webhook.service.OutboundWebhookService;
 import jakarta.persistence.criteria.Predicate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
@@ -27,6 +29,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -36,6 +39,20 @@ public class InvoiceService {
     private final InvoiceRepository invoiceRepo;
     private final InvoicePaymentRepository paymentRepo;
     private final OrderRepository orderRepo;
+    private final OutboundWebhookService outboundWebhookService;
+
+    @Transactional
+    public InvoiceResponse createManualInvoice(UUID orderId, UUID companyId, int paymentTermsDays) {
+        boolean exists = invoiceRepo.existsByOrderId(orderId);
+        if (exists) {
+            throw new ConflictException("INVOICE_ALREADY_EXISTS", "An invoice already exists for this order");
+        }
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        Invoice invoice = createFromOrder(companyId, orderId, null,
+            order.getTotalAmount(), order.getCurrency(), paymentTermsDays);
+        return toResponse(invoice);
+    }
 
     @Transactional
     public Invoice createFromOrder(UUID companyId, UUID orderId, UUID quoteId,
@@ -56,6 +73,10 @@ public class InvoiceService {
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
         order.setStatus(OrderStatus.INVOICED);
         orderRepo.save(order);
+
+        outboundWebhookService.scheduleDelivery(WebhookEventType.INVOICE_ISSUED,
+            Map.of("invoiceId", invoice.getId().toString(), "orderId", orderId.toString(),
+                "companyId", companyId.toString(), "totalAmount", total.toString(), "currency", currency));
 
         return invoice;
     }
@@ -92,6 +113,8 @@ public class InvoiceService {
                 order.setStatus(OrderStatus.PAID);
                 orderRepo.save(order);
             });
+            outboundWebhookService.scheduleDelivery(WebhookEventType.INVOICE_PAID,
+                Map.of("invoiceId", invoiceId.toString()));
         }
 
         return toResponse(invoice);
@@ -105,7 +128,10 @@ public class InvoiceService {
                 "Can only mark ISSUED or PARTIAL invoices as overdue");
         }
         invoice.setStatus(InvoiceStatus.OVERDUE);
-        return toResponse(invoiceRepo.save(invoice));
+        invoiceRepo.save(invoice);
+        outboundWebhookService.scheduleDelivery(WebhookEventType.INVOICE_OVERDUE,
+            Map.of("invoiceId", invoiceId.toString(), "companyId", invoice.getCompanyId().toString()));
+        return toResponse(invoice);
     }
 
     @Transactional

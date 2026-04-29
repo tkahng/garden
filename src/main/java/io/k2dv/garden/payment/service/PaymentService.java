@@ -37,8 +37,11 @@ import io.k2dv.garden.shipping.model.ShippingRate;
 import io.k2dv.garden.shipping.repository.ShippingRateRepository;
 import io.k2dv.garden.user.model.Address;
 import io.k2dv.garden.user.repository.AddressRepository;
+import io.k2dv.garden.b2b.dto.RecordPaymentRequest;
+import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -50,6 +53,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class PaymentService {
 
   private final CartService cartService;
@@ -64,16 +68,23 @@ public class PaymentService {
   private final OrderEventService orderEventService;
   private final ShippingRateRepository shippingRateRepo;
   private final UserRepository userRepo;
+  private final InvoiceService invoiceService;
+  private final io.k2dv.garden.shipping.service.ShippingService shippingService;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
   // NOT @Transactional — Stripe call is outside transaction; each sub-call manages its own tx
   public CheckoutResponse initiateCheckout(UUID userId, String discountCode, String giftCardCode) {
-    return initiateCheckout(userId, discountCode, giftCardCode, null);
+    return initiateCheckout(userId, discountCode, giftCardCode, null, null);
   }
 
   public CheckoutResponse initiateCheckout(UUID userId, String discountCode, String giftCardCode,
                                            UUID shippingRateId) {
+    return initiateCheckout(userId, discountCode, giftCardCode, shippingRateId, null);
+  }
+
+  public CheckoutResponse initiateCheckout(UUID userId, String discountCode, String giftCardCode,
+                                           UUID shippingRateId, String poNumber) {
     Address defaultAddress = addressRepo.findByUserIdAndIsDefaultTrue(userId)
         .orElseThrow(() -> new ValidationException("NO_SHIPPING_ADDRESS",
             "A default shipping address is required before checkout"));
@@ -86,12 +97,16 @@ public class PaymentService {
     }
 
     ShippingRate shippingRate = resolveShippingRate(shippingRateId);
+    if (shippingRate != null && defaultAddress.getCountry() != null) {
+      shippingService.validateRateForAddress(shippingRate.getId(),
+          defaultAddress.getCountry(), defaultAddress.getProvince());
+    }
     BigDecimal shippingCost = shippingRate != null ? shippingRate.getPrice() : null;
     String shippingAddressJson = serializeAddress(defaultAddress);
 
-    Order order = orderService.createFromCart(userId, cartItems, shippingRateId, shippingCost, shippingAddressJson);
+    Order order = orderService.createFromCart(userId, cartItems, shippingRateId, shippingCost, shippingAddressJson, poNumber);
 
-    order = applyDiscountAndGiftCard(order, discountCode, giftCardCode);
+    order = applyDiscountAndGiftCard(order, discountCode, giftCardCode, cart.getCompanyId());
 
     if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
       cartService.markCheckedOut(cart.getId());
@@ -119,6 +134,12 @@ public class PaymentService {
   public CheckoutResponse initiateGuestCheckout(String guestEmail, GuestAddressRequest guestAddress,
                                                  UUID shippingRateId, String discountCode,
                                                  String giftCardCode, UUID sessionId) {
+    return initiateGuestCheckout(guestEmail, guestAddress, shippingRateId, discountCode, giftCardCode, sessionId, null);
+  }
+
+  public CheckoutResponse initiateGuestCheckout(String guestEmail, GuestAddressRequest guestAddress,
+                                                 UUID shippingRateId, String discountCode,
+                                                 String giftCardCode, UUID sessionId, String poNumber) {
     if (userRepo.existsByEmail(guestEmail)) {
       throw new ValidationException("EMAIL_EXISTS",
           "An account with this email already exists. Please log in to continue.");
@@ -126,6 +147,11 @@ public class PaymentService {
 
     ShippingRate shippingRate = shippingRateRepo.findById(shippingRateId)
         .orElseThrow(() -> new ValidationException("SHIPPING_RATE_NOT_FOUND", "Invalid shipping rate selected"));
+
+    if (guestAddress.country() != null) {
+      shippingService.validateRateForAddress(shippingRate.getId(),
+          guestAddress.country(), guestAddress.province());
+    }
 
     Cart cart = cartService.requireActiveGuestCart(sessionId);
     List<CartItem> cartItems = cartService.getCartItems(cart.getId());
@@ -137,9 +163,9 @@ public class PaymentService {
     BigDecimal shippingCost = shippingRate.getPrice();
     String shippingAddressJson = serializeGuestAddress(guestAddress);
 
-    Order order = orderService.createGuestOrder(guestEmail, cartItems, shippingRateId, shippingCost, shippingAddressJson);
+    Order order = orderService.createGuestOrder(guestEmail, cartItems, shippingRateId, shippingCost, shippingAddressJson, poNumber);
 
-    order = applyDiscountAndGiftCard(order, discountCode, giftCardCode);
+    order = applyDiscountAndGiftCard(order, discountCode, giftCardCode, null);
 
     if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
       cartService.markCheckedOut(cart.getId());
@@ -258,6 +284,7 @@ public class PaymentService {
             if (quote.getStatus() == QuoteStatus.ACCEPTED) {
               quote.setStatus(QuoteStatus.PAID);
               quoteRequestRepo.save(quote);
+              autoCreatePaidInvoice(quote);
             }
           });
         }
@@ -352,9 +379,10 @@ public class PaymentService {
     }
   }
 
-  private Order applyDiscountAndGiftCard(Order order, String discountCode, String giftCardCode) {
+  private Order applyDiscountAndGiftCard(Order order, String discountCode, String giftCardCode,
+                                         UUID companyId) {
     if (discountCode != null && !discountCode.isBlank()) {
-      DiscountApplication discount = discountService.redeem(discountCode, order.getTotalAmount());
+      DiscountApplication discount = discountService.redeem(discountCode, order.getTotalAmount(), companyId);
       orderService.applyDiscount(order.getId(), discount.discountId(), discount.discountedAmount());
       order = orderService.getById(order.getId());
       orderEventService.emit(order.getId(), OrderEventType.DISCOUNT_APPLIED,
@@ -419,6 +447,23 @@ public class PaymentService {
       return MAPPER.writeValueAsString(value);
     } catch (JsonProcessingException e) {
       throw new PaymentException("SERIALIZATION_ERROR", "Failed to serialize address");
+    }
+  }
+
+  private void autoCreatePaidInvoice(QuoteRequest quote) {
+    try {
+      if (quote.getOrderId() == null) return;
+      Order order;
+      try { order = orderService.getById(quote.getOrderId()); } catch (Exception ex) { return; }
+      if (order == null) return;
+      var invoice = invoiceService.createFromOrder(
+          quote.getCompanyId(), order.getId(), quote.getId(),
+          order.getTotalAmount(), order.getCurrency(), 0
+      );
+      invoiceService.recordPayment(invoice.getId(),
+          new RecordPaymentRequest(order.getTotalAmount(), "stripe", "Paid via Stripe", null));
+    } catch (Exception e) {
+      log.warn("Failed to auto-create invoice for quote {}: {}", quote.getId(), e.getMessage());
     }
   }
 
