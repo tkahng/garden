@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 @Tag(name = "Storefront: Discounts", description = "Storefront discount validation")
 @RestController
@@ -20,7 +21,8 @@ public class StorefrontDiscountController {
     @GetMapping("/validate")
     public ApiResponse<DiscountValidationResponse> validate(
             @RequestParam String code,
-            @RequestParam(defaultValue = "0") BigDecimal orderAmount) {
-        return ApiResponse.of(discountService.validate(code, orderAmount));
+            @RequestParam(defaultValue = "0") BigDecimal orderAmount,
+            @RequestParam(required = false) UUID companyId) {
+        return ApiResponse.of(discountService.validate(code, orderAmount, companyId));
     }
 }

@@ -7,6 +7,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 public record CreateDiscountRequest(
     @NotBlank String code,
@@ -15,5 +16,6 @@ public record CreateDiscountRequest(
     BigDecimal minOrderAmount,
     Integer maxUses,
     Instant startsAt,
-    Instant endsAt
+    Instant endsAt,
+    UUID companyId
 ) {}

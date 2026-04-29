@@ -1,5 +1,7 @@
 package io.k2dv.garden.discount.service;
 
+import io.k2dv.garden.b2b.model.Company;
+import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.discount.dto.CreateDiscountRequest;
 import io.k2dv.garden.discount.dto.DiscountValidationResponse;
 import io.k2dv.garden.discount.dto.UpdateDiscountRequest;
@@ -13,6 +15,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -21,13 +24,21 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Autowired
     DiscountService discountService;
+    @Autowired
+    CompanyRepository companyRepo;
+
+    private UUID savedCompanyId() {
+        Company c = new Company();
+        c.setName("Test Company " + UUID.randomUUID());
+        return companyRepo.save(c).getId();
+    }
 
     // ---- create ----
 
     @Test
     void create_happyPath_storesDiscount() {
         var req = new CreateDiscountRequest("SAVE10", DiscountType.PERCENTAGE,
-            new BigDecimal("10"), null, null, null, null);
+            new BigDecimal("10"), null, null, null, null, null);
         var resp = discountService.create(req);
         assertThat(resp.code()).isEqualTo("SAVE10");
         assertThat(resp.type()).isEqualTo(DiscountType.PERCENTAGE);
@@ -36,7 +47,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void create_uppercasesCode() {
         var req = new CreateDiscountRequest("lower20", DiscountType.FIXED_AMOUNT,
-            new BigDecimal("5"), null, null, null, null);
+            new BigDecimal("5"), null, null, null, null, null);
         var resp = discountService.create(req);
         assertThat(resp.code()).isEqualTo("LOWER20");
     }
@@ -44,10 +55,10 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void create_duplicateCode_throwsConflict() {
         discountService.create(new CreateDiscountRequest("DUP1", DiscountType.PERCENTAGE,
-            new BigDecimal("5"), null, null, null, null));
+            new BigDecimal("5"), null, null, null, null, null));
 
         assertThatThrownBy(() -> discountService.create(new CreateDiscountRequest("dup1",
-            DiscountType.FIXED_AMOUNT, new BigDecimal("5"), null, null, null, null)))
+            DiscountType.FIXED_AMOUNT, new BigDecimal("5"), null, null, null, null, null)))
             .isInstanceOf(ConflictException.class)
             .extracting("errorCode").isEqualTo("DISCOUNT_CODE_EXISTS");
     }
@@ -58,7 +69,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         Instant past = Instant.now().minus(1, ChronoUnit.DAYS);
 
         assertThatThrownBy(() -> discountService.create(new CreateDiscountRequest("BADDATE",
-            DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, future, past)))
+            DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, future, past, null)))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode").isEqualTo("INVALID_DATE_RANGE");
     }
@@ -68,7 +79,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
 
         assertThatThrownBy(() -> discountService.create(new CreateDiscountRequest("EQDATE",
-            DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, now, now)))
+            DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, now, now, null)))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode").isEqualTo("INVALID_DATE_RANGE");
     }
@@ -80,12 +91,11 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         var created = discountService.create(new CreateDiscountRequest("UPD1",
             DiscountType.PERCENTAGE, new BigDecimal("10"), null, null,
             Instant.now().minus(1, ChronoUnit.DAYS),
-            Instant.now().plus(1, ChronoUnit.DAYS)));
+            Instant.now().plus(1, ChronoUnit.DAYS), null));
 
-        // Now try to move endsAt before existing startsAt
         assertThatThrownBy(() -> discountService.update(created.id(),
             new UpdateDiscountRequest(null, null, null, null, null, null,
-                Instant.now().minus(2, ChronoUnit.DAYS), null)))
+                Instant.now().minus(2, ChronoUnit.DAYS), null, null)))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode").isEqualTo("INVALID_DATE_RANGE");
     }
@@ -95,7 +105,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void validate_activeDiscount_returnsValidWithAmount() {
         discountService.create(new CreateDiscountRequest("VALID10", DiscountType.FIXED_AMOUNT,
-            new BigDecimal("10"), null, null, null, null));
+            new BigDecimal("10"), null, null, null, null, null));
 
         DiscountValidationResponse r = discountService.validate("VALID10", new BigDecimal("100"));
         assertThat(r.valid()).isTrue();
@@ -105,7 +115,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void validate_percentageDiscount_calculatesCorrectly() {
         discountService.create(new CreateDiscountRequest("PCT20", DiscountType.PERCENTAGE,
-            new BigDecimal("20"), null, null, null, null));
+            new BigDecimal("20"), null, null, null, null, null));
 
         DiscountValidationResponse r = discountService.validate("PCT20", new BigDecimal("50"));
         assertThat(r.valid()).isTrue();
@@ -115,7 +125,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void validate_minOrderAmountNotMet_returnsInvalid() {
         discountService.create(new CreateDiscountRequest("MIN50", DiscountType.FIXED_AMOUNT,
-            new BigDecimal("5"), new BigDecimal("50"), null, null, null));
+            new BigDecimal("5"), new BigDecimal("50"), null, null, null, null));
 
         DiscountValidationResponse r = discountService.validate("MIN50", new BigDecimal("30"));
         assertThat(r.valid()).isFalse();
@@ -127,7 +137,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         discountService.create(new CreateDiscountRequest("FUTURE1", DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, null,
             Instant.now().plus(1, ChronoUnit.DAYS),
-            Instant.now().plus(2, ChronoUnit.DAYS)));
+            Instant.now().plus(2, ChronoUnit.DAYS), null));
 
         DiscountValidationResponse r = discountService.validate("FUTURE1", new BigDecimal("100"));
         assertThat(r.valid()).isFalse();
@@ -139,7 +149,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         discountService.create(new CreateDiscountRequest("EXPIRED1", DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, null,
             Instant.now().minus(2, ChronoUnit.DAYS),
-            Instant.now().minus(1, ChronoUnit.DAYS)));
+            Instant.now().minus(1, ChronoUnit.DAYS), null));
 
         DiscountValidationResponse r = discountService.validate("EXPIRED1", new BigDecimal("100"));
         assertThat(r.valid()).isFalse();
@@ -152,28 +162,60 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         assertThat(r.valid()).isFalse();
     }
 
+    @Test
+    void validate_companyScopedDiscount_wrongCompany_returnsInvalid() {
+        UUID companyId = savedCompanyId();
+        discountService.create(new CreateDiscountRequest("CORP10", DiscountType.FIXED_AMOUNT,
+            new BigDecimal("10"), null, null, null, null, companyId));
+
+        DiscountValidationResponse r = discountService.validate("CORP10", new BigDecimal("100"),
+            savedCompanyId());
+        assertThat(r.valid()).isFalse();
+        assertThat(r.message()).contains("not available");
+    }
+
+    @Test
+    void validate_companyScopedDiscount_correctCompany_returnsValid() {
+        UUID companyId = savedCompanyId();
+        discountService.create(new CreateDiscountRequest("CORP20", DiscountType.FIXED_AMOUNT,
+            new BigDecimal("20"), null, null, null, null, companyId));
+
+        DiscountValidationResponse r = discountService.validate("CORP20", new BigDecimal("100"),
+            companyId);
+        assertThat(r.valid()).isTrue();
+        assertThat(r.discountedAmount()).isEqualByComparingTo("20");
+    }
+
+    @Test
+    void validate_companyScopedDiscount_nullCaller_returnsInvalid() {
+        UUID companyId = savedCompanyId();
+        discountService.create(new CreateDiscountRequest("CORP30", DiscountType.FIXED_AMOUNT,
+            new BigDecimal("5"), null, null, null, null, companyId));
+
+        DiscountValidationResponse r = discountService.validate("CORP30", new BigDecimal("100"), null);
+        assertThat(r.valid()).isFalse();
+    }
+
     // ---- redeem ----
 
     @Test
     void redeem_incrementsUsedCount() {
         discountService.create(new CreateDiscountRequest("REDEEM1", DiscountType.FIXED_AMOUNT,
-            new BigDecimal("5"), null, null, null, null));
+            new BigDecimal("5"), null, null, null, null, null));
 
         discountService.redeem("REDEEM1", new BigDecimal("100"));
 
         var d = discountService.validate("REDEEM1", new BigDecimal("100"));
-        assertThat(d.valid()).isTrue(); // still valid (unlimited uses)
+        assertThat(d.valid()).isTrue();
     }
 
     @Test
     void redeem_exhaustedMaxUses_throwsValidation() {
         discountService.create(new CreateDiscountRequest("ONCE", DiscountType.FIXED_AMOUNT,
-            new BigDecimal("5"), null, 1, null, null));
+            new BigDecimal("5"), null, 1, null, null, null));
 
-        discountService.redeem("ONCE", new BigDecimal("100")); // first use OK
+        discountService.redeem("ONCE", new BigDecimal("100"));
 
-        // Second attempt: checkEligibility sees usedCount >= maxUses → ValidationException
-        // (ConflictException only occurs under concurrent races — not testable in single-threaded IT)
         assertThatThrownBy(() -> discountService.redeem("ONCE", new BigDecimal("100")))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode").isEqualTo("DISCOUNT_INELIGIBLE");
@@ -182,10 +224,9 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void redeem_fixedAmountCappedAtOrderTotal() {
         discountService.create(new CreateDiscountRequest("BIG50", DiscountType.FIXED_AMOUNT,
-            new BigDecimal("50"), null, null, null, null));
+            new BigDecimal("50"), null, null, null, null, null));
 
         var app = discountService.redeem("BIG50", new BigDecimal("20"));
-        // Fixed discount caps at order total
         assertThat(app.discountedAmount()).isEqualByComparingTo("20");
     }
 }

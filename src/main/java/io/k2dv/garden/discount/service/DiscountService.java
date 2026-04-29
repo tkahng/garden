@@ -57,6 +57,7 @@ public class DiscountService {
         d.setMaxUses(req.maxUses());
         d.setStartsAt(req.startsAt());
         d.setEndsAt(req.endsAt());
+        d.setCompanyId(req.companyId());
         return DiscountResponse.from(discountRepo.save(d));
     }
 
@@ -84,6 +85,7 @@ public class DiscountService {
         if (req.startsAt() != null) d.setStartsAt(req.startsAt());
         if (req.endsAt() != null) d.setEndsAt(req.endsAt());
         if (req.isActive() != null) d.setActive(req.isActive());
+        if (req.companyId() != null) d.setCompanyId(req.companyId());
         return DiscountResponse.from(discountRepo.save(d));
     }
 
@@ -95,11 +97,16 @@ public class DiscountService {
 
     @Transactional(readOnly = true)
     public DiscountValidationResponse validate(String code, BigDecimal orderAmount) {
+        return validate(code, orderAmount, null);
+    }
+
+    @Transactional(readOnly = true)
+    public DiscountValidationResponse validate(String code, BigDecimal orderAmount, UUID companyId) {
         Discount d = discountRepo.findByCodeIgnoreCase(code).orElse(null);
         if (d == null) {
             return new DiscountValidationResponse(false, code, null, null, null, "Discount code not found");
         }
-        String reason = checkEligibility(d, orderAmount);
+        String reason = checkEligibility(d, orderAmount, companyId);
         if (reason != null) {
             return new DiscountValidationResponse(false, d.getCode(), d.getType(), d.getValue(), null, reason);
         }
@@ -109,10 +116,15 @@ public class DiscountService {
 
     @Transactional
     public DiscountApplication redeem(String code, BigDecimal orderAmount) {
+        return redeem(code, orderAmount, null);
+    }
+
+    @Transactional
+    public DiscountApplication redeem(String code, BigDecimal orderAmount, UUID companyId) {
         Discount d = discountRepo.findByCodeIgnoreCaseForUpdate(code)
             .orElseThrow(() -> new ValidationException("DISCOUNT_NOT_FOUND", "Discount code not found: " + code));
 
-        String reason = checkEligibility(d, orderAmount);
+        String reason = checkEligibility(d, orderAmount, companyId);
         if (reason != null) {
             throw new ValidationException("DISCOUNT_INELIGIBLE", reason);
         }
@@ -126,7 +138,7 @@ public class DiscountService {
         return new DiscountApplication(d.getId(), d.getCode(), d.getType(), d.getValue(), discountedAmount);
     }
 
-    private String checkEligibility(Discount d, BigDecimal orderAmount) {
+    private String checkEligibility(Discount d, BigDecimal orderAmount, UUID callerCompanyId) {
         if (!d.isActive()) return "Discount is not active";
         Instant now = Instant.now();
         if (d.getStartsAt() != null && now.isBefore(d.getStartsAt())) return "Discount is not yet valid";
@@ -134,6 +146,9 @@ public class DiscountService {
         if (d.getMaxUses() != null && d.getUsedCount() >= d.getMaxUses()) return "Discount has reached its usage limit";
         if (d.getMinOrderAmount() != null && orderAmount.compareTo(d.getMinOrderAmount()) < 0) {
             return "Order amount does not meet the minimum required for this discount";
+        }
+        if (d.getCompanyId() != null && !d.getCompanyId().equals(callerCompanyId)) {
+            return "Discount code is not available for your account";
         }
         return null;
     }

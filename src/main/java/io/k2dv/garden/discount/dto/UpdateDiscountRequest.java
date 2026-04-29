@@ -5,6 +5,7 @@ import jakarta.validation.constraints.PositiveOrZero;
 
 import java.math.BigDecimal;
 import java.time.Instant;
+import java.util.UUID;
 
 public record UpdateDiscountRequest(
     String code,
@@ -14,5 +15,6 @@ public record UpdateDiscountRequest(
     Integer maxUses,
     Instant startsAt,
     Instant endsAt,
-    Boolean isActive
+    Boolean isActive,
+    UUID companyId
 ) {}

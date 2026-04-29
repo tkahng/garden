@@ -26,6 +26,9 @@ public class DiscountSpecification {
                     predicates.add(cb.like(cb.upper(root.get("code")),
                         "%" + f.codeContains().toUpperCase() + "%"));
                 }
+                if (f.companyId() != null) {
+                    predicates.add(cb.equal(root.get("companyId"), f.companyId()));
+                }
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
