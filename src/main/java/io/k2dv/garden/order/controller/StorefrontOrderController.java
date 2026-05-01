@@ -2,6 +2,8 @@ package io.k2dv.garden.order.controller;
 
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
+import io.k2dv.garden.cart.dto.CartResponse;
+import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderResponse;
 import io.k2dv.garden.order.service.OrderService;
@@ -27,6 +29,7 @@ import java.util.UUID;
 public class StorefrontOrderController {
 
     private final OrderService orderService;
+    private final CartService cartService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResult<OrderResponse>>> listOrders(
@@ -67,5 +70,12 @@ public class StorefrontOrderController {
             @CurrentUser User user,
             @PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.of(orderService.refundOrder(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/reorder")
+    public ResponseEntity<ApiResponse<CartResponse>> reorder(
+            @CurrentUser User user,
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(cartService.reorderFromHistory(user.getId(), id)));
     }
 }
