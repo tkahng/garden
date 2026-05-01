@@ -37,7 +37,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void create_happyPath_storesDiscount() {
-        var req = new CreateDiscountRequest("SAVE10", DiscountType.PERCENTAGE,
+        var req = new CreateDiscountRequest("SAVE10", false, DiscountType.PERCENTAGE,
             new BigDecimal("10"), null, null, null, null, null);
         var resp = discountService.create(req);
         assertThat(resp.code()).isEqualTo("SAVE10");
@@ -46,7 +46,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void create_uppercasesCode() {
-        var req = new CreateDiscountRequest("lower20", DiscountType.FIXED_AMOUNT,
+        var req = new CreateDiscountRequest("lower20", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, null, null, null, null);
         var resp = discountService.create(req);
         assertThat(resp.code()).isEqualTo("LOWER20");
@@ -54,11 +54,11 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void create_duplicateCode_throwsConflict() {
-        discountService.create(new CreateDiscountRequest("DUP1", DiscountType.PERCENTAGE,
+        discountService.create(new CreateDiscountRequest("DUP1", false, DiscountType.PERCENTAGE,
             new BigDecimal("5"), null, null, null, null, null));
 
         assertThatThrownBy(() -> discountService.create(new CreateDiscountRequest("dup1",
-            DiscountType.FIXED_AMOUNT, new BigDecimal("5"), null, null, null, null, null)))
+            false, DiscountType.FIXED_AMOUNT, new BigDecimal("5"), null, null, null, null, null)))
             .isInstanceOf(ConflictException.class)
             .extracting("errorCode").isEqualTo("DISCOUNT_CODE_EXISTS");
     }
@@ -69,7 +69,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         Instant past = Instant.now().minus(1, ChronoUnit.DAYS);
 
         assertThatThrownBy(() -> discountService.create(new CreateDiscountRequest("BADDATE",
-            DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, future, past, null)))
+            false, DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, future, past, null)))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode").isEqualTo("INVALID_DATE_RANGE");
     }
@@ -79,7 +79,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
         Instant now = Instant.now().truncatedTo(ChronoUnit.SECONDS);
 
         assertThatThrownBy(() -> discountService.create(new CreateDiscountRequest("EQDATE",
-            DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, now, now, null)))
+            false, DiscountType.PERCENTAGE, new BigDecimal("10"), null, null, now, now, null)))
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode").isEqualTo("INVALID_DATE_RANGE");
     }
@@ -89,7 +89,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void update_invertingDates_throwsValidation() {
         var created = discountService.create(new CreateDiscountRequest("UPD1",
-            DiscountType.PERCENTAGE, new BigDecimal("10"), null, null,
+            false, DiscountType.PERCENTAGE, new BigDecimal("10"), null, null,
             Instant.now().minus(1, ChronoUnit.DAYS),
             Instant.now().plus(1, ChronoUnit.DAYS), null));
 
@@ -104,7 +104,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void validate_activeDiscount_returnsValidWithAmount() {
-        discountService.create(new CreateDiscountRequest("VALID10", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("VALID10", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("10"), null, null, null, null, null));
 
         DiscountValidationResponse r = discountService.validate("VALID10", new BigDecimal("100"));
@@ -114,7 +114,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void validate_percentageDiscount_calculatesCorrectly() {
-        discountService.create(new CreateDiscountRequest("PCT20", DiscountType.PERCENTAGE,
+        discountService.create(new CreateDiscountRequest("PCT20", false, DiscountType.PERCENTAGE,
             new BigDecimal("20"), null, null, null, null, null));
 
         DiscountValidationResponse r = discountService.validate("PCT20", new BigDecimal("50"));
@@ -124,7 +124,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void validate_minOrderAmountNotMet_returnsInvalid() {
-        discountService.create(new CreateDiscountRequest("MIN50", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("MIN50", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), new BigDecimal("50"), null, null, null, null));
 
         DiscountValidationResponse r = discountService.validate("MIN50", new BigDecimal("30"));
@@ -134,7 +134,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void validate_notYetValid_returnsInvalid() {
-        discountService.create(new CreateDiscountRequest("FUTURE1", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("FUTURE1", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, null,
             Instant.now().plus(1, ChronoUnit.DAYS),
             Instant.now().plus(2, ChronoUnit.DAYS), null));
@@ -146,7 +146,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void validate_expired_returnsInvalid() {
-        discountService.create(new CreateDiscountRequest("EXPIRED1", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("EXPIRED1", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, null,
             Instant.now().minus(2, ChronoUnit.DAYS),
             Instant.now().minus(1, ChronoUnit.DAYS), null));
@@ -165,7 +165,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void validate_companyScopedDiscount_wrongCompany_returnsInvalid() {
         UUID companyId = savedCompanyId();
-        discountService.create(new CreateDiscountRequest("CORP10", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("CORP10", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("10"), null, null, null, null, companyId));
 
         DiscountValidationResponse r = discountService.validate("CORP10", new BigDecimal("100"),
@@ -177,7 +177,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void validate_companyScopedDiscount_correctCompany_returnsValid() {
         UUID companyId = savedCompanyId();
-        discountService.create(new CreateDiscountRequest("CORP20", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("CORP20", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("20"), null, null, null, null, companyId));
 
         DiscountValidationResponse r = discountService.validate("CORP20", new BigDecimal("100"),
@@ -189,7 +189,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
     @Test
     void validate_companyScopedDiscount_nullCaller_returnsInvalid() {
         UUID companyId = savedCompanyId();
-        discountService.create(new CreateDiscountRequest("CORP30", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("CORP30", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, null, null, null, companyId));
 
         DiscountValidationResponse r = discountService.validate("CORP30", new BigDecimal("100"), null);
@@ -200,7 +200,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void redeem_incrementsUsedCount() {
-        discountService.create(new CreateDiscountRequest("REDEEM1", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("REDEEM1", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, null, null, null, null));
 
         discountService.redeem("REDEEM1", new BigDecimal("100"));
@@ -211,7 +211,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void redeem_exhaustedMaxUses_throwsValidation() {
-        discountService.create(new CreateDiscountRequest("ONCE", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("ONCE", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("5"), null, 1, null, null, null));
 
         discountService.redeem("ONCE", new BigDecimal("100"));
@@ -223,7 +223,7 @@ class DiscountServiceIT extends AbstractIntegrationTest {
 
     @Test
     void redeem_fixedAmountCappedAtOrderTotal() {
-        discountService.create(new CreateDiscountRequest("BIG50", DiscountType.FIXED_AMOUNT,
+        discountService.create(new CreateDiscountRequest("BIG50", false, DiscountType.FIXED_AMOUNT,
             new BigDecimal("50"), null, null, null, null, null));
 
         var app = discountService.redeem("BIG50", new BigDecimal("20"));

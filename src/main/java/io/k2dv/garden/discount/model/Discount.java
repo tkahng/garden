@@ -14,8 +14,11 @@ import java.time.Instant;
 @Setter
 public class Discount extends BaseEntity {
 
-    @Column(nullable = false)
+    @Column
     private String code;
+
+    @Column(nullable = false)
+    private boolean automatic = false;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

@@ -1,7 +1,6 @@
 package io.k2dv.garden.discount.dto;
 
 import io.k2dv.garden.discount.model.DiscountType;
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
 
@@ -10,7 +9,8 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record CreateDiscountRequest(
-    @NotBlank String code,
+    String code,
+    boolean automatic,
     @NotNull DiscountType type,
     @NotNull @PositiveOrZero BigDecimal value,
     BigDecimal minOrderAmount,

@@ -10,6 +10,7 @@ import java.util.UUID;
 public record DiscountResponse(
     UUID id,
     String code,
+    boolean automatic,
     DiscountType type,
     BigDecimal value,
     BigDecimal minOrderAmount,
@@ -25,6 +26,7 @@ public record DiscountResponse(
         return new DiscountResponse(
             d.getId(),
             d.getCode(),
+            d.isAutomatic(),
             d.getType(),
             d.getValue(),
             d.getMinOrderAmount(),
