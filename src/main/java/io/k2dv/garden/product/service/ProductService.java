@@ -122,6 +122,14 @@ public class ProductService {
     }
 
     @Transactional
+    public AdminProductResponse updateMetadata(UUID id, Map<String, Object> metadata) {
+        Product p = productRepo.findByIdAndDeletedAtIsNull(id)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        p.setMetadata(metadata);
+        return toAdminResponse(productRepo.save(p));
+    }
+
+    @Transactional
     public void softDelete(UUID id) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
             .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
@@ -285,7 +293,7 @@ public class ProductService {
         return new AdminProductResponse(p.getId(), p.getTitle(), p.getDescription(), p.getHandle(),
             p.getVendor(), p.getProductType(), p.getStatus(), p.getFeaturedImageId(),
             variantResponses, optionResponses, imageResponses, tagNames,
-            p.getMetaTitle(), p.getMetaDescription(),
+            p.getMetaTitle(), p.getMetaDescription(), p.getMetadata(),
             p.getCreatedAt(), p.getUpdatedAt(), p.getDeletedAt());
     }
 

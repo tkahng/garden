@@ -34,10 +34,11 @@ class StorefrontOrderControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean OrderService orderService;
+    @MockitoBean io.k2dv.garden.cart.service.CartService cartService;
 
     private OrderResponse stubOrder(UUID id, UUID userId, OrderStatus status) {
         return new OrderResponse(id, userId, null, status,
-            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null, null, null);
+            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null, null, null, null);
     }
 
     @Test

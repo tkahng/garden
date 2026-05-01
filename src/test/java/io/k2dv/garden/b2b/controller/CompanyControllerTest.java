@@ -47,10 +47,12 @@ class CompanyControllerTest {
     PriceListService priceListService;
     @MockitoBean
     InvoiceService invoiceService;
+    @MockitoBean
+    io.k2dv.garden.b2b.service.CreditAccountService creditAccountService;
 
     private CompanyResponse stubCompany(UUID id) {
-        return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null,
-            Instant.now(), Instant.now());
+        return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null, false,
+            null, null, Instant.now(), Instant.now());
     }
 
     private CompanyMemberResponse stubMember(UUID userId) {
@@ -107,7 +109,7 @@ class CompanyControllerTest {
         mvc.perform(put("/api/v1/companies/{id}", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new UpdateCompanyRequest("Updated", null, null, null, null, null, null, null, null))))
+                    new UpdateCompanyRequest("Updated", null, null, null, null, null, null, null, null, null))))
             .andExpect(status().isOk());
     }
 

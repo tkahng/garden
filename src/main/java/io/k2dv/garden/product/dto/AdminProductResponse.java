@@ -2,6 +2,7 @@ package io.k2dv.garden.product.dto;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import io.k2dv.garden.product.model.ProductStatus;
 
@@ -20,6 +21,7 @@ public record AdminProductResponse(
     List<String> tags,
     String metaTitle,
     String metaDescription,
+    Map<String, Object> metadata,
     Instant createdAt,
     Instant updatedAt,
     Instant deletedAt

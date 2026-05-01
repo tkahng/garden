@@ -4,8 +4,13 @@ import io.k2dv.garden.shared.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -34,6 +39,10 @@ public class Product extends BaseEntity {
     private String metaDescription;
     @Column(name = "deleted_at")
     private Instant deletedAt;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "metadata", columnDefinition = "jsonb")
+    private Map<String, Object> metadata = new HashMap<>();
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         schema = "catalog",

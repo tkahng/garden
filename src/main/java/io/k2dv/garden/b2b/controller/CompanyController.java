@@ -5,16 +5,20 @@ import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.service.CompanyInvitationService;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -29,6 +33,7 @@ public class CompanyController {
     private final CompanyInvitationService invitationService;
     private final PriceListService priceListService;
     private final InvoiceService invoiceService;
+    private final CreditAccountService creditAccountService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<CompanyResponse>> create(
@@ -157,5 +162,27 @@ public class CompanyController {
         @RequestParam(defaultValue = "1") int qty) {
         companyService.requireMemberAccess(id, user.getId());
         return ResponseEntity.ok(ApiResponse.of(priceListService.resolvePrice(id, variantId, qty)));
+    }
+
+    @GetMapping("/{id}/credit-account")
+    public ResponseEntity<ApiResponse<CreditAccountResponse>> getCreditAccount(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(creditAccountService.getByCompany(id)));
+    }
+
+    @GetMapping("/{id}/statement")
+    public ResponseEntity<String> downloadStatement(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @RequestParam(required = false) Instant from,
+        @RequestParam(required = false) Instant to) {
+        companyService.requireMemberAccess(id, user.getId());
+        String csv = invoiceService.generateStatementCsv(id, from, to);
+        return ResponseEntity.ok()
+            .contentType(MediaType.parseMediaType("text/csv"))
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"statement-" + id + ".csv\"")
+            .body(csv);
     }
 }

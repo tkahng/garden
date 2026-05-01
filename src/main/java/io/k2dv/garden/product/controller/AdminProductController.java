@@ -6,6 +6,7 @@ import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.service.*;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.BulkIdsRequest;
+import io.k2dv.garden.shared.dto.MetadataRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -70,6 +71,13 @@ public class AdminProductController {
     public ResponseEntity<ApiResponse<AdminProductResponse>> changeStatus(
             @PathVariable UUID id, @Valid @RequestBody ProductStatusRequest req) {
         return ResponseEntity.ok(ApiResponse.of(productService.changeStatus(id, req)));
+    }
+
+    @PutMapping("/{id}/metadata")
+    @HasPermission("product:write")
+    public ResponseEntity<ApiResponse<AdminProductResponse>> updateMetadata(
+            @PathVariable UUID id, @Valid @RequestBody MetadataRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(productService.updateMetadata(id, req.metadata())));
     }
 
     @DeleteMapping("/{id}")

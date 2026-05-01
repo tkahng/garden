@@ -37,7 +37,7 @@ class AdminProductControllerTest {
 
     private AdminProductResponse stubProduct() {
         return new AdminProductResponse(UUID.randomUUID(), "T-Shirt", null, "t-shirt",
-            null, null, ProductStatus.DRAFT, null, List.of(), List.of(), List.of(), List.of(), null, null, null, null, null);
+            null, null, ProductStatus.DRAFT, null, List.of(), List.of(), List.of(), List.of(), null, null, null, null, null, null);
     }
 
     @Test

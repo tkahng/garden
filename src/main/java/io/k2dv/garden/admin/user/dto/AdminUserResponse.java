@@ -5,6 +5,7 @@ import io.k2dv.garden.user.model.UserStatus;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record AdminUserResponse(
@@ -18,7 +19,8 @@ public record AdminUserResponse(
     Instant createdAt,
     List<String> roles,
     String adminNotes,
-    List<String> tags
+    List<String> tags,
+    Map<String, Object> metadata
 ) {
     public static AdminUserResponse from(User user, List<String> roles) {
         return new AdminUserResponse(
@@ -32,7 +34,8 @@ public record AdminUserResponse(
             user.getCreatedAt(),
             roles,
             user.getAdminNotes(),
-            user.getTags()
+            user.getTags(),
+            user.getMetadata()
         );
     }
 }

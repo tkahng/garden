@@ -12,6 +12,10 @@ import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.cart.model.CartStatus;
 import io.k2dv.garden.cart.repository.CartItemRepository;
 import io.k2dv.garden.cart.repository.CartRepository;
+import io.k2dv.garden.order.model.Order;
+import io.k2dv.garden.order.model.OrderItem;
+import io.k2dv.garden.order.repository.OrderItemRepository;
+import io.k2dv.garden.order.repository.OrderRepository;
 import io.k2dv.garden.product.model.Product;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
@@ -43,6 +47,8 @@ public class CartService {
     private final ProductImageResolver imageResolver;
     private final PriceListService priceListService;
     private final CompanyMembershipRepository membershipRepo;
+    private final OrderRepository orderRepo;
+    private final OrderItemRepository orderItemRepo;
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
@@ -226,6 +232,44 @@ public class CartService {
             cart.setStatus(CartStatus.ABANDONED);
             cartRepo.save(cart);
         });
+    }
+
+    @Transactional
+    public CartResponse reorderFromHistory(UUID userId, UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (!Objects.equals(order.getUserId(), userId)) {
+            throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
+        }
+        List<OrderItem> orderItems = orderItemRepo.findByOrderId(orderId);
+        if (orderItems.isEmpty()) {
+            throw new ValidationException("EMPTY_ORDER", "Order has no items to reorder");
+        }
+
+        Cart cart = cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
+            .orElseGet(() -> {
+                Cart c = new Cart();
+                c.setUserId(userId);
+                return cartRepo.save(c);
+            });
+        cartItemRepo.deleteAll(cartItemRepo.findByCartId(cart.getId()));
+
+        for (OrderItem oi : orderItems) {
+            if (oi.getVariantId() == null) continue;
+            ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(oi.getVariantId()).orElse(null);
+            if (variant == null) continue;
+            Product product = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId()).orElse(null);
+            if (product == null || product.getStatus() != ProductStatus.ACTIVE) continue;
+
+            BigDecimal price = resolveItemPrice(cart, variant, oi.getQuantity());
+            CartItem item = new CartItem();
+            item.setCartId(cart.getId());
+            item.setVariantId(oi.getVariantId());
+            item.setQuantity(oi.getQuantity());
+            item.setUnitPrice(price);
+            cartItemRepo.save(item);
+        }
+        return toResponse(cart);
     }
 
     // --- Internal API for PaymentService ---
