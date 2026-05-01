@@ -11,5 +11,6 @@ public record UpdateCompanyRequest(
     String billingCity,
     String billingState,
     String billingPostalCode,
-    String billingCountry
+    String billingCountry,
+    Boolean taxExempt
 ) {}

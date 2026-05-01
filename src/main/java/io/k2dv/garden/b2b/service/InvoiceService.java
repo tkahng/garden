@@ -98,6 +98,7 @@ public class InvoiceService {
         InvoicePayment payment = new InvoicePayment();
         payment.setInvoiceId(invoiceId);
         payment.setAmount(req.amount());
+        payment.setPaymentMethod(req.paymentMethod() != null ? req.paymentMethod() : io.k2dv.garden.b2b.model.PaymentMethod.STRIPE);
         payment.setPaymentReference(req.paymentReference());
         payment.setNotes(req.notes());
         payment.setPaidAt(req.paidAt() != null ? req.paidAt() : Instant.now());
@@ -173,6 +174,35 @@ public class InvoiceService {
         return PagedResult.of(invoiceRepo.findAll(spec, pageable), this::toResponse);
     }
 
+    @Transactional(readOnly = true)
+    public String generateStatementCsv(UUID companyId, Instant from, Instant to) {
+        Specification<Invoice> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("companyId"), companyId));
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("issuedAt"), from));
+            if (to != null) predicates.add(cb.lessThanOrEqualTo(root.get("issuedAt"), to));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<Invoice> invoices = invoiceRepo.findAll(spec,
+            org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.ASC, "issuedAt"));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("invoice_id,status,currency,total_amount,paid_amount,outstanding_amount,issued_at,due_at\n");
+        for (Invoice inv : invoices) {
+            BigDecimal outstanding = inv.getTotalAmount().subtract(inv.getPaidAmount());
+            sb.append(inv.getId()).append(',')
+              .append(inv.getStatus()).append(',')
+              .append(inv.getCurrency()).append(',')
+              .append(inv.getTotalAmount().toPlainString()).append(',')
+              .append(inv.getPaidAmount().toPlainString()).append(',')
+              .append(outstanding.toPlainString()).append(',')
+              .append(inv.getIssuedAt()).append(',')
+              .append(inv.getDueAt()).append('\n');
+        }
+        return sb.toString();
+    }
+
     private Invoice requireInvoice(UUID id) {
         return invoiceRepo.findById(id)
             .orElseThrow(() -> new NotFoundException("INVOICE_NOT_FOUND", "Invoice not found"));
@@ -194,7 +224,7 @@ public class InvoiceService {
     private InvoicePaymentResponse toPaymentResponse(InvoicePayment p) {
         return new InvoicePaymentResponse(
             p.getId(), p.getInvoiceId(), p.getAmount(),
-            p.getPaymentReference(), p.getNotes(), p.getPaidAt(), p.getCreatedAt()
+            p.getPaymentMethod(), p.getPaymentReference(), p.getNotes(), p.getPaidAt(), p.getCreatedAt()
         );
     }
 }

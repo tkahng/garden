@@ -38,6 +38,8 @@ import io.k2dv.garden.shipping.repository.ShippingRateRepository;
 import io.k2dv.garden.user.model.Address;
 import io.k2dv.garden.user.repository.AddressRepository;
 import io.k2dv.garden.b2b.dto.RecordPaymentRequest;
+import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -70,6 +72,8 @@ public class PaymentService {
   private final UserRepository userRepo;
   private final InvoiceService invoiceService;
   private final io.k2dv.garden.shipping.service.ShippingService shippingService;
+  private final CompanyService companyService;
+  private final CreditAccountService creditAccountService;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -96,17 +100,31 @@ public class PaymentService {
       throw new ValidationException("EMPTY_CART", "Cart has no items");
     }
 
+    UUID companyId = cart.getCompanyId();
+    boolean taxExempt = companyId != null && companyService.isTaxExempt(companyId);
+
     ShippingRate shippingRate = resolveShippingRate(shippingRateId);
     if (shippingRate != null && defaultAddress.getCountry() != null) {
       shippingService.validateRateForAddress(shippingRate.getId(),
           defaultAddress.getCountry(), defaultAddress.getProvince());
     }
     BigDecimal shippingCost = shippingRate != null ? shippingRate.getPrice() : null;
+
+    // Credit limit check: calculate order total before creating the order
+    if (companyId != null) {
+      BigDecimal itemsTotal = cartItems.stream()
+          .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+          .reduce(BigDecimal.ZERO, BigDecimal::add);
+      BigDecimal orderTotal = shippingCost != null ? itemsTotal.add(shippingCost) : itemsTotal;
+      creditAccountService.assertCreditAvailable(companyId, orderTotal);
+    }
+
     String shippingAddressJson = serializeAddress(defaultAddress);
 
-    Order order = orderService.createFromCart(userId, cartItems, shippingRateId, shippingCost, shippingAddressJson, poNumber);
+    Order order = orderService.createFromCart(userId, companyId, taxExempt, cartItems,
+        shippingRateId, shippingCost, shippingAddressJson, poNumber);
 
-    order = applyDiscountAndGiftCard(order, discountCode, giftCardCode, cart.getCompanyId());
+    order = applyDiscountAndGiftCard(order, discountCode, giftCardCode, companyId);
 
     if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
       cartService.markCheckedOut(cart.getId());
@@ -114,7 +132,7 @@ public class PaymentService {
     }
 
     try {
-      SessionCreateParams.Builder builder = buildSessionBase(order.getCurrency(), order.getId())
+      SessionCreateParams.Builder builder = buildSessionBase(order.getCurrency(), order.getId(), taxExempt)
           .setCustomerEmail(userRepo.findById(userId).map(u -> u.getEmail()).orElse(null));
 
       addLineItems(builder, cartItems, order, shippingRate, discountCode != null && !discountCode.isBlank());
@@ -300,13 +318,20 @@ public class PaymentService {
   // --- Helpers ---
 
   private SessionCreateParams.Builder buildSessionBase(String currency, UUID orderId) {
+    return buildSessionBase(currency, orderId, false);
+  }
+
+  private SessionCreateParams.Builder buildSessionBase(String currency, UUID orderId, boolean taxExempt) {
     String cur = currency != null ? currency : "usd";
-    return SessionCreateParams.builder()
+    SessionCreateParams.Builder builder = SessionCreateParams.builder()
         .setMode(SessionCreateParams.Mode.PAYMENT)
         .setSuccessUrl(appProperties.getFrontendUrl() + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
         .setCancelUrl(appProperties.getFrontendUrl() + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
-        .putMetadata("orderId", orderId != null ? orderId.toString() : "")
-        .setAutomaticTax(SessionCreateParams.AutomaticTax.builder().setEnabled(true).build());
+        .putMetadata("orderId", orderId != null ? orderId.toString() : "");
+    if (!taxExempt) {
+      builder.setAutomaticTax(SessionCreateParams.AutomaticTax.builder().setEnabled(true).build());
+    }
+    return builder;
   }
 
   private void addLineItems(SessionCreateParams.Builder builder, List<CartItem> cartItems,
@@ -389,6 +414,17 @@ public class PaymentService {
           "Discount '" + discount.code() + "' applied (−" + discount.discountedAmount() + ")",
           null, "system", Map.of("discountId", discount.discountId().toString(),
               "amount", discount.discountedAmount().toPlainString()));
+    } else {
+      final UUID orderId = order.getId();
+      final BigDecimal orderTotal = order.getTotalAmount();
+      discountService.findBestAutomatic(orderTotal, companyId).ifPresent(promo -> {
+        DiscountApplication applied = discountService.applyAutomatic(promo.discountId(), orderTotal);
+        orderService.applyDiscount(orderId, applied.discountId(), applied.discountedAmount());
+        orderEventService.emit(orderId, OrderEventType.DISCOUNT_APPLIED,
+            "Automatic promotion applied (−" + applied.discountedAmount() + ")",
+            null, "system", Map.of("discountId", applied.discountId().toString(),
+                "amount", applied.discountedAmount().toPlainString()));
+      });
     }
 
     if (giftCardCode != null && !giftCardCode.isBlank()) {
@@ -461,7 +497,7 @@ public class PaymentService {
           order.getTotalAmount(), order.getCurrency(), 0
       );
       invoiceService.recordPayment(invoice.getId(),
-          new RecordPaymentRequest(order.getTotalAmount(), "stripe", "Paid via Stripe", null));
+          new RecordPaymentRequest(order.getTotalAmount(), io.k2dv.garden.b2b.model.PaymentMethod.STRIPE, "stripe", "Paid via Stripe", null));
     } catch (Exception e) {
       log.warn("Failed to auto-create invoice for quote {}: {}", quote.getId(), e.getMessage());
     }

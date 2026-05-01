@@ -21,6 +21,10 @@ public class InvoicePayment extends ImmutableBaseEntity {
     @Column(nullable = false, precision = 19, scale = 4)
     private BigDecimal amount;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "payment_method", nullable = false)
+    private PaymentMethod paymentMethod = PaymentMethod.STRIPE;
+
     @Column(name = "payment_reference")
     private String paymentReference;
 

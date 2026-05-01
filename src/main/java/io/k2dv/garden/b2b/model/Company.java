@@ -4,6 +4,12 @@ import io.k2dv.garden.shared.model.BaseEntity;
 import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 @Entity
 @Table(schema = "b2b", name = "companies")
@@ -37,4 +43,14 @@ public class Company extends BaseEntity {
 
     @Column(name = "billing_country")
     private String billingCountry;
+
+    @Column(name = "tax_exempt", nullable = false)
+    private boolean taxExempt = false;
+
+    @Column(name = "sales_rep_user_id")
+    private UUID salesRepUserId;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "metadata", columnDefinition = "jsonb")
+    private Map<String, Object> metadata = new HashMap<>();
 }

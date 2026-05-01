@@ -6,6 +6,7 @@ import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.inventory.service.InventoryService;
+import io.k2dv.garden.order.dto.CreateDraftOrderRequest;
 import io.k2dv.garden.order.dto.OrderEventResponse;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderItemProductInfo;
@@ -86,7 +87,14 @@ public class OrderService {
     public Order createFromCart(UUID userId, List<CartItem> cartItems,
                                 UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                                 String poNumber) {
-        return buildOrder(userId, null, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+        return buildOrder(userId, null, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+    }
+
+    @Transactional
+    public Order createFromCart(UUID userId, UUID companyId, boolean taxExempt, List<CartItem> cartItems,
+                                UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
+                                String poNumber) {
+        return buildOrder(userId, null, companyId, taxExempt, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
     }
 
     @Transactional
@@ -99,10 +107,11 @@ public class OrderService {
     public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
                                   UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                                   String poNumber) {
-        return buildOrder(null, guestEmail, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+        return buildOrder(null, guestEmail, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
     }
 
-    private Order buildOrder(UUID userId, String guestEmail, List<CartItem> cartItems,
+    private Order buildOrder(UUID userId, String guestEmail, UUID companyId, boolean taxExempt,
+                             List<CartItem> cartItems,
                              UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                              String poNumber) {
         if (cartItems.isEmpty()) {
@@ -137,6 +146,8 @@ public class OrderService {
         Order order = new Order();
         order.setUserId(userId);
         order.setGuestEmail(guestEmail);
+        order.setCompanyId(companyId);
+        order.setTaxExempt(taxExempt);
         order.setTotalAmount(total);
         order.setShippingCost(shippingCost);
         order.setShippingRateId(shippingRateId);
@@ -537,6 +548,97 @@ public class OrderService {
         return toResponse(order);
     }
 
+    @Transactional
+    public OrderResponse createDraft(CreateDraftOrderRequest req) {
+        if (req.userId() == null && (req.guestEmail() == null || req.guestEmail().isBlank())) {
+            throw new ValidationException("USER_OR_EMAIL_REQUIRED", "Either userId or guestEmail is required");
+        }
+
+        BigDecimal total = req.items().stream()
+            .map(i -> {
+                ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(i.variantId())
+                    .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found: " + i.variantId()));
+                BigDecimal price = i.unitPrice() != null ? i.unitPrice() : v.getPrice();
+                return price.multiply(BigDecimal.valueOf(i.quantity()));
+            })
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Order order = new Order();
+        order.setUserId(req.userId());
+        order.setGuestEmail(req.guestEmail());
+        order.setStatus(OrderStatus.DRAFT);
+        order.setTotalAmount(total);
+        order.setCurrency(req.currency() != null ? req.currency() : "usd");
+        order.setShippingAddress(req.shippingAddress());
+        order.setPoNumber(req.poNumber());
+        order.setCompanyId(req.companyId());
+        order = orderRepo.save(order);
+
+        for (var item : req.items()) {
+            ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(item.variantId()).orElseThrow();
+            BigDecimal price = item.unitPrice() != null ? item.unitPrice() : v.getPrice();
+            OrderItem oi = new OrderItem();
+            oi.setOrderId(order.getId());
+            oi.setVariantId(item.variantId());
+            oi.setQuantity(item.quantity());
+            oi.setUnitPrice(price);
+            orderItemRepo.save(oi);
+        }
+        return toResponse(order);
+    }
+
+    @Transactional
+    public OrderResponse updateDraftItems(UUID orderId, java.util.List<io.k2dv.garden.order.dto.DraftOrderItemRequest> items) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() != OrderStatus.DRAFT) {
+            throw new ConflictException("NOT_DRAFT", "Order is not in DRAFT status");
+        }
+        orderItemRepo.deleteAll(orderItemRepo.findByOrderId(orderId));
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (var item : items) {
+            ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(item.variantId())
+                .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found: " + item.variantId()));
+            BigDecimal price = item.unitPrice() != null ? item.unitPrice() : v.getPrice();
+            OrderItem oi = new OrderItem();
+            oi.setOrderId(orderId);
+            oi.setVariantId(item.variantId());
+            oi.setQuantity(item.quantity());
+            oi.setUnitPrice(price);
+            orderItemRepo.save(oi);
+            total = total.add(price.multiply(BigDecimal.valueOf(item.quantity())));
+        }
+        order.setTotalAmount(total);
+        return toResponse(orderRepo.save(order));
+    }
+
+    @Transactional
+    public OrderResponse completeDraft(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() != OrderStatus.DRAFT) {
+            throw new ConflictException("NOT_DRAFT", "Order is not in DRAFT status");
+        }
+        List<OrderItem> items = orderItemRepo.findByOrderId(orderId);
+        if (items.isEmpty()) {
+            throw new ValidationException("EMPTY_ORDER", "Draft order has no items");
+        }
+        for (OrderItem item : items) {
+            inventoryService.reserveStock(item.getVariantId(), item.getQuantity());
+        }
+        order.setStatus(OrderStatus.PENDING_PAYMENT);
+        return toResponse(orderRepo.save(order));
+    }
+
+    @Transactional
+    public OrderResponse updateMetadata(UUID orderId, java.util.Map<String, Object> metadata) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setMetadata(metadata);
+        return toResponse(orderRepo.save(order));
+    }
+
     private OrderResponse toResponse(Order order) {
         List<OrderItem> orderItems = orderItemRepo.findByOrderId(order.getId());
 
@@ -575,6 +677,6 @@ public class OrderService {
             order.getStripeSessionId(), order.getDiscountId(), order.getDiscountAmount(),
             order.getGiftCardId(), order.getGiftCardAmount(), order.getAdminNotes(),
             order.getShippingAddress(), order.getShippingCost(), order.getShippingRateId(),
-            items, order.getTaxAmount(), order.getPoNumber(), order.getCreatedAt());
+            items, order.getTaxAmount(), order.getPoNumber(), order.getMetadata(), order.getCreatedAt());
     }
 }

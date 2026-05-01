@@ -9,6 +9,7 @@ import io.k2dv.garden.b2b.repository.CreditAccountRepository;
 import io.k2dv.garden.b2b.repository.InvoiceRepository;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -69,6 +70,23 @@ public class CreditAccountService {
     @Transactional(readOnly = true)
     public BigDecimal getOutstandingBalance(UUID companyId) {
         return invoiceRepo.computeOutstandingBalance(companyId);
+    }
+
+    /**
+     * Throws ValidationException if the company has a credit account but insufficient available credit.
+     * No-ops if the company has no credit account (pay-at-checkout flow).
+     */
+    @Transactional(readOnly = true)
+    public void assertCreditAvailable(UUID companyId, BigDecimal orderTotal) {
+        creditAccountRepo.findByCompanyId(companyId).ifPresent(account -> {
+            BigDecimal outstanding = invoiceRepo.computeOutstandingBalance(companyId);
+            BigDecimal available = account.getCreditLimit().subtract(outstanding);
+            if (orderTotal.compareTo(available) > 0) {
+                throw new ValidationException("CREDIT_LIMIT_EXCEEDED",
+                    "Order total exceeds available credit. Available: " + available.toPlainString()
+                    + ", Requested: " + orderTotal.toPlainString());
+            }
+        });
     }
 
     private CreditAccount requireByCompany(UUID companyId) {

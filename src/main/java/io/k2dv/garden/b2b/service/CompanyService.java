@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -82,6 +83,7 @@ public class CompanyService {
         company.setBillingState(req.billingState());
         company.setBillingPostalCode(req.billingPostalCode());
         company.setBillingCountry(req.billingCountry());
+        if (req.taxExempt() != null) company.setTaxExempt(req.taxExempt());
         return toResponse(companyRepo.save(company));
     }
 
@@ -136,6 +138,51 @@ public class CompanyService {
 
     public void requireMemberAccess(UUID companyId, UUID userId) {
         requireMember(companyId, userId);
+    }
+
+    @Transactional(readOnly = true)
+    public List<CompanyResponse> listAll() {
+        return companyRepo.findAll().stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CompanyResponse adminGetById(UUID companyId) {
+        return companyRepo.findById(companyId)
+            .map(this::toResponse)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+    }
+
+    @Transactional
+    public CompanyResponse adminUpdate(UUID companyId, AdminUpdateCompanyRequest req) {
+        Company company = companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        if (req.name() != null) company.setName(req.name());
+        if (req.taxId() != null) company.setTaxId(req.taxId());
+        if (req.phone() != null) company.setPhone(req.phone());
+        if (req.billingAddressLine1() != null) company.setBillingAddressLine1(req.billingAddressLine1());
+        if (req.billingAddressLine2() != null) company.setBillingAddressLine2(req.billingAddressLine2());
+        if (req.billingCity() != null) company.setBillingCity(req.billingCity());
+        if (req.billingState() != null) company.setBillingState(req.billingState());
+        if (req.billingPostalCode() != null) company.setBillingPostalCode(req.billingPostalCode());
+        if (req.billingCountry() != null) company.setBillingCountry(req.billingCountry());
+        if (req.taxExempt() != null) company.setTaxExempt(req.taxExempt());
+        company.setSalesRepUserId(req.salesRepUserId());
+        return toResponse(companyRepo.save(company));
+    }
+
+    @Transactional
+    public CompanyResponse updateMetadata(UUID companyId, Map<String, Object> metadata) {
+        Company company = companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        company.setMetadata(metadata);
+        return toResponse(companyRepo.save(company));
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTaxExempt(UUID companyId) {
+        return companyRepo.findById(companyId)
+            .map(Company::isTaxExempt)
+            .orElse(false);
     }
 
     @Transactional(readOnly = true)
@@ -197,6 +244,7 @@ public class CompanyService {
             c.getBillingAddressLine1(), c.getBillingAddressLine2(),
             c.getBillingCity(), c.getBillingState(),
             c.getBillingPostalCode(), c.getBillingCountry(),
+            c.isTaxExempt(), c.getSalesRepUserId(), c.getMetadata(),
             c.getCreatedAt(), c.getUpdatedAt()
         );
     }

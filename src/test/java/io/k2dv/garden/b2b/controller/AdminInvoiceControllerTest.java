@@ -108,7 +108,7 @@ class AdminInvoiceControllerTest {
         mvc.perform(post("/api/v1/admin/invoices/{id}/payments", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new RecordPaymentRequest(new BigDecimal("200.00"), "REF-001", null, null))))
+                    new RecordPaymentRequest(new BigDecimal("200.00"), null, "REF-001", null, null))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("PARTIAL"));
     }
@@ -121,7 +121,7 @@ class AdminInvoiceControllerTest {
         mvc.perform(post("/api/v1/admin/invoices/{id}/payments", UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new RecordPaymentRequest(new BigDecimal("1.00"), null, null, null))))
+                    new RecordPaymentRequest(new BigDecimal("1.00"), null, null, null, null))))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error").value("INVOICE_NOT_PAYABLE"));
     }
