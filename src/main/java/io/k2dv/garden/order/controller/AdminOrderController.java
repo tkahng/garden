@@ -1,6 +1,8 @@
 package io.k2dv.garden.order.controller;
 
 import io.k2dv.garden.auth.security.HasPermission;
+import io.k2dv.garden.order.dto.CreateDraftOrderRequest;
+import io.k2dv.garden.order.dto.DraftOrderItemRequest;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderResponse;
 import io.k2dv.garden.order.dto.UpdateOrderRequest;
@@ -8,6 +10,7 @@ import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.BulkIdsRequest;
+import io.k2dv.garden.shared.dto.MetadataRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -15,9 +18,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -83,6 +89,34 @@ public class AdminOrderController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdateOrderRequest req) {
         return ResponseEntity.ok(ApiResponse.of(orderService.updateOrder(id, req)));
+    }
+
+    @PostMapping("/draft")
+    @HasPermission("order:write")
+    public ResponseEntity<ApiResponse<OrderResponse>> createDraft(
+            @Valid @RequestBody CreateDraftOrderRequest req) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(orderService.createDraft(req)));
+    }
+
+    @PutMapping("/{id}/draft/items")
+    @HasPermission("order:write")
+    public ResponseEntity<ApiResponse<OrderResponse>> updateDraftItems(
+            @PathVariable UUID id,
+            @Valid @RequestBody List<DraftOrderItemRequest> items) {
+        return ResponseEntity.ok(ApiResponse.of(orderService.updateDraftItems(id, items)));
+    }
+
+    @PostMapping("/{id}/draft/complete")
+    @HasPermission("order:write")
+    public ResponseEntity<ApiResponse<OrderResponse>> completeDraft(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(orderService.completeDraft(id)));
+    }
+
+    @PutMapping("/{id}/metadata")
+    @HasPermission("order:write")
+    public ResponseEntity<ApiResponse<OrderResponse>> updateMetadata(
+            @PathVariable UUID id, @Valid @RequestBody MetadataRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(orderService.updateMetadata(id, req.metadata())));
     }
 
     @PostMapping("/bulk/cancel")
