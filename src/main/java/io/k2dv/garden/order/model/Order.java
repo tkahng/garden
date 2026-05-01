@@ -65,4 +65,7 @@ public class Order extends BaseEntity {
 
     @Column(name = "tax_amount", precision = 19, scale = 4)
     private BigDecimal taxAmount;
+
+    @Column(name = "po_number")
+    private String poNumber;
 }

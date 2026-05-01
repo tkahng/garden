@@ -12,6 +12,7 @@ import io.k2dv.garden.shipping.repository.ShippingRateRepository;
 import io.k2dv.garden.shipping.repository.ShippingZoneRepository;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -121,6 +122,16 @@ public class ShippingService {
     }
 
     // ---- Storefront ----
+
+    @Transactional(readOnly = true)
+    public void validateRateForAddress(UUID rateId, String country, String province) {
+        List<UUID> zoneIds = zoneRepo.findMatchingZones(country, province)
+            .stream().map(ShippingZone::getId).toList();
+        if (zoneIds.isEmpty() || !rateRepo.existsByIdAndZoneIdIn(rateId, zoneIds)) {
+            throw new ValidationException("SHIPPING_RATE_NOT_AVAILABLE",
+                "Selected shipping rate is not available for address country: " + country);
+        }
+    }
 
     @Transactional(readOnly = true)
     public List<ShippingRateResponse> findRatesForAddress(String country, String province,

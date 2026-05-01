@@ -1,5 +1,7 @@
 package io.k2dv.garden.cart.service;
 
+import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
 import io.k2dv.garden.cart.dto.CartItemProductInfo;
 import io.k2dv.garden.cart.dto.CartItemResponse;
@@ -22,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,6 +41,8 @@ public class CartService {
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
     private final ProductImageResolver imageResolver;
+    private final PriceListService priceListService;
+    private final CompanyMembershipRepository membershipRepo;
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
@@ -51,6 +56,51 @@ public class CartService {
     }
 
     @Transactional
+    public CartResponse setCompanyContext(UUID userId, UUID companyId) {
+        if (!membershipRepo.existsByCompanyIdAndUserId(companyId, userId)) {
+            throw new ValidationException("NOT_A_MEMBER", "User is not a member of this company");
+        }
+        Cart cart = cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
+            .orElseGet(() -> {
+                Cart c = new Cart();
+                c.setUserId(userId);
+                return cartRepo.save(c);
+            });
+        cart.setCompanyId(companyId);
+        cartRepo.save(cart);
+
+        // Re-price existing items using the new company context
+        List<CartItem> items = cartItemRepo.findByCartId(cart.getId());
+        for (CartItem item : items) {
+            BigDecimal price = resolvePrice(companyId, item.getVariantId(), item.getQuantity());
+            item.setUnitPrice(price);
+            cartItemRepo.save(item);
+        }
+
+        return toResponse(cart);
+    }
+
+    @Transactional
+    public CartResponse clearCompanyContext(UUID userId) {
+        Cart cart = findActiveCartOrThrow(userId);
+        cart.setCompanyId(null);
+        cartRepo.save(cart);
+
+        // Re-price items back to base variant price
+        List<CartItem> items = cartItemRepo.findByCartId(cart.getId());
+        for (CartItem item : items) {
+            variantRepo.findByIdAndDeletedAtIsNull(item.getVariantId()).ifPresent(variant -> {
+                if (variant.getPrice() != null) {
+                    item.setUnitPrice(variant.getPrice());
+                    cartItemRepo.save(item);
+                }
+            });
+        }
+
+        return toResponse(cart);
+    }
+
+    @Transactional
     public CartResponse addItem(UUID userId, AddCartItemRequest req) {
         Cart cart = findActiveCartOrThrow(userId);
         ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(req.variantId())
@@ -60,7 +110,7 @@ public class CartService {
         if (product.getStatus() != ProductStatus.ACTIVE) {
             throw new ValidationException("PRODUCT_NOT_ACTIVE", "Product is not available for purchase");
         }
-        if (variant.getPrice() == null) {
+        if (variant.getPrice() == null && cart.getCompanyId() == null) {
             throw new ValidationException("QUOTE_ONLY_VARIANT",
                 "This variant is quote-only and cannot be added to the regular cart");
         }
@@ -70,10 +120,11 @@ public class CartService {
                 CartItem i = new CartItem();
                 i.setCartId(cart.getId());
                 i.setVariantId(req.variantId());
-                i.setUnitPrice(variant.getPrice());
                 return i;
             });
-        item.setQuantity(item.getQuantity() + req.quantity());
+        int newQty = item.getQuantity() + req.quantity();
+        item.setQuantity(newQty);
+        item.setUnitPrice(resolveItemPrice(cart, variant, newQty));
         cartItemRepo.save(item);
 
         return toResponse(cart);
@@ -85,6 +136,10 @@ public class CartService {
         CartItem item = cartItemRepo.findByIdAndCartId(itemId, cart.getId())
             .orElseThrow(() -> new NotFoundException("CART_ITEM_NOT_FOUND", "Cart item not found"));
         item.setQuantity(req.quantity());
+        // Re-price on qty change — volume tiers may apply
+        if (cart.getCompanyId() != null) {
+            item.setUnitPrice(resolvePrice(cart.getCompanyId(), item.getVariantId(), req.quantity()));
+        }
         cartItemRepo.save(item);
         return toResponse(cart);
     }
@@ -208,17 +263,28 @@ public class CartService {
         });
     }
 
+    // --- Price resolution ---
+
+    private BigDecimal resolveItemPrice(Cart cart, ProductVariant variant, int qty) {
+        if (cart.getCompanyId() != null) {
+            return resolvePrice(cart.getCompanyId(), variant.getId(), qty);
+        }
+        return variant.getPrice();
+    }
+
+    private BigDecimal resolvePrice(UUID companyId, UUID variantId, int qty) {
+        return priceListService.resolvePrice(companyId, variantId, qty).price();
+    }
+
     // --- Helpers ---
 
     private CartResponse toResponse(Cart cart) {
         List<CartItem> cartItems = cartItemRepo.findByCartId(cart.getId());
 
-        // Batch-load variants
         Set<UUID> variantIds = cartItems.stream().map(CartItem::getVariantId).collect(Collectors.toSet());
         Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
             .collect(Collectors.toMap(ProductVariant::getId, v -> v));
 
-        // Batch-load products
         Set<UUID> productIds = variantsById.values().stream()
             .map(ProductVariant::getProductId).collect(Collectors.toSet());
         Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
@@ -242,6 +308,6 @@ public class CartService {
             return new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
         }).toList();
 
-        return new CartResponse(cart.getId(), cart.getStatus(), items, cart.getCreatedAt());
+        return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());
     }
 }

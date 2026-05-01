@@ -33,11 +33,12 @@ public class AdminDiscountController {
             @RequestParam(required = false) DiscountType type,
             @RequestParam(required = false) Boolean isActive,
             @RequestParam(required = false) String codeContains,
+            @RequestParam(required = false) UUID companyId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int clampedSize = Math.min(size, 100);
         return ApiResponse.of(discountService.list(
-            new DiscountFilter(type, isActive, codeContains),
+            new DiscountFilter(type, isActive, codeContains, companyId),
             PageRequest.of(page, clampedSize)));
     }
 

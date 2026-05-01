@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.b2b.dto.InvoiceResponse;
 import io.k2dv.garden.b2b.dto.RecordPaymentRequest;
 import io.k2dv.garden.b2b.model.InvoiceStatus;
+import io.k2dv.garden.b2b.service.InvoicePdfService;
 import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.shared.dto.PageMeta;
@@ -39,6 +40,7 @@ class AdminInvoiceControllerTest {
     @Autowired MockMvc mvc;
     private final ObjectMapper objectMapper = new ObjectMapper().findAndRegisterModules();
     @MockitoBean InvoiceService invoiceService;
+    @MockitoBean InvoicePdfService invoicePdfService;
 
     private InvoiceResponse stubInvoice(UUID id, UUID companyId, InvoiceStatus status) {
         return new InvoiceResponse(id, companyId, UUID.randomUUID(), null,
@@ -154,5 +156,28 @@ class AdminInvoiceControllerTest {
         mvc.perform(delete("/api/v1/admin/invoices/{id}", UUID.randomUUID()))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error").value("INVOICE_ALREADY_PAID"));
+    }
+
+    @Test
+    void downloadPdf_returns200WithPdfBytes() throws Exception {
+        UUID id = UUID.randomUUID();
+        byte[] fakePdf = "%PDF-1.4 fake content".getBytes();
+        when(invoicePdfService.generate(eq(id))).thenReturn(fakePdf);
+
+        mvc.perform(get("/api/v1/admin/invoices/{id}/pdf", id))
+            .andExpect(status().isOk())
+            .andExpect(header().string("Content-Disposition", "attachment; filename=\"invoice-" + id + ".pdf\""))
+            .andExpect(content().contentType("application/pdf"))
+            .andExpect(content().bytes(fakePdf));
+    }
+
+    @Test
+    void downloadPdf_notFound_returns404() throws Exception {
+        when(invoicePdfService.generate(any()))
+            .thenThrow(new NotFoundException("INVOICE_NOT_FOUND", "Invoice not found"));
+
+        mvc.perform(get("/api/v1/admin/invoices/{id}/pdf", UUID.randomUUID()))
+            .andExpect(status().isNotFound())
+            .andExpect(jsonPath("$.error").value("INVOICE_NOT_FOUND"));
     }
 }

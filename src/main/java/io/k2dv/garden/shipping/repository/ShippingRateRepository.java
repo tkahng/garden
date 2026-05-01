@@ -11,4 +11,5 @@ public interface ShippingRateRepository extends JpaRepository<ShippingRate, UUID
     List<ShippingRate> findByZoneId(UUID zoneId);
     Optional<ShippingRate> findByIdAndZoneId(UUID id, UUID zoneId);
     void deleteByZoneId(UUID zoneId);
+    boolean existsByIdAndZoneIdIn(UUID id, java.util.Collection<UUID> zoneIds);
 }

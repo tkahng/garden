@@ -22,6 +22,8 @@ import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
+import io.k2dv.garden.webhook.model.WebhookEventType;
+import io.k2dv.garden.webhook.service.OutboundWebhookService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -45,6 +47,7 @@ public class FulfillmentService {
     private final UserRepository userRepo;
     private final EmailService emailService;
     private final AppProperties appProperties;
+    private final OutboundWebhookService outboundWebhookService;
 
     @Transactional
     public FulfillmentResponse create(UUID orderId, CreateFulfillmentRequest req, User admin) {
@@ -136,9 +139,14 @@ public class FulfillmentService {
 
         if (transitioningToShipped) {
             sendShippingNotificationEmail(orderId, f);
+            outboundWebhookService.scheduleDelivery(WebhookEventType.FULFILLMENT_SHIPPED,
+                Map.of("orderId", orderId.toString(), "fulfillmentId", f.getId().toString(),
+                    "trackingNumber", f.getTrackingNumber() != null ? f.getTrackingNumber() : ""));
         }
         if (transitioningToDelivered) {
             sendDeliveredEmail(orderId);
+            outboundWebhookService.scheduleDelivery(WebhookEventType.FULFILLMENT_DELIVERED,
+                Map.of("orderId", orderId.toString(), "fulfillmentId", f.getId().toString()));
         }
 
         return toResponse(f);

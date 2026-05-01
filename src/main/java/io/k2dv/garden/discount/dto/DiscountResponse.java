@@ -18,6 +18,7 @@ public record DiscountResponse(
     Instant startsAt,
     Instant endsAt,
     boolean isActive,
+    UUID companyId,
     Instant createdAt
 ) {
     public static DiscountResponse from(Discount d) {
@@ -32,6 +33,7 @@ public record DiscountResponse(
             d.getStartsAt(),
             d.getEndsAt(),
             d.isActive(),
+            d.getCompanyId(),
             d.getCreatedAt()
         );
     }

@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
 import io.k2dv.garden.cart.dto.CartResponse;
+import io.k2dv.garden.cart.dto.SetCartCompanyRequest;
 import io.k2dv.garden.cart.dto.UpdateCartItemRequest;
 import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.shared.dto.ApiResponse;
@@ -56,5 +57,17 @@ public class CartController {
       @CurrentUser User user,
       @PathVariable UUID itemId) {
     return ResponseEntity.ok(ApiResponse.of(cartService.removeItem(user.getId(), itemId)));
+  }
+
+  @PutMapping("/company")
+  public ResponseEntity<ApiResponse<CartResponse>> setCompany(
+      @CurrentUser User user,
+      @Valid @RequestBody SetCartCompanyRequest req) {
+    return ResponseEntity.ok(ApiResponse.of(cartService.setCompanyContext(user.getId(), req.companyId())));
+  }
+
+  @DeleteMapping("/company")
+  public ResponseEntity<ApiResponse<CartResponse>> clearCompany(@CurrentUser User user) {
+    return ResponseEntity.ok(ApiResponse.of(cartService.clearCompanyContext(user.getId())));
   }
 }

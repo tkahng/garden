@@ -26,4 +26,7 @@ public class Cart extends BaseEntity {
 
     @Column(name = "abandoned_reminder_sent_at")
     private Instant abandonedReminderSentAt;
+
+    @Column(name = "company_id")
+    private UUID companyId;
 }

@@ -17,6 +17,8 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpec
 
     List<Invoice> findByCompanyIdOrderByDueAtAsc(UUID companyId);
 
+    boolean existsByOrderId(UUID orderId);
+
     @Query("""
         SELECT COALESCE(SUM(i.totalAmount - i.paidAmount), 0)
         FROM Invoice i

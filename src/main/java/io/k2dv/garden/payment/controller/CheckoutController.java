@@ -36,8 +36,9 @@ public class CheckoutController {
         String discountCode = req != null ? req.discountCode() : null;
         String giftCardCode = req != null ? req.giftCardCode() : null;
         UUID shippingRateId = req != null ? req.shippingRateId() : null;
+        String poNumber = req != null ? req.poNumber() : null;
         return ResponseEntity.ok(ApiResponse.of(
-                paymentService.initiateCheckout(user.getId(), discountCode, giftCardCode, shippingRateId)));
+                paymentService.initiateCheckout(user.getId(), discountCode, giftCardCode, shippingRateId, poNumber)));
     }
 
     @SecurityRequirements({})
@@ -48,7 +49,7 @@ public class CheckoutController {
         return ResponseEntity.ok(ApiResponse.of(
                 paymentService.initiateGuestCheckout(
                         req.email(), req.shippingAddress(), req.shippingRateId(),
-                        req.discountCode(), req.giftCardCode(), sessionId)));
+                        req.discountCode(), req.giftCardCode(), sessionId, req.poNumber())));
     }
 
     @SecurityRequirements({})
