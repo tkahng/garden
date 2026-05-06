@@ -108,6 +108,42 @@ public class BlobService {
     }
 
     @Transactional
+    public BlobResponse replace(UUID id, MultipartFile file) {
+        if (file.getSize() > storageProperties.getMaxUploadSize()) {
+            throw new ValidationException("FILE_TOO_LARGE", "File exceeds maximum upload size");
+        }
+        BlobObject blob = findOrThrow(id);
+        String contentType = contentType(file);
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read upload stream", e);
+        }
+        storageService.store(blob.getKey(), contentType, new ByteArrayInputStream(bytes), bytes.length);
+
+        blob.setFilename(file.getOriginalFilename() != null ? file.getOriginalFilename() : blob.getFilename());
+        blob.setContentType(contentType);
+        blob.setSize(file.getSize());
+        blob.setWidth(null);
+        blob.setHeight(null);
+
+        if (IMAGE_TYPES.contains(contentType)) {
+            try {
+                BufferedImage img = ImageIO.read(new ByteArrayInputStream(bytes));
+                if (img != null) {
+                    blob.setWidth(img.getWidth());
+                    blob.setHeight(img.getHeight());
+                }
+            } catch (IOException ignored) {
+            }
+        }
+
+        blob = blobRepo.saveAndFlush(blob);
+        return BlobResponse.from(blob, storageService.resolveUrl(blob.getKey()));
+    }
+
+    @Transactional
     public BlobResponse updateMetadata(UUID id, UpdateBlobRequest req) {
         BlobObject blob = findOrThrow(id);
         blob.setAlt(req.alt());

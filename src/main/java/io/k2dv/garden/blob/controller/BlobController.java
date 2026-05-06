@@ -58,6 +58,13 @@ public class BlobController {
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(resp));
     }
 
+    @PutMapping(value = "/{id}/replace", consumes = "multipart/form-data")
+    @HasPermission("blob:update")
+    public ApiResponse<BlobResponse> replace(@PathVariable UUID id,
+                                              @RequestParam("file") MultipartFile file) {
+        return ApiResponse.of(blobService.replace(id, file));
+    }
+
     @PatchMapping("/{id}")
     @HasPermission("blob:update")
     public ApiResponse<BlobResponse> update(@PathVariable UUID id,
