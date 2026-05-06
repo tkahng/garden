@@ -153,6 +153,14 @@ public class BlobService {
         return blobRepo.findDistinctFolders();
     }
 
+    @Transactional(readOnly = true)
+    public BlobStatsResponse getStats() {
+        Object[] row = blobRepo.findStats();
+        long count = row[0] instanceof Number n ? n.longValue() : 0L;
+        long bytes = row[1] instanceof Number n ? n.longValue() : 0L;
+        return new BlobStatsResponse(count, bytes);
+    }
+
     @Transactional
     public void moveToFolder(List<UUID> ids, String folder) {
         String target = (folder != null && !folder.isBlank()) ? folder.strip() : null;

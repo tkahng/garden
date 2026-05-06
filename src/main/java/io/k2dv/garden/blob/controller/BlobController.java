@@ -47,6 +47,12 @@ public class BlobController {
         return ApiResponse.of(blobService.listFolders());
     }
 
+    @GetMapping("/stats")
+    @HasPermission("blob:read")
+    public ApiResponse<BlobStatsResponse> getStats() {
+        return ApiResponse.of(blobService.getStats());
+    }
+
     @GetMapping("/{id}")
     @HasPermission("blob:read")
     public ApiResponse<BlobResponse> getById(@PathVariable UUID id) {

@@ -12,4 +12,7 @@ public interface BlobObjectRepository extends JpaRepository<BlobObject, UUID>, J
 
     @Query("SELECT DISTINCT b.folder FROM BlobObject b WHERE b.folder IS NOT NULL ORDER BY b.folder")
     List<String> findDistinctFolders();
+
+    @Query("SELECT COUNT(b), COALESCE(SUM(b.size), 0) FROM BlobObject b")
+    Object[] findStats();
 }
