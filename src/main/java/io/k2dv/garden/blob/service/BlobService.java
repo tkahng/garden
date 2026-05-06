@@ -57,6 +57,11 @@ public class BlobService {
                     predicates.add(cb.like(cb.lower(root.get("filename")),
                         "%" + filter.filenameContains().toLowerCase() + "%"));
                 }
+                if (filter.folder() != null && !filter.folder().isBlank()) {
+                    predicates.add(cb.equal(root.get("folder"), filter.folder()));
+                } else if (filter.unorganized()) {
+                    predicates.add(cb.isNull(root.get("folder")));
+                }
             }
             return cb.and(predicates.toArray(new Predicate[0]));
         };
@@ -143,11 +148,27 @@ public class BlobService {
         return BlobResponse.from(blob, storageService.resolveUrl(blob.getKey()));
     }
 
+    @Transactional(readOnly = true)
+    public List<String> listFolders() {
+        return blobRepo.findDistinctFolders();
+    }
+
+    @Transactional
+    public void moveToFolder(List<UUID> ids, String folder) {
+        String target = (folder != null && !folder.isBlank()) ? folder.strip() : null;
+        List<BlobObject> blobs = blobRepo.findAllById(ids);
+        blobs.forEach(b -> b.setFolder(target));
+        blobRepo.saveAll(blobs);
+    }
+
     @Transactional
     public BlobResponse updateMetadata(UUID id, UpdateBlobRequest req) {
         BlobObject blob = findOrThrow(id);
         blob.setAlt(req.alt());
         blob.setTitle(req.title());
+        if (req.folder() != null) {
+            blob.setFolder(req.folder().isBlank() ? null : req.folder().strip());
+        }
         blob = blobRepo.saveAndFlush(blob);
         return BlobResponse.from(blob, storageService.resolveUrl(blob.getKey()));
     }

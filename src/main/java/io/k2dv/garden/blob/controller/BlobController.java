@@ -29,14 +29,22 @@ public class BlobController {
     public ApiResponse<PagedResult<BlobResponse>> list(
             @RequestParam(required = false) String contentType,
             @RequestParam(required = false) String filenameContains,
+            @RequestParam(required = false) String folder,
+            @RequestParam(defaultValue = "false") boolean unorganized,
             @RequestParam(required = false) String sortBy,
             @RequestParam(required = false) String sortDir,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int clampedSize = Math.min(size, 100);
         return ApiResponse.of(blobService.list(
-            new BlobFilter(contentType, filenameContains, sortBy, sortDir),
+            new BlobFilter(contentType, filenameContains, folder, unorganized, sortBy, sortDir),
             PageRequest.of(page, clampedSize)));
+    }
+
+    @GetMapping("/folders")
+    @HasPermission("blob:read")
+    public ApiResponse<List<String>> listFolders() {
+        return ApiResponse.of(blobService.listFolders());
     }
 
     @GetMapping("/{id}")
@@ -56,6 +64,13 @@ public class BlobController {
     public ResponseEntity<ApiResponse<BlobResponse>> upload(@RequestParam("file") MultipartFile file) {
         BlobResponse resp = blobService.upload(file);
         return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(resp));
+    }
+
+    @PostMapping("/move")
+    @HasPermission("blob:update")
+    public ResponseEntity<Void> move(@RequestBody MoveToFolderRequest req) {
+        blobService.moveToFolder(req.ids(), req.folder());
+        return ResponseEntity.noContent().build();
     }
 
     @PutMapping(value = "/{id}/replace", consumes = "multipart/form-data")

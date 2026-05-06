@@ -103,7 +103,7 @@ class BlobServiceIT extends AbstractIntegrationTest {
     var resp = blobService.upload(file);
     uploadedKey = resp.key();
 
-    var updated = blobService.updateMetadata(resp.id(), new UpdateBlobRequest("alt text", "My Title"));
+    var updated = blobService.updateMetadata(resp.id(), new UpdateBlobRequest("alt text", "My Title", null));
 
     assertThat(updated.alt()).isEqualTo("alt text");
     assertThat(updated.title()).isEqualTo("My Title");
@@ -130,7 +130,7 @@ class BlobServiceIT extends AbstractIntegrationTest {
     var rb = blobService.upload(fb);
 
     var result = blobService.list(
-        new BlobFilter(null, null, "filename", "asc"),
+        new BlobFilter(null, null, null, false, "filename", "asc"),
         PageRequest.of(0, 100));
 
     var filenames = result.getContent().stream().map(r -> r.filename()).toList();

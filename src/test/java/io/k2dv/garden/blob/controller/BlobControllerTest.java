@@ -40,7 +40,7 @@ class BlobControllerTest {
     private BlobResponse sampleBlob(UUID id) {
         return new BlobResponse(id, "uploads/abc-test.jpg", "test.jpg", "image/jpeg", 4L,
             "http://localhost:9000/test/uploads/abc-test.jpg",
-            "A test image", "Test Title", 800, 600, Instant.now());
+            "A test image", "Test Title", 800, 600, null, Instant.now());
     }
 
     @Test

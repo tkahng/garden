@@ -36,4 +36,7 @@ public class BlobObject extends BaseEntity {
 
     @Column
     private Integer height;
+
+    @Column
+    private String folder;
 }
