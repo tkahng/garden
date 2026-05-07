@@ -164,11 +164,12 @@ public class InvoiceService {
     }
 
     @Transactional(readOnly = true)
-    public PagedResult<InvoiceResponse> listAll(UUID companyId, InvoiceStatus status, Pageable pageable) {
+    public PagedResult<InvoiceResponse> listAll(UUID companyId, InvoiceStatus status, UUID orderId, Pageable pageable) {
         Specification<Invoice> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (companyId != null) predicates.add(cb.equal(root.get("companyId"), companyId));
             if (status != null) predicates.add(cb.equal(root.get("status"), status));
+            if (orderId != null) predicates.add(cb.equal(root.get("orderId"), orderId));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return PagedResult.of(invoiceRepo.findAll(spec, pageable), this::toResponse);
