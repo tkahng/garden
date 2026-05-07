@@ -212,6 +212,29 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
+    public VariantLookupResponse lookupBySku(String sku) {
+        ProductVariant variant = variantRepo.findBySkuIgnoreCaseAndDeletedAtIsNull(sku)
+            .orElseThrow(() -> new NotFoundException("SKU_NOT_FOUND", "No active variant found with SKU: " + sku));
+        Product product = productRepo.findById(variant.getProductId())
+            .filter(p -> p.getStatus() == ProductStatus.ACTIVE && p.getDeletedAt() == null)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found for this variant"));
+
+        String featuredImageUrl = null;
+        if (product.getFeaturedImageId() != null) {
+            featuredImageUrl = imageRepo.findById(product.getFeaturedImageId())
+                .flatMap(img -> blobRepo.findById(img.getBlobId()))
+                .map(blob -> storageService.resolveUrl(blob.getKey()))
+                .orElse(null);
+        }
+
+        return new VariantLookupResponse(
+            variant.getId(), product.getId(),
+            product.getTitle(), product.getHandle(),
+            variant.getTitle(), variant.getSku(),
+            variant.getPrice(), featuredImageUrl
+        );
+    }
+
     public ProductDetailResponse getByHandle(String handle) {
         Product p = productRepo.findByHandle(handle)
             .filter(prod -> prod.getStatus() == ProductStatus.ACTIVE && prod.getDeletedAt() == null)

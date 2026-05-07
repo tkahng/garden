@@ -14,6 +14,8 @@ public interface ProductVariantRepository extends JpaRepository<ProductVariant, 
     List<ProductVariant> findByProductIdInAndDeletedAtIsNull(Collection<UUID> productIds);
     Optional<ProductVariant> findByIdAndDeletedAtIsNull(UUID id);
 
+    Optional<ProductVariant> findBySkuIgnoreCaseAndDeletedAtIsNull(String sku);
+
     @Query("SELECT v FROM ProductVariant v JOIN v.optionValues ov WHERE ov.id = :optionValueId AND v.deletedAt IS NULL")
     List<ProductVariant> findByOptionValueIdAndDeletedAtIsNull(@Param("optionValueId") UUID optionValueId);
 }

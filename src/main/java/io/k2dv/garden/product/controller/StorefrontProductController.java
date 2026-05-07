@@ -8,6 +8,7 @@ import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.product.dto.ProductDetailResponse;
 import io.k2dv.garden.product.dto.ProductSummaryResponse;
 import io.k2dv.garden.product.dto.StorefrontProductFilterRequest;
+import io.k2dv.garden.product.dto.VariantLookupResponse;
 import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
@@ -57,6 +58,12 @@ public class StorefrontProductController {
     @GetMapping("/{handle}")
     public ResponseEntity<ApiResponse<ProductDetailResponse>> getByHandle(@PathVariable String handle) {
         return ResponseEntity.ok(ApiResponse.of(productService.getByHandle(handle)));
+    }
+
+    @GetMapping("/variants/lookup")
+    public ResponseEntity<ApiResponse<VariantLookupResponse>> lookupBySku(
+            @RequestParam String sku) {
+        return ResponseEntity.ok(ApiResponse.of(productService.lookupBySku(sku)));
     }
 
     @Authenticated
