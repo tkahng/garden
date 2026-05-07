@@ -3,6 +3,8 @@ package io.k2dv.garden.product.controller;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.product.dto.ProductDetailResponse;
 import io.k2dv.garden.product.dto.ProductSummaryResponse;
+import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.shared.dto.PageMeta;
 import io.k2dv.garden.shared.dto.PagedResult;
@@ -29,6 +31,8 @@ class StorefrontProductControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean ProductService productService;
+    @MockitoBean PriceListService priceListService;
+    @MockitoBean CompanyService companyService;
 
     @Test
     void listProducts_returns200WithPageMeta() throws Exception {

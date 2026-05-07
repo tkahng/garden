@@ -1,11 +1,17 @@
 package io.k2dv.garden.product.controller;
 
+import io.k2dv.garden.auth.security.Authenticated;
+import io.k2dv.garden.auth.security.CurrentUser;
+import io.k2dv.garden.b2b.dto.VariantPriceTiersResponse;
+import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.product.dto.ProductDetailResponse;
 import io.k2dv.garden.product.dto.ProductSummaryResponse;
 import io.k2dv.garden.product.dto.StorefrontProductFilterRequest;
 import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.k2dv.garden.user.model.User;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +19,9 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/products")
@@ -22,6 +31,8 @@ import org.springframework.web.bind.annotation.*;
 public class StorefrontProductController {
 
     private final ProductService productService;
+    private final PriceListService priceListService;
+    private final CompanyService companyService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResult<ProductSummaryResponse>>> list(
@@ -46,5 +57,15 @@ public class StorefrontProductController {
     @GetMapping("/{handle}")
     public ResponseEntity<ApiResponse<ProductDetailResponse>> getByHandle(@PathVariable String handle) {
         return ResponseEntity.ok(ApiResponse.of(productService.getByHandle(handle)));
+    }
+
+    @Authenticated
+    @GetMapping("/{handle}/tiers")
+    public ResponseEntity<ApiResponse<List<VariantPriceTiersResponse>>> getVariantTiers(
+            @PathVariable String handle,
+            @RequestParam UUID companyId,
+            @CurrentUser User user) {
+        companyService.requireMemberAccess(companyId, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(priceListService.getProductTiers(companyId, handle)));
     }
 }

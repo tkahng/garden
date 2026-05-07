@@ -16,6 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -168,6 +170,36 @@ public class PriceListService {
                 e.getMinQty()
             );
         }).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public List<VariantPriceTiersResponse> getProductTiers(UUID companyId, String productHandle) {
+        companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        Product product = productRepo.findByHandle(productHandle)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+
+        List<UUID> variantIds = variantRepo.findByProductIdAndDeletedAtIsNullOrderByCreatedAtAsc(product.getId())
+            .stream().map(ProductVariant::getId).toList();
+        if (variantIds.isEmpty()) return List.of();
+
+        List<PriceList> activeLists = priceListRepo.findActiveLists(companyId, Instant.now());
+        if (activeLists.isEmpty()) return List.of();
+
+        List<UUID> listIds = activeLists.stream().map(PriceList::getId).toList();
+        List<PriceListEntry> entries = entryRepo.findByPriceListIdsAndVariantIds(listIds, variantIds);
+
+        Map<UUID, List<PriceTierEntry>> tiersMap = new LinkedHashMap<>();
+        for (UUID vid : variantIds) tiersMap.put(vid, new ArrayList<>());
+        for (PriceListEntry e : entries) {
+            tiersMap.computeIfPresent(e.getVariantId(),
+                (k, list) -> { list.add(new PriceTierEntry(e.getMinQty(), e.getPrice())); return list; });
+        }
+
+        return tiersMap.entrySet().stream()
+            .filter(entry -> !entry.getValue().isEmpty())
+            .map(entry -> new VariantPriceTiersResponse(entry.getKey(), entry.getValue()))
+            .toList();
     }
 
     private PriceListEntry pickBestEntry(List<PriceListEntry> candidates, List<PriceList> orderedLists) {
