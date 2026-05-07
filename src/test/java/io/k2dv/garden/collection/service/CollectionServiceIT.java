@@ -326,7 +326,7 @@ class CollectionServiceIT extends AbstractIntegrationTest {
         productService.changeStatus(active.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         collectionService.addProduct(c.id(), new AddCollectionProductRequest(draft.id()));
         collectionService.addProduct(c.id(), new AddCollectionProductRequest(active.id()));
-        var result = collectionService.listProductsStorefront(c.handle(), PageRequest.of(0, 20));
+        var result = collectionService.listProductsStorefront(c.handle(), 0, 20, null, null);
         assertThat(result.getContent()).hasSize(1);
         assertThat(result.getContent().get(0).title()).isEqualTo("Active Tee");
     }
@@ -347,7 +347,7 @@ class CollectionServiceIT extends AbstractIntegrationTest {
         productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
         collectionService.addProduct(c.id(), new AddCollectionProductRequest(product.id()));
 
-        var result = collectionService.listProductsStorefront(c.handle(), PageRequest.of(0, 20));
+        var result = collectionService.listProductsStorefront(c.handle(), 0, 20, null, null);
         assertThat(result.getContent()).hasSize(1);
         var item = result.getContent().get(0);
         assertThat(item.featuredImageUrl()).isNotNull();
