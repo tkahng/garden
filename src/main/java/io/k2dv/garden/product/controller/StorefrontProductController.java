@@ -41,6 +41,7 @@ public class StorefrontProductController {
             @RequestParam(required = false) String vendor,
             @RequestParam(required = false) String productType,
             @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) UUID companyId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int clampedSize = Math.min(size, 100);
@@ -50,7 +51,7 @@ public class StorefrontProductController {
             case "oldest" -> Sort.by("createdAt").ascending();
             default -> Sort.by("createdAt").descending();
         };
-        var filter = new StorefrontProductFilterRequest(titleContains, vendor, productType);
+        var filter = new StorefrontProductFilterRequest(titleContains, vendor, productType, companyId);
         return ResponseEntity.ok(ApiResponse.of(
                 productService.listStorefront(filter, PageRequest.of(page, clampedSize, sort))));
     }

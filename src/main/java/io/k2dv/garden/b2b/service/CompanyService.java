@@ -5,8 +5,11 @@ import java.math.BigDecimal;
 import io.k2dv.garden.b2b.model.Company;
 import io.k2dv.garden.b2b.model.CompanyMembership;
 import io.k2dv.garden.b2b.model.CompanyRole;
+import io.k2dv.garden.b2b.model.CompanyProductCatalog;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
+import io.k2dv.garden.b2b.repository.CompanyProductCatalogRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
+import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
@@ -28,6 +31,8 @@ public class CompanyService {
     private final CompanyRepository companyRepo;
     private final CompanyMembershipRepository membershipRepo;
     private final UserRepository userRepo;
+    private final CompanyProductCatalogRepository catalogRepo;
+    private final ProductRepository productRepo;
 
     @Transactional
     public CompanyResponse create(UUID requestorId, CreateCompanyRequest req) {
@@ -257,6 +262,38 @@ public class CompanyService {
             c.isTaxExempt(), c.getSalesRepUserId(), c.getMetadata(),
             c.getCreatedAt(), c.getUpdatedAt()
         );
+    }
+
+    // ─── Catalog ──────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public List<UUID> getCatalogProductIds(UUID companyId) {
+        assertCompanyExists(companyId);
+        return catalogRepo.findProductIdsByCompanyId(companyId);
+    }
+
+    @Transactional
+    public void addToCatalog(UUID companyId, UUID productId) {
+        assertCompanyExists(companyId);
+        productRepo.findByIdAndDeletedAtIsNull(productId)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        if (!catalogRepo.existsByCompanyIdAndProductId(companyId, productId)) {
+            CompanyProductCatalog entry = new CompanyProductCatalog();
+            entry.setCompanyId(companyId);
+            entry.setProductId(productId);
+            catalogRepo.save(entry);
+        }
+    }
+
+    @Transactional
+    public void removeFromCatalog(UUID companyId, UUID productId) {
+        catalogRepo.deleteByCompanyIdAndProductId(companyId, productId);
+    }
+
+    private void assertCompanyExists(UUID companyId) {
+        if (!companyRepo.existsById(companyId)) {
+            throw new NotFoundException("COMPANY_NOT_FOUND", "Company not found");
+        }
     }
 
     private CompanyMemberResponse toMemberResponse(CompanyMembership m, User user) {
