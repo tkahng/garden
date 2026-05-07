@@ -28,12 +28,19 @@ public class StorefrontProductController {
             @RequestParam(required = false) String titleContains,
             @RequestParam(required = false) String vendor,
             @RequestParam(required = false) String productType,
+            @RequestParam(required = false) String sortBy,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         int clampedSize = Math.min(size, 100);
+        Sort sort = switch (sortBy == null ? "newest" : sortBy) {
+            case "title_asc" -> Sort.by("title").ascending();
+            case "title_desc" -> Sort.by("title").descending();
+            case "oldest" -> Sort.by("createdAt").ascending();
+            default -> Sort.by("createdAt").descending();
+        };
         var filter = new StorefrontProductFilterRequest(titleContains, vendor, productType);
         return ResponseEntity.ok(ApiResponse.of(
-                productService.listStorefront(filter, PageRequest.of(page, clampedSize, Sort.by("createdAt").descending()))));
+                productService.listStorefront(filter, PageRequest.of(page, clampedSize, sort))));
     }
 
     @GetMapping("/{handle}")

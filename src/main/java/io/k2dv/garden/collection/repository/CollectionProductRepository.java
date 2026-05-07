@@ -39,7 +39,14 @@ public interface CollectionProductRepository extends JpaRepository<CollectionPro
            "AND EXISTS (" +
            "  SELECT p FROM io.k2dv.garden.product.model.Product p " +
            "  WHERE p.id = cp.productId AND p.status = io.k2dv.garden.product.model.ProductStatus.ACTIVE AND p.deletedAt IS NULL" +
-           ") " +
-           "ORDER BY cp.position ASC, cp.createdAt ASC")
+           ") ")
     Page<CollectionProduct> findActiveProductsByCollectionId(@Param("collectionId") UUID collectionId, Pageable pageable);
+
+    @Query("SELECT cp.productId FROM CollectionProduct cp " +
+           "WHERE cp.collectionId = :collectionId " +
+           "AND EXISTS (" +
+           "  SELECT p FROM io.k2dv.garden.product.model.Product p " +
+           "  WHERE p.id = cp.productId AND p.status = io.k2dv.garden.product.model.ProductStatus.ACTIVE AND p.deletedAt IS NULL" +
+           ") ")
+    List<UUID> findActiveProductIdsByCollectionId(@Param("collectionId") UUID collectionId);
 }

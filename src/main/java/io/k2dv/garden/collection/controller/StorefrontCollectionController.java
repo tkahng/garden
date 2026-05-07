@@ -45,9 +45,11 @@ public class StorefrontCollectionController {
     public ResponseEntity<ApiResponse<PagedResult<CollectionProductResponse>>> listProducts(
             @PathVariable String handle,
             @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) String sortBy,
+            @RequestParam(required = false) String sortDir) {
         int clampedSize = Math.min(size, 100);
         return ResponseEntity.ok(ApiResponse.of(
-                collectionService.listProductsStorefront(handle, PageRequest.of(page, clampedSize))));
+                collectionService.listProductsStorefront(handle, page, clampedSize, sortBy, sortDir)));
     }
 }

@@ -39,12 +39,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 
 @Service
 @RequiredArgsConstructor
@@ -256,15 +261,61 @@ public class CollectionService {
     }
 
     @Transactional(readOnly = true)
-    public PagedResult<CollectionProductResponse> listProductsStorefront(String handle, Pageable pageable) {
+    public PagedResult<CollectionProductResponse> listProductsStorefront(String handle, int page, int size, String sortBy, String sortDir) {
         Collection c = collectionRepo.findByHandleAndDeletedAtIsNullAndStatus(handle, CollectionStatus.ACTIVE)
                 .orElseThrow(() -> new NotFoundException("COLLECTION_NOT_FOUND", "Collection not found"));
-        Page<CollectionProduct> page = cpRepo.findActiveProductsByCollectionId(c.getId(), pageable);
-        List<UUID> productIds = page.getContent().stream().map(CollectionProduct::getProductId).toList();
+
+        if ("title".equals(sortBy)) {
+            return listProductsStorefrontSortedByTitle(c, page, size, sortDir);
+        }
+
+        Sort sort = switch (sortBy == null ? "featured" : sortBy) {
+            case "date_asc" -> Sort.by(Sort.Order.asc("createdAt"));
+            case "date_desc" -> Sort.by(Sort.Order.desc("createdAt"));
+            default -> Sort.by(Sort.Order.asc("position"), Sort.Order.asc("createdAt"));
+        };
+        Pageable pageable = PageRequest.of(page, size, sort);
+        Page<CollectionProduct> cpPage = cpRepo.findActiveProductsByCollectionId(c.getId(), pageable);
+        return assembleCollectionProductPage(cpPage, pageable);
+    }
+
+    private PagedResult<CollectionProductResponse> listProductsStorefrontSortedByTitle(Collection c, int page, int size, String sortDir) {
+        List<UUID> allIds = cpRepo.findActiveProductIdsByCollectionId(c.getId());
+        Map<UUID, Product> productMap = productRepo.findAllById(allIds).stream()
+                .collect(Collectors.toMap(Product::getId, p -> p));
+
+        Comparator<UUID> cmp = Comparator.comparing(
+                id -> productMap.getOrDefault(id, new Product()).getTitle(),
+                String.CASE_INSENSITIVE_ORDER);
+        if ("desc".equalsIgnoreCase(sortDir)) cmp = cmp.reversed();
+
+        List<UUID> sorted = allIds.stream().filter(productMap::containsKey).sorted(cmp).toList();
+        int total = sorted.size();
+        int from = page * size;
+        int to = Math.min(from + size, total);
+        List<UUID> pageIds = from < total ? sorted.subList(from, to) : List.of();
+
+        Map<UUID, String> imageUrls = resolveProductFeaturedImageUrls(
+                pageIds.stream().map(productMap::get).filter(Objects::nonNull).toList());
+
+        List<CollectionProductResponse> content = new ArrayList<>();
+        for (UUID id : pageIds) {
+            Product p = productMap.get(id);
+            if (p == null) continue;
+            String imgUrl = p.getFeaturedImageId() != null ? imageUrls.get(p.getFeaturedImageId()) : null;
+            content.add(new CollectionProductResponse(null, p.getId(), p.getTitle(), p.getHandle(), 0, imgUrl));
+        }
+        Pageable pageable = PageRequest.of(page, size);
+        Page<CollectionProductResponse> resultPage = new PageImpl<>(content, pageable, total);
+        return PagedResult.of(resultPage, r -> r);
+    }
+
+    private PagedResult<CollectionProductResponse> assembleCollectionProductPage(Page<CollectionProduct> cpPage, Pageable pageable) {
+        List<UUID> productIds = cpPage.getContent().stream().map(CollectionProduct::getProductId).toList();
         Map<UUID, Product> productMap = productRepo.findAllById(productIds).stream()
-                .collect(java.util.stream.Collectors.toMap(Product::getId, p -> p));
+                .collect(Collectors.toMap(Product::getId, p -> p));
         Map<UUID, String> productImageUrls = resolveProductFeaturedImageUrls(productMap.values().stream().toList());
-        return PagedResult.of(page, cp -> {
+        return PagedResult.of(cpPage, cp -> {
             Product p = productMap.get(cp.getProductId());
             if (p == null) throw new NotFoundException("PRODUCT_NOT_FOUND", "Product not found");
             String imgUrl = p.getFeaturedImageId() != null ? productImageUrls.get(p.getFeaturedImageId()) : null;
