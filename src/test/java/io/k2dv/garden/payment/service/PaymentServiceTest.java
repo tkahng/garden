@@ -98,6 +98,12 @@ class PaymentServiceTest {
     return cart;
   }
 
+  private Cart stubCart(UUID userId, UUID companyId) {
+    Cart cart = stubCart(userId);
+    cart.setCompanyId(companyId);
+    return cart;
+  }
+
   private CartItem stubCartItem(UUID variantId) {
     CartItem item = new CartItem();
     item.setVariantId(variantId);
@@ -426,6 +432,31 @@ class PaymentServiceTest {
     // no collapsed single "Order Total" item
     assertThat(lineItems).noneMatch(li ->
         li.getPriceData().getProductData().getName().contains("Order Total"));
+  }
+
+  @Test
+  void initiateCheckout_netTerms_skipsStripeCreatesInvoiceAndNotifies() {
+    UUID userId = UUID.randomUUID();
+    UUID companyId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    Cart cart = stubCart(userId, companyId);
+    CartItem cartItem = stubCartItem(variantId);
+    Order order = stubOrder(UUID.randomUUID(), userId);
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(creditAccountService.getPaymentTermsDays(companyId)).thenReturn(30);
+
+    CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
+
+    assertThat(response.checkoutUrl()).isNull();
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    verify(invoiceService).createManualInvoice(order.getId(), companyId, 30);
+    verify(orderService).notifyNetTermsPlaced(order);
+    verify(cartService).markCheckedOut(cart.getId());
+    verifyNoInteractions(stripeGateway);
   }
 
   @Test
