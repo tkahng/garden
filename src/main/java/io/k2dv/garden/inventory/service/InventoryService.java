@@ -170,7 +170,8 @@ public class InventoryService {
             .toList();
         return new AdminVariantResponse(v.getId(), v.getTitle(), v.getSku(), v.getBarcode(),
             v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
-            labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(), v.getDeletedAt());
+            labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(),
+            v.getMinimumOrderQty(), v.getDeletedAt());
     }
 
     @Transactional

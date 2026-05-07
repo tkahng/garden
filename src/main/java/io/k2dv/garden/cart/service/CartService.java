@@ -129,6 +129,11 @@ public class CartService {
                 return i;
             });
         int newQty = item.getQuantity() + req.quantity();
+        int moq = variant.getMinimumOrderQty();
+        if (newQty < moq) {
+            throw new ValidationException("BELOW_MIN_ORDER_QTY",
+                "Minimum order quantity for this item is " + moq);
+        }
         item.setQuantity(newQty);
         item.setUnitPrice(resolveItemPrice(cart, variant, newQty));
         cartItemRepo.save(item);
@@ -141,6 +146,13 @@ public class CartService {
         Cart cart = findActiveCartOrThrow(userId);
         CartItem item = cartItemRepo.findByIdAndCartId(itemId, cart.getId())
             .orElseThrow(() -> new NotFoundException("CART_ITEM_NOT_FOUND", "Cart item not found"));
+        ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(item.getVariantId())
+            .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
+        int moq = variant.getMinimumOrderQty();
+        if (req.quantity() < moq) {
+            throw new ValidationException("BELOW_MIN_ORDER_QTY",
+                "Minimum order quantity for this item is " + moq);
+        }
         item.setQuantity(req.quantity());
         // Re-price on qty change — volume tiers may apply
         if (cart.getCompanyId() != null) {

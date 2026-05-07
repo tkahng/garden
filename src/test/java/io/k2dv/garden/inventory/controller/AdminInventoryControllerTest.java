@@ -102,7 +102,7 @@ class AdminInventoryControllerTest {
     void updateFulfillment_validRequest_returns200() throws Exception {
         var variantResp = new AdminVariantResponse(UUID.randomUUID(), "Default Title", null, null,
             BigDecimal.TEN, null, null, null, List.of(),
-            FulfillmentType.MADE_TO_ORDER, InventoryPolicy.CONTINUE, 14, null);
+            FulfillmentType.MADE_TO_ORDER, InventoryPolicy.CONTINUE, 14, 1, null);
         when(inventoryService.updateVariantFulfillment(any(), any())).thenReturn(variantResp);
 
         mvc.perform(patch("/api/v1/admin/inventory/variants/{variantId}/fulfillment", UUID.randomUUID())
