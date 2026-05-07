@@ -361,7 +361,8 @@ public class CartService {
                         resolvedImageUrls.get(product.getId()));
                 }
             }
-            return new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
+            int moq = variant != null ? variant.getMinimumOrderQty() : 1;
+            return new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo, moq);
         }).toList();
 
         return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());

@@ -8,5 +8,6 @@ public record CartItemResponse(
     UUID variantId,
     int quantity,
     BigDecimal unitPrice,
-    CartItemProductInfo product
+    CartItemProductInfo product,
+    int minimumOrderQty
 ) {}
