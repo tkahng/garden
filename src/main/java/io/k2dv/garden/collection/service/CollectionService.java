@@ -261,12 +261,12 @@ public class CollectionService {
     }
 
     @Transactional(readOnly = true)
-    public PagedResult<CollectionProductResponse> listProductsStorefront(String handle, int page, int size, String sortBy, String sortDir) {
+    public PagedResult<CollectionProductResponse> listProductsStorefront(String handle, int page, int size, String sortBy, String sortDir, UUID companyId) {
         Collection c = collectionRepo.findByHandleAndDeletedAtIsNullAndStatus(handle, CollectionStatus.ACTIVE)
                 .orElseThrow(() -> new NotFoundException("COLLECTION_NOT_FOUND", "Collection not found"));
 
         if ("title".equals(sortBy)) {
-            return listProductsStorefrontSortedByTitle(c, page, size, sortDir);
+            return listProductsStorefrontSortedByTitle(c, page, size, sortDir, companyId);
         }
 
         Sort sort = switch (sortBy == null ? "featured" : sortBy) {
@@ -275,12 +275,16 @@ public class CollectionService {
             default -> Sort.by(Sort.Order.asc("position"), Sort.Order.asc("createdAt"));
         };
         Pageable pageable = PageRequest.of(page, size, sort);
-        Page<CollectionProduct> cpPage = cpRepo.findActiveProductsByCollectionId(c.getId(), pageable);
+        Page<CollectionProduct> cpPage = companyId != null
+                ? cpRepo.findActiveProductsByCollectionIdForCompany(c.getId(), companyId, pageable)
+                : cpRepo.findActivePublicProductsByCollectionId(c.getId(), pageable);
         return assembleCollectionProductPage(cpPage, pageable);
     }
 
-    private PagedResult<CollectionProductResponse> listProductsStorefrontSortedByTitle(Collection c, int page, int size, String sortDir) {
-        List<UUID> allIds = cpRepo.findActiveProductIdsByCollectionId(c.getId());
+    private PagedResult<CollectionProductResponse> listProductsStorefrontSortedByTitle(Collection c, int page, int size, String sortDir, UUID companyId) {
+        List<UUID> allIds = companyId != null
+                ? cpRepo.findActiveProductIdsByCollectionIdForCompany(c.getId(), companyId)
+                : cpRepo.findActivePublicProductIdsByCollectionId(c.getId());
         Map<UUID, Product> productMap = productRepo.findAllById(allIds).stream()
                 .collect(Collectors.toMap(Product::getId, p -> p));
 

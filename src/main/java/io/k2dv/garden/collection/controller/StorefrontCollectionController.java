@@ -18,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/api/v1/collections")
 @RequiredArgsConstructor
@@ -47,9 +49,10 @@ public class StorefrontCollectionController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(required = false) String sortBy,
-            @RequestParam(required = false) String sortDir) {
+            @RequestParam(required = false) String sortDir,
+            @RequestParam(required = false) UUID companyId) {
         int clampedSize = Math.min(size, 100);
         return ResponseEntity.ok(ApiResponse.of(
-                collectionService.listProductsStorefront(handle, page, clampedSize, sortBy, sortDir)));
+                collectionService.listProductsStorefront(handle, page, clampedSize, sortBy, sortDir, companyId)));
     }
 }
