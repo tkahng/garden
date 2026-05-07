@@ -12,6 +12,8 @@ public interface CompanyProductCatalogRepository extends JpaRepository<CompanyPr
 
     List<CompanyProductCatalog> findByCompanyId(UUID companyId);
 
+    boolean existsByProductId(UUID productId);
+
     boolean existsByCompanyIdAndProductId(UUID companyId, UUID productId);
 
     void deleteByCompanyIdAndProductId(UUID companyId, UUID productId);

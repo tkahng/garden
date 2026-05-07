@@ -1,5 +1,6 @@
 package io.k2dv.garden.product.service;
 
+import io.k2dv.garden.b2b.repository.CompanyProductCatalogRepository;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.collection.service.CollectionMembershipService;
@@ -42,6 +43,7 @@ public class ProductService {
     private final StorageService storageService;
     private final CollectionMembershipService collectionMembershipService;
     private final ProductReviewService reviewService;
+    private final CompanyProductCatalogRepository catalogRepo;
 
     @Transactional
     public AdminProductResponse create(CreateProductRequest req) {
@@ -235,10 +237,15 @@ public class ProductService {
         );
     }
 
-    public ProductDetailResponse getByHandle(String handle) {
+    public ProductDetailResponse getByHandle(String handle, UUID companyId) {
         Product p = productRepo.findByHandle(handle)
             .filter(prod -> prod.getStatus() == ProductStatus.ACTIVE && prod.getDeletedAt() == null)
             .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        if (catalogRepo.existsByProductId(p.getId())) {
+            if (companyId == null || !catalogRepo.existsByCompanyIdAndProductId(companyId, p.getId())) {
+                throw new NotFoundException("PRODUCT_NOT_FOUND", "Product not found");
+            }
+        }
         return toDetailResponse(p);
     }
 

@@ -21,6 +21,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -49,7 +50,7 @@ class StorefrontProductControllerTest {
     void getByHandle_activeProduct_returns200() throws Exception {
         var detail = new ProductDetailResponse(UUID.randomUUID(), "Shirt", null, "shirt",
             null, null, List.of(), List.of(), List.of(), null, null, null);
-        when(productService.getByHandle("shirt")).thenReturn(detail);
+        when(productService.getByHandle(any(), any())).thenReturn(detail);
 
         mvc.perform(get("/api/v1/products/shirt"))
             .andExpect(status().isOk())
@@ -58,10 +59,33 @@ class StorefrontProductControllerTest {
 
     @Test
     void getByHandle_draftProduct_returns404() throws Exception {
-        when(productService.getByHandle(any()))
+        when(productService.getByHandle(any(), any()))
             .thenThrow(new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
 
         mvc.perform(get("/api/v1/products/draft-product"))
             .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getByHandle_catalogRestricted_noCompanyId_returns404() throws Exception {
+        when(productService.getByHandle(any(), isNull()))
+            .thenThrow(new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+
+        mvc.perform(get("/api/v1/products/restricted-product"))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void listProducts_unauthenticatedWithCompanyId_companyIdDropped() throws Exception {
+        var meta = PageMeta.builder().page(0).pageSize(20).total(0L).build();
+        // In WebMvc tests there is no JWT, so companyId is silently dropped to null
+        when(productService.listStorefront(any(), any())).thenReturn(new PagedResult<>(List.of(), meta));
+
+        mvc.perform(get("/api/v1/products").param("companyId", UUID.randomUUID().toString()))
+            .andExpect(status().isOk());
+
+        // Verify companyService.requireMemberAccess was never called (no JWT in test context)
+        org.mockito.Mockito.verify(companyService, org.mockito.Mockito.never())
+            .requireMemberAccess(any(), any());
     }
 }

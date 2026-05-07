@@ -19,6 +19,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -51,14 +53,16 @@ public class StorefrontProductController {
             case "oldest" -> Sort.by("createdAt").ascending();
             default -> Sort.by("createdAt").descending();
         };
-        var filter = new StorefrontProductFilterRequest(titleContains, vendor, productType, companyId);
+        var filter = new StorefrontProductFilterRequest(titleContains, vendor, productType, resolveAndVerifyCompanyId(companyId));
         return ResponseEntity.ok(ApiResponse.of(
                 productService.listStorefront(filter, PageRequest.of(page, clampedSize, sort))));
     }
 
     @GetMapping("/{handle}")
-    public ResponseEntity<ApiResponse<ProductDetailResponse>> getByHandle(@PathVariable String handle) {
-        return ResponseEntity.ok(ApiResponse.of(productService.getByHandle(handle)));
+    public ResponseEntity<ApiResponse<ProductDetailResponse>> getByHandle(
+            @PathVariable String handle,
+            @RequestParam(required = false) UUID companyId) {
+        return ResponseEntity.ok(ApiResponse.of(productService.getByHandle(handle, resolveAndVerifyCompanyId(companyId))));
     }
 
     @GetMapping("/variants/lookup")
@@ -75,5 +79,21 @@ public class StorefrontProductController {
             @CurrentUser User user) {
         companyService.requireMemberAccess(companyId, user.getId());
         return ResponseEntity.ok(ApiResponse.of(priceListService.getProductTiers(companyId, handle)));
+    }
+
+    private UUID resolveAndVerifyCompanyId(UUID companyId) {
+        if (companyId == null) return null;
+        UUID userId = resolveCurrentUserId();
+        if (userId == null) return null;
+        companyService.requireMemberAccess(companyId, userId);
+        return companyId;
+    }
+
+    private UUID resolveCurrentUserId() {
+        var auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth instanceof JwtAuthenticationToken jwt) {
+            return UUID.fromString(jwt.getToken().getSubject());
+        }
+        return null;
     }
 }
