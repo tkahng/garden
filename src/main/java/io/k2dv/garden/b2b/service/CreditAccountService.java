@@ -77,6 +77,13 @@ public class CreditAccountService {
      * No-ops if the company has no credit account (pay-at-checkout flow).
      */
     @Transactional(readOnly = true)
+    public int getPaymentTermsDays(UUID companyId) {
+        return creditAccountRepo.findByCompanyId(companyId)
+            .map(CreditAccount::getPaymentTermsDays)
+            .orElse(0);
+    }
+
+    @Transactional(readOnly = true)
     public void assertCreditAvailable(UUID companyId, BigDecimal orderTotal) {
         creditAccountRepo.findByCompanyId(companyId).ifPresent(account -> {
             BigDecimal outstanding = invoiceRepo.computeOutstandingBalance(companyId);

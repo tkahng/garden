@@ -132,6 +132,16 @@ public class PaymentService {
       return new CheckoutResponse(null, order.getId());
     }
 
+    // Net terms: skip Stripe, auto-create invoice
+    if (companyId != null) {
+      int termsDays = creditAccountService.getPaymentTermsDays(companyId);
+      if (termsDays > 0) {
+        invoiceService.createManualInvoice(order.getId(), companyId, termsDays);
+        cartService.markCheckedOut(cart.getId());
+        return new CheckoutResponse(null, order.getId());
+      }
+    }
+
     try {
       SessionCreateParams.Builder builder = buildSessionBase(order.getCurrency(), order.getId(), taxExempt)
           .setCustomerEmail(userRepo.findById(userId).map(u -> u.getEmail()).orElse(null));
