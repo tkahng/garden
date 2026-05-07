@@ -55,7 +55,7 @@ class AdminInvoiceControllerTest {
         PagedResult<InvoiceResponse> result = new PagedResult<>(
             List.of(stubInvoice(UUID.randomUUID(), companyId, InvoiceStatus.ISSUED)),
             PageMeta.builder().page(0).pageSize(20).total(1L).build());
-        when(invoiceService.listAll(isNull(), isNull(), any())).thenReturn(result);
+        when(invoiceService.listAll(isNull(), isNull(), isNull(), any())).thenReturn(result);
 
         mvc.perform(get("/api/v1/admin/invoices"))
             .andExpect(status().isOk())
@@ -68,7 +68,7 @@ class AdminInvoiceControllerTest {
         PagedResult<InvoiceResponse> result = new PagedResult<>(
             List.of(stubInvoice(UUID.randomUUID(), companyId, InvoiceStatus.OVERDUE)),
             PageMeta.builder().page(0).pageSize(20).total(1L).build());
-        when(invoiceService.listAll(eq(companyId), eq(InvoiceStatus.OVERDUE), any())).thenReturn(result);
+        when(invoiceService.listAll(eq(companyId), eq(InvoiceStatus.OVERDUE), isNull(), any())).thenReturn(result);
 
         mvc.perform(get("/api/v1/admin/invoices")
                 .param("companyId", companyId.toString())
