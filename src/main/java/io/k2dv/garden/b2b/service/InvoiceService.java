@@ -11,6 +11,7 @@ import io.k2dv.garden.b2b.repository.InvoiceRepository;
 import io.k2dv.garden.order.model.Order;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.repository.OrderRepository;
+import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
@@ -40,6 +41,7 @@ public class InvoiceService {
     private final InvoicePaymentRepository paymentRepo;
     private final OrderRepository orderRepo;
     private final OutboundWebhookService outboundWebhookService;
+    private final OrderService orderService;
 
     @Transactional
     public InvoiceResponse createManualInvoice(UUID orderId, UUID companyId, int paymentTermsDays) {
@@ -110,10 +112,7 @@ public class InvoiceService {
         invoiceRepo.save(invoice);
 
         if (fullyPaid) {
-            orderRepo.findById(invoice.getOrderId()).ifPresent(order -> {
-                order.setStatus(OrderStatus.PAID);
-                orderRepo.save(order);
-            });
+            orderService.markPaidFromInvoice(invoice.getOrderId());
             outboundWebhookService.scheduleDelivery(WebhookEventType.INVOICE_PAID,
                 Map.of("invoiceId", invoiceId.toString()));
         }

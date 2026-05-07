@@ -137,6 +137,7 @@ public class PaymentService {
       int termsDays = creditAccountService.getPaymentTermsDays(companyId);
       if (termsDays > 0) {
         invoiceService.createManualInvoice(order.getId(), companyId, termsDays);
+        orderService.notifyNetTermsPlaced(order);
         cartService.markCheckedOut(cart.getId());
         return new CheckoutResponse(null, order.getId());
       }

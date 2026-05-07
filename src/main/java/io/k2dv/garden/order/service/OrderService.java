@@ -229,6 +229,27 @@ public class OrderService {
     }
 
     @Transactional
+    public void notifyNetTermsPlaced(Order order) {
+        orderEventService.emit(order.getId(), OrderEventType.INVOICE_ISSUED,
+            "Invoice issued on net terms", null, "system", null);
+        sendOrderConfirmationEmail(order);
+        if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
+    }
+
+    @Transactional
+    public void markPaidFromInvoice(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setStatus(OrderStatus.PAID);
+        orderRepo.save(order);
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
+            .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
+        orderEventService.emit(orderId, OrderEventType.PAYMENT_CONFIRMED,
+            "Payment confirmed via invoice", null, "system", null);
+    }
+
+    @Transactional
     public void markPaidDirectly(UUID orderId) {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
