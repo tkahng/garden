@@ -117,6 +117,7 @@ public class PaymentService {
           .reduce(BigDecimal.ZERO, BigDecimal::add);
       BigDecimal orderTotal = shippingCost != null ? itemsTotal.add(shippingCost) : itemsTotal;
       creditAccountService.assertCreditAvailable(companyId, orderTotal);
+      companyService.assertSpendingLimit(companyId, userId, orderTotal);
     }
 
     String shippingAddressJson = serializeAddress(defaultAddress);

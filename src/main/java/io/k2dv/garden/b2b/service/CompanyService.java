@@ -10,6 +10,7 @@ import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -186,10 +187,19 @@ public class CompanyService {
     }
 
     @Transactional(readOnly = true)
-    public java.math.BigDecimal getSpendingLimit(UUID companyId, UUID userId) {
+    public BigDecimal getSpendingLimit(UUID companyId, UUID userId) {
         return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
             .map(CompanyMembership::getSpendingLimit)
             .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public void assertSpendingLimit(UUID companyId, UUID userId, BigDecimal orderTotal) {
+        BigDecimal limit = getSpendingLimit(companyId, userId);
+        if (limit != null && orderTotal.compareTo(limit) > 0) {
+            throw new ValidationException("SPENDING_LIMIT_EXCEEDED",
+                "Order total exceeds your spending limit of " + limit);
+        }
     }
 
     @Transactional(readOnly = true)
