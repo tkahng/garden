@@ -82,13 +82,15 @@ class PaymentServiceTest {
   io.k2dv.garden.b2b.service.CompanyService companyService;
   @Mock
   io.k2dv.garden.b2b.service.CreditAccountService creditAccountService;
+  @Mock
+  io.k2dv.garden.payment.repository.ProcessedStripeEventRepository processedStripeEventRepo;
 
   PaymentService paymentService;
 
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService, companyService, creditAccountService);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService, companyService, creditAccountService, processedStripeEventRepo);
   }
 
   private Cart stubCart(UUID userId) {
@@ -496,5 +498,18 @@ class PaymentServiceTest {
         .isInstanceOf(ValidationException.class)
         .extracting("errorCode")
         .isEqualTo("INVALID_WEBHOOK_SIGNATURE");
+  }
+
+  @Test
+  void handleWebhook_duplicateEventId_skipsProcessing() throws SignatureVerificationException {
+    Event event = mock(Event.class);
+    when(event.getId()).thenReturn("evt_duplicate");
+    when(stripeGateway.constructEvent(any(), any(), any())).thenReturn(event);
+    when(processedStripeEventRepo.saveAndFlush(any()))
+        .thenThrow(new org.springframework.dao.DataIntegrityViolationException("duplicate"));
+
+    paymentService.handleWebhook("payload", "sig", "secret");
+
+    verifyNoInteractions(orderService);
   }
 }

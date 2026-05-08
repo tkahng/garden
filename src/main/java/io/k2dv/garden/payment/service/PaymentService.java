@@ -44,9 +44,12 @@ import io.k2dv.garden.b2b.dto.RecordPaymentRequest;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.b2b.service.InvoiceService;
+import io.k2dv.garden.payment.model.ProcessedStripeEvent;
+import io.k2dv.garden.payment.repository.ProcessedStripeEventRepository;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -77,6 +80,7 @@ public class PaymentService {
   private final io.k2dv.garden.shipping.service.ShippingService shippingService;
   private final CompanyService companyService;
   private final CreditAccountService creditAccountService;
+  private final ProcessedStripeEventRepository processedStripeEventRepo;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -353,6 +357,16 @@ public class PaymentService {
       event = stripeGateway.constructEvent(payload, sigHeader, webhookSecret);
     } catch (SignatureVerificationException e) {
       throw new ValidationException("INVALID_WEBHOOK_SIGNATURE", "Invalid Stripe webhook signature");
+    }
+
+    // Idempotency guard — Stripe retries events; ignore any we have already processed.
+    try {
+      var marker = new ProcessedStripeEvent();
+      marker.setEventId(event.getId());
+      processedStripeEventRepo.saveAndFlush(marker);
+    } catch (DataIntegrityViolationException dup) {
+      log.info("Stripe event {} already processed, skipping", event.getId());
+      return;
     }
 
     switch (event.getType()) {
