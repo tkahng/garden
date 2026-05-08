@@ -11,6 +11,7 @@ import io.k2dv.garden.webhook.repository.WebhookDeliveryRepository;
 import io.k2dv.garden.webhook.repository.WebhookEndpointRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +49,7 @@ public class WebhookDispatchService {
         .build();
 
     @Scheduled(fixedDelay = 30_000)
+    @SchedulerLock(name = "webhookDispatch", lockAtMostFor = "PT25S", lockAtLeastFor = "PT5S")
     @Transactional
     public void dispatchPending() {
         List<WebhookDelivery> deliveries = deliveryRepo.findDispatchable(Instant.now());

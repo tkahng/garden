@@ -5,6 +5,7 @@ import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +21,7 @@ public class ExpiryScheduler {
     private final InvoiceRepository invoiceRepo;
 
     @Scheduled(cron = "0 */15 * * * *")
+    @SchedulerLock(name = "expireQuotes", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
     @Transactional
     public void expireQuotes() {
         try {
@@ -33,6 +35,7 @@ public class ExpiryScheduler {
     }
 
     @Scheduled(cron = "0 */15 * * * *")
+    @SchedulerLock(name = "markInvoicesOverdue", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
     @Transactional
     public void markInvoicesOverdue() {
         try {

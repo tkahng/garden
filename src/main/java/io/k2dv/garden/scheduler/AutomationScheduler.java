@@ -18,6 +18,7 @@ import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +49,7 @@ public class AutomationScheduler {
     // ── Abandoned cart recovery ───────────────────────────────────────────────
 
     @Scheduled(cron = "0 0 * * * *") // top of every hour
+    @SchedulerLock(name = "abandonedCartReminders", lockAtMostFor = "PT50M", lockAtLeastFor = "PT1M")
     @Transactional
     public void sendAbandonedCartReminders() {
         Instant cutoff = Instant.now().minus(appProperties.getAutomation().getAbandonedCartDelay());
@@ -104,6 +106,7 @@ public class AutomationScheduler {
     // ── Low-stock alerts ──────────────────────────────────────────────────────
 
     @Scheduled(cron = "0 0 */4 * * *") // every 4 hours
+    @SchedulerLock(name = "checkLowStock", lockAtMostFor = "PT3H50M", lockAtLeastFor = "PT1M")
     @Transactional
     public void checkLowStock() {
         String adminEmail = appProperties.getAdminNotificationEmail();

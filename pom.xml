@@ -178,6 +178,18 @@
 		<artifactId>caffeine</artifactId>
 	</dependency>
 
+	<!-- ShedLock — distributed scheduler lock -->
+	<dependency>
+		<groupId>net.javacrumbs.shedlock</groupId>
+		<artifactId>shedlock-spring</artifactId>
+		<version>6.9.0</version>
+	</dependency>
+	<dependency>
+		<groupId>net.javacrumbs.shedlock</groupId>
+		<artifactId>shedlock-provider-jdbc-template</artifactId>
+		<version>6.9.0</version>
+	</dependency>
+
 	<!-- Stripe SDK -->
 	<dependency>
 		<groupId>com.stripe</groupId>
