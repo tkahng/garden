@@ -4,19 +4,15 @@ import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.collection.dto.response.CollectionSummaryResponse;
 import io.k2dv.garden.collection.model.Collection;
-import io.k2dv.garden.collection.model.CollectionStatus;
 import io.k2dv.garden.collection.repository.CollectionRepository;
 import io.k2dv.garden.content.model.Article;
-import io.k2dv.garden.content.model.ArticleStatus;
 import io.k2dv.garden.content.model.Blog;
-import io.k2dv.garden.content.model.PageStatus;
 import io.k2dv.garden.content.model.SitePage;
 import io.k2dv.garden.content.repository.ArticleRepository;
 import io.k2dv.garden.content.repository.BlogRepository;
 import io.k2dv.garden.content.repository.PageRepository;
 import io.k2dv.garden.product.dto.ProductSummaryResponse;
 import io.k2dv.garden.product.model.Product;
-import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
@@ -27,9 +23,7 @@ import io.k2dv.garden.search.dto.SearchResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -58,7 +52,7 @@ public class SearchService {
 
     @Transactional(readOnly = true)
     public SearchResponse search(String q, Set<String> types, Pageable pageable) {
-        String term = q.trim().toLowerCase();
+        String term = q.trim();
 
         PagedResult<ProductSummaryResponse> products = null;
         PagedResult<CollectionSummaryResponse> collections = null;
@@ -82,20 +76,7 @@ public class SearchService {
     }
 
     private PagedResult<ProductSummaryResponse> searchProducts(String term, Pageable pageable) {
-        Specification<Product> spec = (root, query, cb) -> {
-            String pattern = "%" + term + "%";
-            return cb.and(
-                cb.isNull(root.get("deletedAt")),
-                cb.equal(root.get("status"), ProductStatus.ACTIVE),
-                cb.or(
-                    cb.like(cb.lower(root.get("title")), pattern),
-                    cb.like(cb.lower(root.get("description")), pattern),
-                    cb.like(cb.lower(root.get("vendor")), pattern)
-                )
-            );
-        };
-
-        Page<Product> page = productRepo.findAll(spec, pageable);
+        Page<Product> page = productRepo.fullTextSearch(term, pageable);
         List<Product> products = page.getContent();
 
         Set<UUID> productIds = products.stream().map(Product::getId).collect(Collectors.toSet());
@@ -122,19 +103,7 @@ public class SearchService {
     }
 
     private PagedResult<CollectionSummaryResponse> searchCollections(String term, Pageable pageable) {
-        Specification<Collection> spec = (root, query, cb) -> {
-            String pattern = "%" + term + "%";
-            return cb.and(
-                cb.isNull(root.get("deletedAt")),
-                cb.equal(root.get("status"), CollectionStatus.ACTIVE),
-                cb.or(
-                    cb.like(cb.lower(root.get("title")), pattern),
-                    cb.like(cb.lower(root.get("description")), pattern)
-                )
-            );
-        };
-
-        Page<Collection> page = collectionRepo.findAll(spec, pageable);
+        Page<Collection> page = collectionRepo.fullTextSearch(term, pageable);
         Set<UUID> imageIds = page.getContent().stream()
             .map(Collection::getFeaturedImageId).filter(Objects::nonNull).collect(Collectors.toSet());
         Map<UUID, String> imageUrls = imageIds.isEmpty() ? Map.of() :
@@ -146,20 +115,7 @@ public class SearchService {
     }
 
     private PagedResult<SearchArticleResult> searchArticles(String term, Pageable pageable) {
-        Specification<Article> spec = (root, query, cb) -> {
-            String pattern = "%" + term + "%";
-            return cb.and(
-                cb.isNull(root.get("deletedAt")),
-                cb.equal(root.get("status"), ArticleStatus.PUBLISHED),
-                cb.or(
-                    cb.like(cb.lower(root.get("title")), pattern),
-                    cb.like(cb.lower(root.get("excerpt")), pattern),
-                    cb.like(cb.lower(root.get("body")), pattern)
-                )
-            );
-        };
-
-        Page<Article> page = articleRepo.findAll(spec, pageable);
+        Page<Article> page = articleRepo.fullTextSearch(term, pageable);
         Set<UUID> blogIds = page.getContent().stream().map(Article::getBlogId).collect(Collectors.toSet());
         Map<UUID, String> blogHandleById = blogIds.isEmpty() ? Map.of() :
             blogRepo.findAllById(blogIds).stream()
@@ -171,19 +127,7 @@ public class SearchService {
     }
 
     private PagedResult<SearchPageResult> searchPages(String term, Pageable pageable) {
-        Specification<SitePage> spec = (root, query, cb) -> {
-            String pattern = "%" + term + "%";
-            return cb.and(
-                cb.isNull(root.get("deletedAt")),
-                cb.equal(root.get("status"), PageStatus.PUBLISHED),
-                cb.or(
-                    cb.like(cb.lower(root.get("title")), pattern),
-                    cb.like(cb.lower(root.get("body")), pattern)
-                )
-            );
-        };
-
-        Page<SitePage> page = pageRepo.findAll(spec, pageable);
+        Page<SitePage> page = pageRepo.fullTextSearch(term, pageable);
         return PagedResult.of(page, p -> new SearchPageResult(p.getId(), p.getTitle(), p.getHandle(), p.getPublishedAt()));
     }
 
