@@ -246,7 +246,7 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_allOrderStatusesPresent() {
         var statuses = jdbc.queryForList(
             "SELECT DISTINCT status FROM checkout.orders ORDER BY status", String.class);
-        assertThat(statuses).contains("PAID", "FULFILLED", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "INVOICED");
+        assertThat(statuses).contains("PAID", "FULFILLED", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "INVOICED", "PENDING_APPROVAL");
     }
 
     @Test
@@ -373,6 +373,90 @@ class DevDataSeederIT extends AbstractIntegrationTest {
         Long count = jdbc.queryForObject(
             "SELECT COUNT(*) FROM checkout.discounts WHERE automatic = true AND is_active = true",
             Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── B2B sales rep ────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_companyHasSalesRep() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.companies c
+            JOIN auth.users u ON u.id = c.sales_rep_user_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND u.email = 'staff@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Company shipping addresses ───────────────────────────────────────────
+
+    @Test
+    void seeder_companyHasTwoShippingAddresses() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_shipping_addresses sa
+            JOIN b2b.companies c ON c.id = sa.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    @Test
+    void seeder_companyHasDefaultShippingAddress() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_shipping_addresses sa
+            JOIN b2b.companies c ON c.id = sa.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC' AND sa.is_default = true
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Company product catalog ──────────────────────────────────────────────
+
+    @Test
+    void seeder_companyProductCatalogHasSevenProducts() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_product_catalogs cpc
+            JOIN b2b.companies c ON c.id = cpc.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(7L);
+    }
+
+    // ─── Price list with adjustment rule ─────────────────────────────────────
+
+    @Test
+    void seeder_companyHasTwoPriceLists() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.price_lists pl
+            JOIN b2b.companies c ON c.id = pl.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    @Test
+    void seeder_seasonalPriceListHasAdjustmentRule() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.price_lists pl
+            JOIN b2b.companies c ON c.id = pl.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND pl.adjustment_type = 'PERCENTAGE_OFF'
+              AND pl.adjustment_value = 15.00
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── PENDING_APPROVAL order ───────────────────────────────────────────────
+
+    @Test
+    void seeder_pendingApprovalOrderExists() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.orders o
+            JOIN b2b.companies c ON c.id = o.company_id
+            WHERE o.status = 'PENDING_APPROVAL'
+              AND c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
         assertThat(count).isEqualTo(1L);
     }
 }

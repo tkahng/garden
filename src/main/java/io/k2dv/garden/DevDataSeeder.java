@@ -61,6 +61,7 @@ public class DevDataSeeder implements ApplicationRunner {
         List<UUID> gcIds = seedGiftCards();
         seedGiftCardTransactions(gcIds.get(0), gcIds.get(1));
         seedB2bCompany(customerUserId);
+        seedPendingApprovalOrder();
         seedBlog();
         seedReviews(customerUserId, productIds, variantProductIds);
         seedWishlist(customerUserId, productIds, quoteOnlyProductIds);
@@ -1180,14 +1181,17 @@ public class DevDataSeeder implements ApplicationRunner {
     private void seedB2bCompany(UUID ownerUserId) {
         // ─── Company ─────────────────────────────────────────────────────────
         UUID companyId = UUID.randomUUID();
+        UUID staffId = jdbc.queryForObject("SELECT id FROM auth.users WHERE email = 'staff@garden.local'", UUID.class);
         jdbc.update("""
             INSERT INTO b2b.companies
               (id, name, tax_id, phone,
                billing_address_line1, billing_city, billing_state,
-               billing_postal_code, billing_country)
+               billing_postal_code, billing_country,
+               sales_rep_user_id, tax_exempt)
             VALUES (?, 'Green Thumb Nurseries LLC', '12-3456789', '+1-503-555-0100',
-                    '456 Bloom Ave', 'Portland', 'OR', '97202', 'US')
-            """, companyId);
+                    '456 Bloom Ave', 'Portland', 'OR', '97202', 'US',
+                    ?, false)
+            """, companyId, staffId);
 
         // ─── Memberships ─────────────────────────────────────────────────────
         // OWNER = existing customer user (carol@garden.local)
@@ -1357,8 +1361,45 @@ public class DevDataSeeder implements ApplicationRunner {
             """, UUID.randomUUID(), companyId, ownerUserId,
                 Timestamp.from(Instant.now().plus(7, ChronoUnit.DAYS)));
 
+        // ─── Company shipping addresses ───────────────────────────────────
+        jdbc.update("""
+            INSERT INTO b2b.company_shipping_addresses
+              (id, company_id, label, first_name, last_name,
+               address1, city, province, zip, country, is_default)
+            VALUES (?, ?, 'Main Warehouse', 'Green Thumb', 'Nurseries LLC',
+                    '456 Bloom Ave', 'Portland', 'OR', '97202', 'US', true)
+            """, UUID.randomUUID(), companyId);
+        jdbc.update("""
+            INSERT INTO b2b.company_shipping_addresses
+              (id, company_id, label, first_name, last_name,
+               address1, city, province, zip, country, is_default)
+            VALUES (?, ?, 'Downtown Showroom', 'Green Thumb', 'Nurseries LLC',
+                    '789 Rose Ave', 'Portland', 'OR', '97201', 'US', false)
+            """, UUID.randomUUID(), companyId);
+
+        // ─── Company product catalog (restrict to tools + seeds) ──────────
+        for (String handle : List.of(
+                "heirloom-tomato-seeds", "lavender-starter-pack", "sunflower-mix",
+                "garden-trowel", "pruning-shears", "watering-can-2l", "gardening-gloves")) {
+            UUID pid = jdbc.queryForObject(
+                "SELECT id FROM catalog.products WHERE handle = ?", UUID.class, handle);
+            jdbc.update("""
+                INSERT INTO b2b.company_product_catalogs (id, company_id, product_id)
+                VALUES (?, ?, ?) ON CONFLICT DO NOTHING
+                """, UUID.randomUUID(), companyId, pid);
+        }
+
+        // ─── Seasonal price list with adjustment rule (15% off) ──────────
+        UUID seasonalPriceListId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO b2b.price_lists
+              (id, company_id, name, currency, priority, adjustment_type, adjustment_value)
+            VALUES (?, ?, 'Seasonal 15% Off', 'USD', 5, 'PERCENTAGE_OFF', 15.00)
+            """, seasonalPriceListId, companyId);
+
         log.info("DevDataSeeder: seeded B2B company 'Green Thumb Nurseries LLC' " +
-            "with 3 members, price list, 4 quotes, credit account, and pending invitation");
+            "with 3 members, 2 price lists, 4 quotes, credit account, shipping addresses, " +
+            "product catalog, and pending invitation");
     }
 
     /** Seeds a CUSTOMER-role user with password "password" and returns their UUID. */
@@ -1676,5 +1717,40 @@ public class DevDataSeeder implements ApplicationRunner {
             """, UUID.randomUUID(), customerUserId);
 
         log.info("DevDataSeeder: seeded saved address for Carol");
+    }
+
+    // -------------------------------------------------------------------------
+    // Pending-approval B2B order
+    // -------------------------------------------------------------------------
+
+    private void seedPendingApprovalOrder() {
+        UUID memberId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'b2b-member@garden.local'", UUID.class);
+        UUID companyId = jdbc.queryForObject(
+            "SELECT id FROM b2b.companies WHERE name = 'Green Thumb Nurseries LLC'", UUID.class);
+
+        UUID trowelVid = variantIdBySku("SKU-004");
+        UUID glovesVid = variantIdBySku("SKU-G-M-GRN");
+
+        String shippingAddr = """
+            {"firstName":"Maria","lastName":"Member","address1":"456 Bloom Ave",
+             "city":"Portland","province":"OR","zip":"97202","country":"US"}
+            """.strip();
+
+        UUID orderId = UUID.randomUUID();
+        BigDecimal total = new BigDecimal("99.87"); // 4×$9.99 + 5×$11.99 contract pricing
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, company_id, status, total_amount, currency,
+               shipping_address, created_at, updated_at)
+            VALUES (?, ?, ?, 'PENDING_APPROVAL', ?, 'usd', ?::jsonb, ?, ?)
+            """, orderId, memberId, companyId, total, shippingAddr,
+                Timestamp.from(Instant.now().minus(30, ChronoUnit.MINUTES)),
+                Timestamp.from(Instant.now().minus(30, ChronoUnit.MINUTES)));
+        insertOrderItem(orderId, trowelVid, 4, new BigDecimal("9.99"));
+        insertOrderItem(orderId, glovesVid, 5, new BigDecimal("11.99"));
+        insertOrderEvent(orderId, "ORDER_PLACED", "B2B order submitted for manager approval");
+
+        log.info("DevDataSeeder: seeded PENDING_APPROVAL B2B order for Maria Member");
     }
 }
