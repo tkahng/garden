@@ -8,6 +8,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -74,6 +75,12 @@ public class Order extends BaseEntity {
 
     @Column(name = "tax_exempt", nullable = false)
     private boolean taxExempt = false;
+
+    @Column(name = "approver_id")
+    private UUID approverId;
+
+    @Column(name = "approved_at")
+    private Instant approvedAt;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", columnDefinition = "jsonb")
