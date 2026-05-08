@@ -127,6 +127,15 @@ public class GiftCardService {
     }
 
     @Transactional(readOnly = true)
+    public List<GiftCardTransactionResponse> listTransactionsByCode(String code) {
+        GiftCard g = giftCardRepo.findByCodeIgnoreCase(code)
+            .orElseThrow(() -> new io.k2dv.garden.shared.exception.NotFoundException(
+                "GIFT_CARD_NOT_FOUND", "Gift card not found"));
+        return txRepo.findByGiftCardIdOrderByCreatedAtAsc(g.getId())
+            .stream().map(GiftCardTransactionResponse::from).toList();
+    }
+
+    @Transactional(readOnly = true)
     public GiftCardValidationResponse validate(String code) {
         GiftCard g = giftCardRepo.findByCodeIgnoreCase(code).orElse(null);
         if (g == null) return new GiftCardValidationResponse(false, code, null, null, "Gift card not found");
