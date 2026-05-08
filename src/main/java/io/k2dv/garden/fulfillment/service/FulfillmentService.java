@@ -22,6 +22,8 @@ import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
+import io.k2dv.garden.notification.model.NotificationType;
+import io.k2dv.garden.notification.service.NotificationPreferenceService;
 import io.k2dv.garden.webhook.model.WebhookEventType;
 import io.k2dv.garden.webhook.service.OutboundWebhookService;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,7 @@ public class FulfillmentService {
     private final EmailService emailService;
     private final AppProperties appProperties;
     private final OutboundWebhookService outboundWebhookService;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     @Transactional
     public FulfillmentResponse create(UUID orderId, CreateFulfillmentRequest req, User admin) {
@@ -178,6 +181,7 @@ public class FulfillmentService {
 
     private void sendDeliveredEmail(UUID orderId) {
         orderRepo.findById(orderId).ifPresent(order -> {
+            if (!notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_DELIVERED)) return;
             String to = order.getGuestEmail() != null ? order.getGuestEmail()
                 : (order.getUserId() != null
                     ? userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null)
@@ -190,6 +194,7 @@ public class FulfillmentService {
 
     private void sendShippingNotificationEmail(UUID orderId, Fulfillment f) {
         orderRepo.findById(orderId).ifPresent(order -> {
+            if (!notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_SHIPPED)) return;
             String to = order.getGuestEmail() != null ? order.getGuestEmail()
                 : (order.getUserId() != null
                     ? userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null)

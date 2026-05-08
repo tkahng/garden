@@ -2,6 +2,8 @@ package io.k2dv.garden.quote.service;
 
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.model.Company;
+import io.k2dv.garden.notification.model.NotificationType;
+import io.k2dv.garden.notification.service.NotificationPreferenceService;
 import io.k2dv.garden.b2b.model.CompanyRole;
 import io.k2dv.garden.b2b.model.CreditAccount;
 import io.k2dv.garden.b2b.model.Invoice;
@@ -64,6 +66,7 @@ public class QuoteService {
     private final PaymentService paymentService;
     private final QuotePdfService pdfService;
     private final EmailService emailService;
+    private final NotificationPreferenceService notificationPreferenceService;
     private final UserRepository userRepo;
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
@@ -414,7 +417,7 @@ public class QuoteService {
 
         // Email user with PDF attachment
         User user = userRepo.findById(quote.getUserId()).orElse(null);
-        if (user != null) {
+        if (user != null && notificationPreferenceService.isEnabled(user.getId(), NotificationType.QUOTE_UPDATE)) {
             emailService.sendQuotePdf(user.getEmail(), quoteId, pdfBytes);
         }
 

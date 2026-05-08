@@ -31,6 +31,8 @@ import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
+import io.k2dv.garden.notification.model.NotificationType;
+import io.k2dv.garden.notification.service.NotificationPreferenceService;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -75,6 +77,7 @@ public class OrderService {
     private final StripeGateway stripeGateway;
     private final OrderEventService orderEventService;
     private final CompanyService companyService;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
@@ -414,8 +417,10 @@ public class OrderService {
         orderItemRepo.findByOrderId(orderId).stream()
             .filter(item -> item.getVariantId() != null)
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
-        String to = resolveCustomerEmail(order);
-        if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
+        if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
+            String to = resolveCustomerEmail(order);
+            if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
+        }
         return toResponse(order);
     }
 
@@ -431,8 +436,10 @@ public class OrderService {
                 .filter(item -> item.getVariantId() != null)
                 .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
             orderEventService.emit(order.getId(), OrderEventType.ORDER_CANCELLED, "Bulk cancelled", null, "admin", null);
-            String to = resolveCustomerEmail(order);
-            if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+            if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
+                String to = resolveCustomerEmail(order);
+                if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+            }
         }
     }
 
@@ -499,6 +506,7 @@ public class OrderService {
     }
 
     private void sendOrderConfirmationEmail(Order order) {
+        if (!notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CONFIRMATION)) return;
         String to = resolveCustomerEmail(order);
         if (to == null) return;
         List<OrderItem> items = orderItemRepo.findByOrderId(order.getId());
