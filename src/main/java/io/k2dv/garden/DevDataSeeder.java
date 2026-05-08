@@ -58,12 +58,18 @@ public class DevDataSeeder implements ApplicationRunner {
         seedShipping();
         seedOrders(customerUserId, productIds, variantProductIds);
         seedDiscounts();
-        seedGiftCards();
+        List<UUID> gcIds = seedGiftCards();
+        seedGiftCardTransactions(gcIds.get(0), gcIds.get(1));
         seedB2bCompany(customerUserId);
+        seedPendingApprovalOrder();
         seedBlog();
         seedReviews(customerUserId, productIds, variantProductIds);
         seedWishlist(customerUserId, productIds, quoteOnlyProductIds);
         seedCustomerAddress(customerUserId);
+        seedReturnRequests(customerUserId);
+        seedNotificationPreferences(customerUserId);
+        seedOrderTemplates(customerUserId, productIds, variantProductIds);
+        seedNewsletterSubscribers();
         log.info("DevDataSeeder: done.");
     }
 
@@ -1112,14 +1118,22 @@ public class DevDataSeeder implements ApplicationRunner {
             ON CONFLICT DO NOTHING
             """, UUID.randomUUID());
 
-        log.info("DevDataSeeder: seeded discount codes (WELCOME10, SAVE5, SUMMER25)");
+        // Automatic 10% off on orders >= $75 — no code needed
+        jdbc.update("""
+            INSERT INTO checkout.discounts
+              (id, code, type, value, min_order_amount, automatic, starts_at, is_active)
+            VALUES (?, NULL, 'PERCENTAGE', 10.00, 75.00, true, clock_timestamp(), true)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID());
+
+        log.info("DevDataSeeder: seeded discount codes (WELCOME10, SAVE5, SUMMER25) + 1 automatic discount");
     }
 
     // -------------------------------------------------------------------------
     // Gift cards
     // -------------------------------------------------------------------------
 
-    private void seedGiftCards() {
+    private List<UUID> seedGiftCards() {
         UUID gcId = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.gift_cards
@@ -1128,8 +1142,8 @@ public class DevDataSeeder implements ApplicationRunner {
                     'Seeded gift card for local dev testing')
             ON CONFLICT DO NOTHING
             """, gcId);
+        gcId = jdbc.queryForObject("SELECT id FROM checkout.gift_cards WHERE LOWER(code) = 'gift-5000-seed'", UUID.class);
 
-        // A partially spent one
         UUID gc2Id = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.gift_cards
@@ -1138,8 +1152,30 @@ public class DevDataSeeder implements ApplicationRunner {
                     'Partially spent seeded gift card')
             ON CONFLICT DO NOTHING
             """, gc2Id);
+        gc2Id = jdbc.queryForObject("SELECT id FROM checkout.gift_cards WHERE LOWER(code) = 'gift-2500-seed'", UUID.class);
 
         log.info("DevDataSeeder: seeded gift cards (GIFT-5000-SEED, GIFT-2500-SEED)");
+        return List.of(gcId, gc2Id);
+    }
+
+    private void seedGiftCardTransactions(UUID gc1Id, UUID gc2Id) {
+        // GIFT-5000-SEED: initial load
+        jdbc.update("""
+            INSERT INTO checkout.gift_card_transactions (id, gift_card_id, delta, note)
+            VALUES (?, ?, 50.00, 'Initial load')
+            """, UUID.randomUUID(), gc1Id);
+
+        // GIFT-2500-SEED: initial load then partial spend
+        jdbc.update("""
+            INSERT INTO checkout.gift_card_transactions (id, gift_card_id, delta, note)
+            VALUES (?, ?, 25.00, 'Initial load')
+            """, UUID.randomUUID(), gc2Id);
+        jdbc.update("""
+            INSERT INTO checkout.gift_card_transactions (id, gift_card_id, delta, note)
+            VALUES (?, ?, -12.50, 'Applied at checkout')
+            """, UUID.randomUUID(), gc2Id);
+
+        log.info("DevDataSeeder: seeded gift card transactions");
     }
 
     // -------------------------------------------------------------------------
@@ -1149,14 +1185,17 @@ public class DevDataSeeder implements ApplicationRunner {
     private void seedB2bCompany(UUID ownerUserId) {
         // ─── Company ─────────────────────────────────────────────────────────
         UUID companyId = UUID.randomUUID();
+        UUID staffId = jdbc.queryForObject("SELECT id FROM auth.users WHERE email = 'staff@garden.local'", UUID.class);
         jdbc.update("""
             INSERT INTO b2b.companies
               (id, name, tax_id, phone,
                billing_address_line1, billing_city, billing_state,
-               billing_postal_code, billing_country)
+               billing_postal_code, billing_country,
+               sales_rep_user_id, tax_exempt)
             VALUES (?, 'Green Thumb Nurseries LLC', '12-3456789', '+1-503-555-0100',
-                    '456 Bloom Ave', 'Portland', 'OR', '97202', 'US')
-            """, companyId);
+                    '456 Bloom Ave', 'Portland', 'OR', '97202', 'US',
+                    ?, false)
+            """, companyId, staffId);
 
         // ─── Memberships ─────────────────────────────────────────────────────
         // OWNER = existing customer user (carol@garden.local)
@@ -1326,8 +1365,45 @@ public class DevDataSeeder implements ApplicationRunner {
             """, UUID.randomUUID(), companyId, ownerUserId,
                 Timestamp.from(Instant.now().plus(7, ChronoUnit.DAYS)));
 
+        // ─── Company shipping addresses ───────────────────────────────────
+        jdbc.update("""
+            INSERT INTO b2b.company_shipping_addresses
+              (id, company_id, label, first_name, last_name,
+               address1, city, province, zip, country, is_default)
+            VALUES (?, ?, 'Main Warehouse', 'Green Thumb', 'Nurseries LLC',
+                    '456 Bloom Ave', 'Portland', 'OR', '97202', 'US', true)
+            """, UUID.randomUUID(), companyId);
+        jdbc.update("""
+            INSERT INTO b2b.company_shipping_addresses
+              (id, company_id, label, first_name, last_name,
+               address1, city, province, zip, country, is_default)
+            VALUES (?, ?, 'Downtown Showroom', 'Green Thumb', 'Nurseries LLC',
+                    '789 Rose Ave', 'Portland', 'OR', '97201', 'US', false)
+            """, UUID.randomUUID(), companyId);
+
+        // ─── Company product catalog (restrict to tools + seeds) ──────────
+        for (String handle : List.of(
+                "heirloom-tomato-seeds", "lavender-starter-pack", "sunflower-mix",
+                "garden-trowel", "pruning-shears", "watering-can-2l", "gardening-gloves")) {
+            UUID pid = jdbc.queryForObject(
+                "SELECT id FROM catalog.products WHERE handle = ?", UUID.class, handle);
+            jdbc.update("""
+                INSERT INTO b2b.company_product_catalogs (id, company_id, product_id)
+                VALUES (?, ?, ?) ON CONFLICT DO NOTHING
+                """, UUID.randomUUID(), companyId, pid);
+        }
+
+        // ─── Seasonal price list with adjustment rule (15% off) ──────────
+        UUID seasonalPriceListId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO b2b.price_lists
+              (id, company_id, name, currency, priority, adjustment_type, adjustment_value)
+            VALUES (?, ?, 'Seasonal 15% Off', 'USD', 5, 'PERCENTAGE_OFF', 15.00)
+            """, seasonalPriceListId, companyId);
+
         log.info("DevDataSeeder: seeded B2B company 'Green Thumb Nurseries LLC' " +
-            "with 3 members, price list, 4 quotes, credit account, and pending invitation");
+            "with 3 members, 2 price lists, 4 quotes, credit account, shipping addresses, " +
+            "product catalog, and pending invitation");
     }
 
     /** Seeds a CUSTOMER-role user with password "password" and returns their UUID. */
@@ -1645,5 +1721,190 @@ public class DevDataSeeder implements ApplicationRunner {
             """, UUID.randomUUID(), customerUserId);
 
         log.info("DevDataSeeder: seeded saved address for Carol");
+    }
+
+    // -------------------------------------------------------------------------
+    // Return requests (RMA)
+    // -------------------------------------------------------------------------
+
+    private void seedReturnRequests(UUID customerUserId) {
+        UUID staffId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'staff@garden.local'", UUID.class);
+
+        // Return 1: PENDING — cracked watering can from fulfilled order 3
+        UUID fulfilledOrderId = jdbc.queryForObject(
+            "SELECT id FROM checkout.orders WHERE stripe_session_id = 'cs_test_seed_003'", UUID.class);
+        UUID canItemId = jdbc.queryForObject("""
+            SELECT oi.id FROM checkout.order_items oi
+            JOIN catalog.product_variants pv ON pv.id = oi.variant_id
+            WHERE oi.order_id = ? AND pv.sku = 'SKU-006'
+            """, UUID.class, fulfilledOrderId);
+
+        UUID return1Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.return_requests
+              (id, order_id, user_id, reason, notes, resolution, status)
+            VALUES (?, ?, ?, 'DAMAGED', 'Watering can arrived with a cracked spout.', 'REFUND', 'PENDING')
+            """, return1Id, fulfilledOrderId, customerUserId);
+        jdbc.update("""
+            INSERT INTO checkout.return_request_items (id, return_request_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 1)
+            """, UUID.randomUUID(), return1Id, canItemId);
+
+        // Return 2: COMPLETED — seeds not as described (refunded order 6 sunflowers)
+        UUID refundedOrderId = jdbc.queryForObject(
+            "SELECT id FROM checkout.orders WHERE stripe_session_id = 'cs_test_seed_006'", UUID.class);
+        UUID sunflowerItemId = jdbc.queryForObject("""
+            SELECT oi.id FROM checkout.order_items oi
+            JOIN catalog.product_variants pv ON pv.id = oi.variant_id
+            WHERE oi.order_id = ? AND pv.sku = 'SKU-003'
+            """, UUID.class, refundedOrderId);
+
+        UUID return2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.return_requests
+              (id, order_id, user_id, reason, notes, resolution, status,
+               staff_notes, resolved_by, resolved_at)
+            VALUES (?, ?, ?, 'NOT_AS_DESCRIBED', 'Seeds did not match the variety description.',
+                    'REFUND', 'COMPLETED',
+                    'Full refund approved and processed.', ?,
+                    clock_timestamp() - INTERVAL '5 days')
+            """, return2Id, refundedOrderId, customerUserId, staffId);
+        jdbc.update("""
+            INSERT INTO checkout.return_request_items (id, return_request_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 3)
+            """, UUID.randomUUID(), return2Id, sunflowerItemId);
+
+        log.info("DevDataSeeder: seeded 2 return requests (1 PENDING, 1 COMPLETED)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Notification preferences
+    // -------------------------------------------------------------------------
+
+    private void seedNotificationPreferences(UUID customerUserId) {
+        // Customer: all enabled except MARKETING
+        for (String type : List.of(
+                "ORDER_CONFIRMATION", "ORDER_SHIPPED", "ORDER_DELIVERED",
+                "ORDER_CANCELLED", "QUOTE_UPDATE")) {
+            jdbc.update("""
+                INSERT INTO auth.notification_preferences (id, user_id, notification_type, enabled)
+                VALUES (?, ?, ?, true)
+                ON CONFLICT ON CONSTRAINT uq_notification_pref DO NOTHING
+                """, UUID.randomUUID(), customerUserId, type);
+        }
+        jdbc.update("""
+            INSERT INTO auth.notification_preferences (id, user_id, notification_type, enabled)
+            VALUES (?, ?, 'MARKETING', false)
+            ON CONFLICT ON CONSTRAINT uq_notification_pref DO NOTHING
+            """, UUID.randomUUID(), customerUserId);
+
+        // B2B manager: order + quote notifications only
+        UUID managerId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'b2b-manager@garden.local'", UUID.class);
+        for (String type : List.of("ORDER_CONFIRMATION", "ORDER_SHIPPED", "QUOTE_UPDATE")) {
+            jdbc.update("""
+                INSERT INTO auth.notification_preferences (id, user_id, notification_type, enabled)
+                VALUES (?, ?, ?, true)
+                ON CONFLICT ON CONSTRAINT uq_notification_pref DO NOTHING
+                """, UUID.randomUUID(), managerId, type);
+        }
+
+        log.info("DevDataSeeder: seeded notification preferences for customer and B2B manager");
+    }
+
+    // -------------------------------------------------------------------------
+    // Order templates (saved carts for repeat B2B ordering)
+    // -------------------------------------------------------------------------
+
+    private void seedOrderTemplates(UUID customerUserId, List<UUID> productIds, List<UUID> variantProductIds) {
+        // Template 1: Spring Seed Restock
+        UUID template1Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.order_templates (id, user_id, name) VALUES (?, ?, 'Spring Seed Restock')
+            """, template1Id, customerUserId);
+        insertOrderTemplateItem(template1Id, firstVariantOf(productIds.get(0)), 2); // tomato x2
+        insertOrderTemplateItem(template1Id, firstVariantOf(productIds.get(1)), 1); // lavender x1
+        insertOrderTemplateItem(template1Id, firstVariantOf(productIds.get(2)), 1); // sunflower x1
+
+        // Template 2: Tool Kit Reorder
+        UUID template2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.order_templates (id, user_id, name) VALUES (?, ?, 'Tool Kit Reorder')
+            """, template2Id, customerUserId);
+        insertOrderTemplateItem(template2Id, firstVariantOf(productIds.get(3)), 1); // trowel x1
+        insertOrderTemplateItem(template2Id, firstVariantOf(productIds.get(4)), 1); // shears x1
+        insertOrderTemplateItem(template2Id, variantIdBySku("SKU-G-M-GRN"), 1);    // gloves M/Forest Green x1
+
+        log.info("DevDataSeeder: seeded 2 order templates for Carol");
+    }
+
+    private void insertOrderTemplateItem(UUID templateId, UUID variantId, int quantity) {
+        jdbc.update("""
+            INSERT INTO checkout.order_template_items (id, template_id, variant_id, quantity)
+            VALUES (?, ?, ?, ?)
+            """, UUID.randomUUID(), templateId, variantId, quantity);
+    }
+
+    // -------------------------------------------------------------------------
+    // Newsletter subscribers
+    // -------------------------------------------------------------------------
+
+    private void seedNewsletterSubscribers() {
+        for (String email : List.of(
+                "customer@garden.local",
+                "newsletter-fan@example.com",
+                "greenthumb@example.com",
+                "gardenclub@example.org")) {
+            jdbc.update("""
+                INSERT INTO marketing.newsletter_subscribers (id, email, source)
+                VALUES (?, ?, 'storefront')
+                ON CONFLICT (email) DO NOTHING
+                """, UUID.randomUUID(), email);
+        }
+        // One unsubscribed subscriber
+        jdbc.update("""
+            INSERT INTO marketing.newsletter_subscribers (id, email, source, unsubscribed_at)
+            VALUES (?, 'opted-out@example.com', 'storefront',
+                    clock_timestamp() - INTERVAL '10 days')
+            ON CONFLICT (email) DO NOTHING
+            """, UUID.randomUUID());
+
+        log.info("DevDataSeeder: seeded 5 newsletter subscribers (4 active, 1 unsubscribed)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Pending-approval B2B order
+    // -------------------------------------------------------------------------
+
+    private void seedPendingApprovalOrder() {
+        UUID memberId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'b2b-member@garden.local'", UUID.class);
+        UUID companyId = jdbc.queryForObject(
+            "SELECT id FROM b2b.companies WHERE name = 'Green Thumb Nurseries LLC'", UUID.class);
+
+        UUID trowelVid = variantIdBySku("SKU-004");
+        UUID glovesVid = variantIdBySku("SKU-G-M-GRN");
+
+        String shippingAddr = """
+            {"firstName":"Maria","lastName":"Member","address1":"456 Bloom Ave",
+             "city":"Portland","province":"OR","zip":"97202","country":"US"}
+            """.strip();
+
+        UUID orderId = UUID.randomUUID();
+        BigDecimal total = new BigDecimal("99.87"); // 4×$9.99 + 5×$11.99 contract pricing
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, company_id, status, total_amount, currency,
+               shipping_address, created_at, updated_at)
+            VALUES (?, ?, ?, 'PENDING_APPROVAL', ?, 'usd', ?::jsonb, ?, ?)
+            """, orderId, memberId, companyId, total, shippingAddr,
+                Timestamp.from(Instant.now().minus(30, ChronoUnit.MINUTES)),
+                Timestamp.from(Instant.now().minus(30, ChronoUnit.MINUTES)));
+        insertOrderItem(orderId, trowelVid, 4, new BigDecimal("9.99"));
+        insertOrderItem(orderId, glovesVid, 5, new BigDecimal("11.99"));
+        insertOrderEvent(orderId, "ORDER_PLACED", "B2B order submitted for manager approval");
+
+        log.info("DevDataSeeder: seeded PENDING_APPROVAL B2B order for Maria Member");
     }
 }

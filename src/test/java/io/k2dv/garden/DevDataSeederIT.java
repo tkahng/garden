@@ -246,7 +246,7 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_allOrderStatusesPresent() {
         var statuses = jdbc.queryForList(
             "SELECT DISTINCT status FROM checkout.orders ORDER BY status", String.class);
-        assertThat(statuses).contains("PAID", "FULFILLED", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "INVOICED");
+        assertThat(statuses).contains("PAID", "FULFILLED", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "INVOICED", "PENDING_APPROVAL");
     }
 
     @Test
@@ -345,5 +345,196 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             SELECT array_to_string(tags, ',') FROM auth.users WHERE email = 'customer@garden.local'
             """, String.class);
         assertThat(tags).contains("vip", "repeat-buyer");
+    }
+
+    // ─── Gift card transactions ───────────────────────────────────────────────
+
+    @Test
+    void seeder_giftCardTransactionsExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.gift_card_transactions", Long.class);
+        assertThat(count).isEqualTo(3L); // 1 for gc1, 2 for gc2 (load + spend)
+    }
+
+    @Test
+    void seeder_partiallySpentGiftCardHasTwoTransactions() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.gift_card_transactions gct
+            JOIN checkout.gift_cards gc ON gc.id = gct.gift_card_id
+            WHERE LOWER(gc.code) = 'gift-2500-seed'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    // ─── Automatic discount ───────────────────────────────────────────────────
+
+    @Test
+    void seeder_automaticDiscountExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.discounts WHERE automatic = true AND is_active = true",
+            Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── B2B sales rep ────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_companyHasSalesRep() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.companies c
+            JOIN auth.users u ON u.id = c.sales_rep_user_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND u.email = 'staff@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Company shipping addresses ───────────────────────────────────────────
+
+    @Test
+    void seeder_companyHasTwoShippingAddresses() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_shipping_addresses sa
+            JOIN b2b.companies c ON c.id = sa.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    @Test
+    void seeder_companyHasDefaultShippingAddress() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_shipping_addresses sa
+            JOIN b2b.companies c ON c.id = sa.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC' AND sa.is_default = true
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Company product catalog ──────────────────────────────────────────────
+
+    @Test
+    void seeder_companyProductCatalogHasSevenProducts() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_product_catalogs cpc
+            JOIN b2b.companies c ON c.id = cpc.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(7L);
+    }
+
+    // ─── Price list with adjustment rule ─────────────────────────────────────
+
+    @Test
+    void seeder_companyHasTwoPriceLists() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.price_lists pl
+            JOIN b2b.companies c ON c.id = pl.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    @Test
+    void seeder_seasonalPriceListHasAdjustmentRule() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.price_lists pl
+            JOIN b2b.companies c ON c.id = pl.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND pl.adjustment_type = 'PERCENTAGE_OFF'
+              AND pl.adjustment_value = 15.00
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── PENDING_APPROVAL order ───────────────────────────────────────────────
+
+    @Test
+    void seeder_pendingApprovalOrderExists() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.orders o
+            JOIN b2b.companies c ON c.id = o.company_id
+            WHERE o.status = 'PENDING_APPROVAL'
+              AND c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Return requests ─────────────────────────────────────────────────────
+
+    @Test
+    void seeder_returnRequestStatusesPresent() {
+        var statuses = jdbc.queryForList(
+            "SELECT DISTINCT status FROM checkout.return_requests ORDER BY status", String.class);
+        assertThat(statuses).containsExactlyInAnyOrder("PENDING", "COMPLETED");
+    }
+
+    @Test
+    void seeder_pendingReturnHasOneItem() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.return_request_items rri
+            JOIN checkout.return_requests rr ON rr.id = rri.return_request_id
+            WHERE rr.status = 'PENDING'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Notification preferences ─────────────────────────────────────────────
+
+    @Test
+    void seeder_customerNotificationPreferencesSeeded() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM auth.notification_preferences np
+            JOIN auth.users u ON u.id = np.user_id
+            WHERE u.email = 'customer@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(6L); // 5 enabled + MARKETING disabled
+    }
+
+    @Test
+    void seeder_customerMarketingPreferenceDisabled() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM auth.notification_preferences np
+            JOIN auth.users u ON u.id = np.user_id
+            WHERE u.email = 'customer@garden.local'
+              AND np.notification_type = 'MARKETING' AND np.enabled = false
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Order templates ─────────────────────────────────────────────────────
+
+    @Test
+    void seeder_orderTemplatesExist() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.order_templates ot
+            JOIN auth.users u ON u.id = ot.user_id
+            WHERE u.email = 'customer@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    @Test
+    void seeder_orderTemplateItemsExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.order_template_items", Long.class);
+        assertThat(count).isEqualTo(6L); // 3 items per template × 2 templates
+    }
+
+    // ─── Newsletter subscribers ───────────────────────────────────────────────
+
+    @Test
+    void seeder_newsletterSubscribersExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM marketing.newsletter_subscribers", Long.class);
+        assertThat(count).isEqualTo(5L);
+    }
+
+    @Test
+    void seeder_newsletterHasOneUnsubscribed() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM marketing.newsletter_subscribers WHERE unsubscribed_at IS NOT NULL",
+            Long.class);
+        assertThat(count).isEqualTo(1L);
     }
 }
