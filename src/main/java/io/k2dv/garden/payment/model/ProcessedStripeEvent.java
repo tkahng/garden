@@ -7,7 +7,7 @@ import lombok.Setter;
 import java.time.Instant;
 
 @Entity
-@Table(schema = "payment", name = "processed_stripe_events")
+@Table(schema = "checkout", name = "processed_stripe_events")
 @Getter
 @Setter
 public class ProcessedStripeEvent {

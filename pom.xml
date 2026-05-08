@@ -168,6 +168,16 @@
 		<version>8.10.1</version>
 	</dependency>
 
+	<!-- Caching -->
+	<dependency>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-cache</artifactId>
+	</dependency>
+	<dependency>
+		<groupId>com.github.ben-manes.caffeine</groupId>
+		<artifactId>caffeine</artifactId>
+	</dependency>
+
 	<!-- Stripe SDK -->
 	<dependency>
 		<groupId>com.stripe</groupId>
