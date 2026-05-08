@@ -235,4 +235,36 @@ class GiftCardServiceIT extends AbstractIntegrationTest {
             .isInstanceOf(ValidationException.class)
             .extracting("errorCode").isEqualTo("INSUFFICIENT_BALANCE");
     }
+
+    // ---- listTransactionsByCode ----
+
+    @Test
+    void listTransactionsByCode_found_returnsTransactions() {
+        giftCardService.create(new CreateGiftCardRequest("BYCODE1",
+            new BigDecimal("50"), "usd", null, null, null, null));
+        giftCardService.redeem("BYCODE1", new BigDecimal("10"), UUID.randomUUID(), "usd");
+
+        var txs = giftCardService.listTransactionsByCode("BYCODE1");
+
+        assertThat(txs).hasSize(1);
+        assertThat(txs.get(0).delta()).isEqualByComparingTo("-10");
+    }
+
+    @Test
+    void listTransactionsByCode_caseInsensitive_findsCard() {
+        giftCardService.create(new CreateGiftCardRequest("BYCODE2",
+            new BigDecimal("30"), "usd", null, null, null, null));
+
+        // lowercase lookup should resolve to the same card (no transactions yet)
+        var txs = giftCardService.listTransactionsByCode("bycode2");
+
+        assertThat(txs).isEmpty();
+    }
+
+    @Test
+    void listTransactionsByCode_unknownCode_throwsNotFound() {
+        assertThatThrownBy(() -> giftCardService.listTransactionsByCode("NO-SUCH-CODE"))
+            .isInstanceOf(io.k2dv.garden.shared.exception.NotFoundException.class)
+            .extracting("errorCode").isEqualTo("GIFT_CARD_NOT_FOUND");
+    }
 }
