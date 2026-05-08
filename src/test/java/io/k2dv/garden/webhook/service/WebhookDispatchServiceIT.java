@@ -82,7 +82,7 @@ class WebhookDispatchServiceIT extends AbstractIntegrationTest {
         WebhookEndpoint endpoint = savedEndpoint("http://localhost:" + serverPort + "/webhook");
         WebhookDelivery delivery = savedDelivery(endpoint);
 
-        dispatchService.dispatchPending();
+        dispatchService.doDispatch();
 
         WebhookDelivery updated = deliveryRepo.findById(delivery.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(WebhookDeliveryStatus.SUCCESS);
@@ -97,7 +97,7 @@ class WebhookDispatchServiceIT extends AbstractIntegrationTest {
         WebhookEndpoint endpoint = savedEndpoint("http://localhost:" + serverPort + "/webhook");
         WebhookDelivery delivery = savedDelivery(endpoint);
 
-        dispatchService.dispatchPending();
+        dispatchService.doDispatch();
 
         WebhookDelivery updated = deliveryRepo.findById(delivery.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(WebhookDeliveryStatus.FAILED);
@@ -112,7 +112,7 @@ class WebhookDispatchServiceIT extends AbstractIntegrationTest {
         server.stop(0);
         server = null;
 
-        dispatchService.dispatchPending();
+        dispatchService.doDispatch();
 
         WebhookDelivery updated = deliveryRepo.findById(delivery.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(WebhookDeliveryStatus.FAILED);
@@ -127,7 +127,7 @@ class WebhookDispatchServiceIT extends AbstractIntegrationTest {
         endpointRepo.save(endpoint);
         WebhookDelivery delivery = savedDelivery(endpoint);
 
-        dispatchService.dispatchPending();
+        dispatchService.doDispatch();
 
         WebhookDelivery updated = deliveryRepo.findById(delivery.getId()).orElseThrow();
         assertThat(updated.getStatus()).isEqualTo(WebhookDeliveryStatus.FAILED);
@@ -147,7 +147,7 @@ class WebhookDispatchServiceIT extends AbstractIntegrationTest {
         WebhookEndpoint endpoint = savedEndpoint("http://localhost:" + serverPort + "/signed");
         savedDelivery(endpoint);
 
-        dispatchService.dispatchPending();
+        dispatchService.doDispatch();
 
         assertThat(capturedSignatures).isNotEmpty();
         assertThat(capturedSignatures.get(0)).startsWith("sha256=");

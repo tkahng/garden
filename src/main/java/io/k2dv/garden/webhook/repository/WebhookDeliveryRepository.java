@@ -21,6 +21,7 @@ public interface WebhookDeliveryRepository extends JpaRepository<WebhookDelivery
         WHERE d.status = 'PENDING'
            OR (d.status = 'FAILED' AND d.nextRetryAt IS NOT NULL AND d.nextRetryAt <= :now)
         ORDER BY d.createdAt ASC
+        LIMIT 50
         """)
     List<WebhookDelivery> findDispatchable(@Param("now") Instant now);
 }

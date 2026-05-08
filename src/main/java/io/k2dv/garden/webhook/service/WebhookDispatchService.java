@@ -50,8 +50,12 @@ public class WebhookDispatchService {
 
     @Scheduled(fixedDelay = 30_000)
     @SchedulerLock(name = "webhookDispatch", lockAtMostFor = "PT25S", lockAtLeastFor = "PT5S")
-    @Transactional
     public void dispatchPending() {
+        doDispatch();
+    }
+
+    @Transactional
+    public void doDispatch() {
         List<WebhookDelivery> deliveries = deliveryRepo.findDispatchable(Instant.now());
         for (WebhookDelivery delivery : deliveries) {
             dispatch(delivery);
