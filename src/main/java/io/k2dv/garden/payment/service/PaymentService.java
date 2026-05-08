@@ -57,7 +57,9 @@ import java.math.RoundingMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -417,10 +419,14 @@ public class PaymentService {
                             Order order, ShippingRate shippingRate, boolean discountApplied) {
     String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
 
+    Set<UUID> variantIds = cartItems.stream().map(CartItem::getVariantId).collect(Collectors.toSet());
+    Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+        .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
     for (CartItem cartItem : cartItems) {
-      ProductVariant variant = variantRepo.findById(cartItem.getVariantId())
-          .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
-              "Variant not found: " + cartItem.getVariantId()));
+      ProductVariant variant = variantsById.get(cartItem.getVariantId());
+      if (variant == null) throw new NotFoundException("VARIANT_NOT_FOUND",
+          "Variant not found: " + cartItem.getVariantId());
       long unitAmountCents = cartItem.getUnitPrice()
           .multiply(BigDecimal.valueOf(100))
           .setScale(0, RoundingMode.HALF_UP)
@@ -485,10 +491,16 @@ public class PaymentService {
 
   private void addLineItemsFromOrder(SessionCreateParams.Builder builder, List<OrderItem> orderItems, Order order) {
     String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
+
+    Set<UUID> variantIds = orderItems.stream()
+        .map(OrderItem::getVariantId).filter(id -> id != null).collect(Collectors.toSet());
+    Map<UUID, String> titleById = variantRepo.findAllById(variantIds).stream()
+        .collect(Collectors.toMap(ProductVariant::getId, ProductVariant::getTitle));
+
     for (OrderItem item : orderItems) {
       if (item.getUnitPrice() == null) continue;
       String title = item.getVariantId() != null
-          ? variantRepo.findById(item.getVariantId()).map(ProductVariant::getTitle).orElse("Item")
+          ? titleById.getOrDefault(item.getVariantId(), "Item")
           : "Item";
       long unitAmountCents = item.getUnitPrice()
           .multiply(BigDecimal.valueOf(100))

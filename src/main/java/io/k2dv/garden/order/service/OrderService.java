@@ -129,13 +129,27 @@ public class OrderService {
             throw new ValidationException("EMPTY_CART", "Cart is empty");
         }
 
+        // Batch-fetch variants and products to avoid N+1 on validation
+        Set<UUID> variantIds = cartItems.stream()
+            .map(CartItem::getVariantId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+            .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+        Set<UUID> productIds = variantsById.values().stream()
+            .map(ProductVariant::getProductId).collect(Collectors.toSet());
+        Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, p -> p));
+
         for (CartItem cartItem : cartItems) {
-            ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(cartItem.getVariantId())
-                .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
-                    "Variant not found: " + cartItem.getVariantId()));
-            Product product = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId())
-                .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND",
-                    "Product not found for variant: " + cartItem.getVariantId()));
+            ProductVariant variant = variantsById.get(cartItem.getVariantId());
+            if (variant == null || variant.getDeletedAt() != null) {
+                throw new NotFoundException("VARIANT_NOT_FOUND",
+                    "Variant not found: " + cartItem.getVariantId());
+            }
+            Product product = productsById.get(variant.getProductId());
+            if (product == null || product.getDeletedAt() != null) {
+                throw new NotFoundException("PRODUCT_NOT_FOUND",
+                    "Product not found for variant: " + cartItem.getVariantId());
+            }
             if (product.getStatus() != ProductStatus.ACTIVE) {
                 throw new ValidationException("PRODUCT_NOT_ACTIVE",
                     "Product is not active: " + product.getTitle());
@@ -166,14 +180,16 @@ public class OrderService {
         order.setPoNumber(poNumber);
         order = orderRepo.save(order);
 
+        List<OrderItem> items = new ArrayList<>();
         for (CartItem cartItem : cartItems) {
             OrderItem item = new OrderItem();
             item.setOrderId(order.getId());
             item.setVariantId(cartItem.getVariantId());
             item.setQuantity(cartItem.getQuantity());
             item.setUnitPrice(cartItem.getUnitPrice());
-            orderItemRepo.save(item);
+            items.add(item);
         }
+        orderItemRepo.saveAll(items);
 
         orderEventService.emit(order.getId(), OrderEventType.ORDER_PLACED,
             "Order placed", null, "system", null);

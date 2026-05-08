@@ -131,6 +131,7 @@ class PaymentServiceTest {
     Order order = stubOrder(UUID.randomUUID(), userId);
 
     ProductVariant variant = new ProductVariant();
+    org.springframework.test.util.ReflectionTestUtils.setField(variant, "id", variantId);
     variant.setTitle("Small / Green");
     variant.setPrice(new BigDecimal("49.99"));
 
@@ -142,7 +143,7 @@ class PaymentServiceTest {
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
     when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
-    when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
+    when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
     CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
@@ -163,6 +164,7 @@ class PaymentServiceTest {
     Order order = stubOrder(UUID.randomUUID(), userId);
 
     ProductVariant variant = new ProductVariant();
+    org.springframework.test.util.ReflectionTestUtils.setField(variant, "id", variantId);
     variant.setTitle("Large");
     variant.setPrice(new BigDecimal("20.00"));
 
@@ -170,7 +172,7 @@ class PaymentServiceTest {
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(stubCartItem(variantId)));
     when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
-    when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
+    when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any()))
         .thenThrow(mock(StripeException.class));
 
@@ -189,6 +191,7 @@ class PaymentServiceTest {
     Order order = stubOrder(UUID.randomUUID(), userId);
 
     ProductVariant variant = new ProductVariant();
+    org.springframework.test.util.ReflectionTestUtils.setField(variant, "id", variantId);
     variant.setTitle("Widget");
     variant.setPrice(new BigDecimal("49.99"));
 
@@ -200,7 +203,7 @@ class PaymentServiceTest {
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(item));
     when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
-    when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
+    when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
     paymentService.initiateCheckout(userId, null, null);
@@ -404,6 +407,7 @@ class PaymentServiceTest {
     orderAfterDiscount.setTotalAmount(new BigDecimal("89.98"));
 
     ProductVariant variant = new ProductVariant();
+    org.springframework.test.util.ReflectionTestUtils.setField(variant, "id", variantId);
     variant.setTitle("Widget");
     variant.setPrice(new BigDecimal("49.99"));
 
@@ -418,7 +422,7 @@ class PaymentServiceTest {
     when(discountService.redeem(eq("SAVE10"), any(), any()))
         .thenReturn(new DiscountApplication(discountId, "SAVE10", DiscountType.FIXED_AMOUNT, new BigDecimal("10.00"), new BigDecimal("10.00")));
     when(orderService.getById(orderAfterCreate.getId())).thenReturn(orderAfterDiscount);
-    when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
+    when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
     paymentService.initiateCheckout(userId, "SAVE10", null);

@@ -146,8 +146,8 @@ public class AutomationScheduler {
             Instant now = Instant.now();
             for (InventoryLevel level : lowLevels) {
                 level.setLowStockAlertedAt(now);
-                inventoryLevelRepo.save(level);
             }
+            inventoryLevelRepo.saveAll(lowLevels);
             log.info("Sent low-stock alert for {} variant(s)", itemLines.size());
         }
     }
