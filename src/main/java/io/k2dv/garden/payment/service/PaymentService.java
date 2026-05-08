@@ -31,6 +31,9 @@ import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
+import io.k2dv.garden.order.model.OrderItem;
+import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.shipping.model.ShippingRate;
@@ -110,14 +113,13 @@ public class PaymentService {
     }
     BigDecimal shippingCost = shippingRate != null ? shippingRate.getPrice() : null;
 
-    // Credit limit check: calculate order total before creating the order
+    // Hard credit limit check against pre-discount total
     if (companyId != null) {
       BigDecimal itemsTotal = cartItems.stream()
           .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
           .reduce(BigDecimal.ZERO, BigDecimal::add);
       BigDecimal orderTotal = shippingCost != null ? itemsTotal.add(shippingCost) : itemsTotal;
       creditAccountService.assertCreditAvailable(companyId, orderTotal);
-      companyService.assertSpendingLimit(companyId, userId, orderTotal);
     }
 
     String shippingAddressJson = serializeAddress(defaultAddress);
@@ -129,7 +131,17 @@ public class PaymentService {
 
     if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
       cartService.markCheckedOut(cart.getId());
-      return new CheckoutResponse(null, order.getId());
+      return new CheckoutResponse(null, order.getId(), false);
+    }
+
+    // Soft spending limit check (post-discount): route to approval instead of throwing
+    if (companyId != null) {
+      BigDecimal spendingLimit = companyService.getSpendingLimit(companyId, userId);
+      if (spendingLimit != null && order.getTotalAmount().compareTo(spendingLimit) > 0) {
+        orderService.holdForApproval(order.getId());
+        cartService.markCheckedOut(cart.getId());
+        return new CheckoutResponse(null, order.getId(), true);
+      }
     }
 
     // Net terms: skip Stripe, auto-create invoice
@@ -139,7 +151,7 @@ public class PaymentService {
         invoiceService.createManualInvoice(order.getId(), companyId, termsDays);
         orderService.notifyNetTermsPlaced(order);
         cartService.markCheckedOut(cart.getId());
-        return new CheckoutResponse(null, order.getId());
+        return new CheckoutResponse(null, order.getId(), false);
       }
     }
 
@@ -153,7 +165,7 @@ public class PaymentService {
       orderService.setStripeSession(order.getId(), session.getId());
       cartService.markCheckedOut(cart.getId());
 
-      return new CheckoutResponse(session.getUrl(), order.getId());
+      return new CheckoutResponse(session.getUrl(), order.getId(), false);
 
     } catch (StripeException e) {
       orderService.cancelOrder(order.getId());
@@ -199,7 +211,7 @@ public class PaymentService {
 
     if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
       cartService.markCheckedOut(cart.getId());
-      return new CheckoutResponse(null, order.getId());
+      return new CheckoutResponse(null, order.getId(), false);
     }
 
     try {
@@ -212,7 +224,7 @@ public class PaymentService {
       orderService.setStripeSession(order.getId(), session.getId());
       cartService.markCheckedOut(cart.getId());
 
-      return new CheckoutResponse(session.getUrl(), order.getId());
+      return new CheckoutResponse(session.getUrl(), order.getId(), false);
 
     } catch (StripeException e) {
       orderService.cancelOrder(order.getId());
@@ -262,12 +274,53 @@ public class PaymentService {
       Session session = stripeGateway.createCheckoutSession(builder.build());
       orderService.setStripeSession(order.getId(), session.getId());
 
-      return new CheckoutResponse(session.getUrl(), order.getId());
+      return new CheckoutResponse(session.getUrl(), order.getId(), false);
 
     } catch (StripeException e) {
       orderService.cancelOrder(order.getId());
       throw new PaymentException("STRIPE_ERROR",
           "Failed to create checkout session: " + e.getMessage());
+    }
+  }
+
+  public CheckoutResponse approveCartOrder(UUID orderId, UUID approverId) {
+    Order order = orderService.getById(orderId);
+    if (order.getStatus() != OrderStatus.PENDING_APPROVAL) {
+      throw new ConflictException("INVALID_ORDER_STATUS",
+          "Order must be in PENDING_APPROVAL status to approve");
+    }
+    if (order.getCompanyId() == null) {
+      throw new ValidationException("NOT_A_COMPANY_ORDER", "This order has no company context");
+    }
+    if (!companyService.isOwnerOrManager(order.getCompanyId(), approverId)) {
+      throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+          "Only a company owner or manager can approve orders");
+    }
+
+    orderService.recordApproval(orderId, approverId);
+
+    if (order.getTotalAmount().compareTo(BigDecimal.ZERO) <= 0) {
+      orderService.markPaidDirectly(orderId);
+      return new CheckoutResponse(null, orderId, false);
+    }
+
+    int termsDays = creditAccountService.getPaymentTermsDays(order.getCompanyId());
+    if (termsDays > 0) {
+      invoiceService.createManualInvoice(orderId, order.getCompanyId(), termsDays);
+      return new CheckoutResponse(null, orderId, false);
+    }
+
+    try {
+      boolean taxExempt = companyService.isTaxExempt(order.getCompanyId());
+      SessionCreateParams.Builder builder = buildSessionBase(order.getCurrency(), orderId, taxExempt)
+          .setCustomerEmail(order.getUserId() != null
+              ? userRepo.findById(order.getUserId()).map(u -> u.getEmail()).orElse(null) : null);
+      addLineItemsFromOrder(builder, orderService.getOrderItems(orderId), order);
+      Session session = stripeGateway.createCheckoutSession(builder.build());
+      orderService.setStripeSession(orderId, session.getId());
+      return new CheckoutResponse(session.getUrl(), orderId, false);
+    } catch (StripeException e) {
+      throw new PaymentException("STRIPE_ERROR", "Failed to create checkout session: " + e.getMessage());
     }
   }
 
@@ -413,6 +466,59 @@ public class PaymentService {
                               .build())
                       .build())
               .build());
+    }
+  }
+
+  private void addLineItemsFromOrder(SessionCreateParams.Builder builder, List<OrderItem> orderItems, Order order) {
+    String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
+    for (OrderItem item : orderItems) {
+      if (item.getUnitPrice() == null) continue;
+      String title = item.getVariantId() != null
+          ? variantRepo.findById(item.getVariantId()).map(ProductVariant::getTitle).orElse("Item")
+          : "Item";
+      long unitAmountCents = item.getUnitPrice()
+          .multiply(BigDecimal.valueOf(100))
+          .setScale(0, RoundingMode.HALF_UP)
+          .longValueExact();
+      builder.addLineItem(SessionCreateParams.LineItem.builder()
+          .setQuantity((long) item.getQuantity())
+          .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+              .setCurrency(currency)
+              .setUnitAmount(unitAmountCents)
+              .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                  .setName(title).build())
+              .build())
+          .build());
+    }
+    if (order.getShippingCost() != null && order.getShippingCost().compareTo(BigDecimal.ZERO) > 0) {
+      long shippingCents = order.getShippingCost()
+          .multiply(BigDecimal.valueOf(100))
+          .setScale(0, RoundingMode.HALF_UP)
+          .longValueExact();
+      builder.addLineItem(SessionCreateParams.LineItem.builder()
+          .setQuantity(1L)
+          .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+              .setCurrency(currency)
+              .setUnitAmount(shippingCents)
+              .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                  .setName("Shipping").build())
+              .build())
+          .build());
+    }
+    if (order.getDiscountAmount() != null && order.getDiscountAmount().compareTo(BigDecimal.ZERO) > 0) {
+      long discountCents = order.getDiscountAmount()
+          .multiply(BigDecimal.valueOf(100))
+          .setScale(0, RoundingMode.HALF_UP)
+          .longValueExact();
+      builder.addLineItem(SessionCreateParams.LineItem.builder()
+          .setQuantity(1L)
+          .setPriceData(SessionCreateParams.LineItem.PriceData.builder()
+              .setCurrency(currency)
+              .setUnitAmount(-discountCents)
+              .setProductData(SessionCreateParams.LineItem.PriceData.ProductData.builder()
+                  .setName("Discount").build())
+              .build())
+          .build());
     }
   }
 

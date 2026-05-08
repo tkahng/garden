@@ -32,7 +32,9 @@ import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
@@ -46,6 +48,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -71,6 +74,7 @@ public class OrderService {
     private final InventoryService inventoryService;
     private final StripeGateway stripeGateway;
     private final OrderEventService orderEventService;
+    private final CompanyService companyService;
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
@@ -229,6 +233,64 @@ public class OrderService {
     }
 
     @Transactional
+    public void holdForApproval(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setStatus(OrderStatus.PENDING_APPROVAL);
+        orderRepo.save(order);
+        orderEventService.emit(orderId, OrderEventType.ORDER_APPROVAL_REQUESTED,
+            "Order pending company approval — spending limit exceeded", null, "system", null);
+    }
+
+    @Transactional
+    public void recordApproval(UUID orderId, UUID approverId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setApproverId(approverId);
+        order.setApprovedAt(Instant.now());
+        order.setStatus(OrderStatus.PENDING_PAYMENT);
+        orderRepo.save(order);
+        orderEventService.emit(orderId, OrderEventType.ORDER_APPROVED,
+            "Order approved", approverId, null, null);
+    }
+
+    @Transactional
+    public OrderResponse rejectApproval(UUID orderId, UUID rejectorId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() != OrderStatus.PENDING_APPROVAL) {
+            throw new ConflictException("INVALID_ORDER_STATUS",
+                "Order must be in PENDING_APPROVAL status to reject approval");
+        }
+        if (order.getCompanyId() == null || !companyService.isOwnerOrManager(order.getCompanyId(), rejectorId)) {
+            throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can reject order approval");
+        }
+        order.setStatus(OrderStatus.CANCELLED);
+        orderRepo.save(order);
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
+            .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+        orderEventService.emit(orderId, OrderEventType.ORDER_APPROVAL_REJECTED,
+            "Order approval rejected", rejectorId, null, null);
+        return toResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResult<OrderResponse> listPendingApprovals(UUID companyId, Pageable pageable) {
+        Specification<Order> spec = (root, query, cb) -> cb.and(
+            cb.equal(root.get("companyId"), companyId),
+            cb.equal(root.get("status"), OrderStatus.PENDING_APPROVAL)
+        );
+        return PagedResult.of(orderRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderItem> getOrderItems(UUID orderId) {
+        return orderItemRepo.findByOrderId(orderId);
+    }
+
+    @Transactional
     public void notifyNetTermsPlaced(Order order) {
         orderEventService.emit(order.getId(), OrderEventType.INVOICE_ISSUED,
             "Invoice issued on net terms", null, "system", null);
@@ -321,7 +383,8 @@ public class OrderService {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
         if (order.getStatus() == OrderStatus.CANCELLED) return;
-        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT
+                && order.getStatus() != OrderStatus.PENDING_APPROVAL) {
             throw new ConflictException("INVALID_ORDER_STATUS",
                 "Cannot cancel order in status: " + order.getStatus());
         }
