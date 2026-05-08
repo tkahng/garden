@@ -12,6 +12,7 @@ import io.k2dv.garden.review.service.ProductReviewService;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.audit.aspect.Audited;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -112,6 +113,7 @@ public class ProductService {
         return toAdminResponse(saved);
     }
 
+    @Audited(entityType = "product", entityId = "#id")
     @Transactional
     public AdminProductResponse changeStatus(UUID id, ProductStatusRequest req) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
@@ -131,6 +133,7 @@ public class ProductService {
         return toAdminResponse(productRepo.save(p));
     }
 
+    @Audited(entityType = "product", entityId = "#id")
     @Transactional
     public void softDelete(UUID id) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
