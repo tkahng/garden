@@ -11,6 +11,7 @@ import io.k2dv.garden.b2b.repository.InvoiceRepository;
 import io.k2dv.garden.order.model.Order;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.repository.OrderRepository;
+import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
@@ -40,6 +41,7 @@ public class InvoiceService {
     private final InvoicePaymentRepository paymentRepo;
     private final OrderRepository orderRepo;
     private final OutboundWebhookService outboundWebhookService;
+    private final OrderService orderService;
 
     @Transactional
     public InvoiceResponse createManualInvoice(UUID orderId, UUID companyId, int paymentTermsDays) {
@@ -98,6 +100,7 @@ public class InvoiceService {
         InvoicePayment payment = new InvoicePayment();
         payment.setInvoiceId(invoiceId);
         payment.setAmount(req.amount());
+        payment.setPaymentMethod(req.paymentMethod() != null ? req.paymentMethod() : io.k2dv.garden.b2b.model.PaymentMethod.STRIPE);
         payment.setPaymentReference(req.paymentReference());
         payment.setNotes(req.notes());
         payment.setPaidAt(req.paidAt() != null ? req.paidAt() : Instant.now());
@@ -109,10 +112,7 @@ public class InvoiceService {
         invoiceRepo.save(invoice);
 
         if (fullyPaid) {
-            orderRepo.findById(invoice.getOrderId()).ifPresent(order -> {
-                order.setStatus(OrderStatus.PAID);
-                orderRepo.save(order);
-            });
+            orderService.markPaidFromInvoice(invoice.getOrderId());
             outboundWebhookService.scheduleDelivery(WebhookEventType.INVOICE_PAID,
                 Map.of("invoiceId", invoiceId.toString()));
         }
@@ -163,14 +163,44 @@ public class InvoiceService {
     }
 
     @Transactional(readOnly = true)
-    public PagedResult<InvoiceResponse> listAll(UUID companyId, InvoiceStatus status, Pageable pageable) {
+    public PagedResult<InvoiceResponse> listAll(UUID companyId, InvoiceStatus status, UUID orderId, Pageable pageable) {
         Specification<Invoice> spec = (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             if (companyId != null) predicates.add(cb.equal(root.get("companyId"), companyId));
             if (status != null) predicates.add(cb.equal(root.get("status"), status));
+            if (orderId != null) predicates.add(cb.equal(root.get("orderId"), orderId));
             return cb.and(predicates.toArray(new Predicate[0]));
         };
         return PagedResult.of(invoiceRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public String generateStatementCsv(UUID companyId, Instant from, Instant to) {
+        Specification<Invoice> spec = (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("companyId"), companyId));
+            if (from != null) predicates.add(cb.greaterThanOrEqualTo(root.get("issuedAt"), from));
+            if (to != null) predicates.add(cb.lessThanOrEqualTo(root.get("issuedAt"), to));
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
+        List<Invoice> invoices = invoiceRepo.findAll(spec,
+            org.springframework.data.domain.Sort.by(
+                org.springframework.data.domain.Sort.Direction.ASC, "issuedAt"));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("invoice_id,status,currency,total_amount,paid_amount,outstanding_amount,issued_at,due_at\n");
+        for (Invoice inv : invoices) {
+            BigDecimal outstanding = inv.getTotalAmount().subtract(inv.getPaidAmount());
+            sb.append(inv.getId()).append(',')
+              .append(inv.getStatus()).append(',')
+              .append(inv.getCurrency()).append(',')
+              .append(inv.getTotalAmount().toPlainString()).append(',')
+              .append(inv.getPaidAmount().toPlainString()).append(',')
+              .append(outstanding.toPlainString()).append(',')
+              .append(inv.getIssuedAt()).append(',')
+              .append(inv.getDueAt()).append('\n');
+        }
+        return sb.toString();
     }
 
     private Invoice requireInvoice(UUID id) {
@@ -194,7 +224,7 @@ public class InvoiceService {
     private InvoicePaymentResponse toPaymentResponse(InvoicePayment p) {
         return new InvoicePaymentResponse(
             p.getId(), p.getInvoiceId(), p.getAmount(),
-            p.getPaymentReference(), p.getNotes(), p.getPaidAt(), p.getCreatedAt()
+            p.getPaymentMethod(), p.getPaymentReference(), p.getNotes(), p.getPaidAt(), p.getCreatedAt()
         );
     }
 }

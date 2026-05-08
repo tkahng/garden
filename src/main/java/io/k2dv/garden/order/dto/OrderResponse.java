@@ -5,6 +5,7 @@ import io.k2dv.garden.order.model.OrderStatus;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 public record OrderResponse(
@@ -26,5 +27,6 @@ public record OrderResponse(
     List<OrderItemResponse> items,
     BigDecimal taxAmount,
     String poNumber,
+    Map<String, Object> metadata,
     Instant createdAt
 ) {}

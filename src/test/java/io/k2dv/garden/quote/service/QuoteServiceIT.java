@@ -113,7 +113,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         doNothing().when(storageService).delete(any());
         when(pdfService.generate(any(), any(), any())).thenReturn(new byte[]{1, 2, 3});
         when(paymentService.createCheckoutSessionFromQuote(any(), any(), any()))
-            .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID()));
+            .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID(), false));
     }
 
     private QuoteRequestResponse submitQuote() {
@@ -687,7 +687,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
     @Test
     void submit_withContractPriceList_prePricedLineItems() {
         var pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Contract", "USD", 10, null, null));
+            new CreatePriceListRequest(companyId, "Contract", "USD", 10, null, null, null, null));
         priceListService.upsertEntry(pl.id(), variant.id(),
             new UpsertPriceListEntryRequest(new BigDecimal("7.50"), 1));
 

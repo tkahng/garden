@@ -5,6 +5,7 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.UUID;
 
@@ -31,4 +32,11 @@ public class PriceList extends BaseEntity {
 
     @Column(name = "ends_at")
     private Instant endsAt;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "adjustment_type")
+    private PriceListAdjustmentType adjustmentType;
+
+    @Column(name = "adjustment_value", precision = 8, scale = 4)
+    private BigDecimal adjustmentValue;
 }

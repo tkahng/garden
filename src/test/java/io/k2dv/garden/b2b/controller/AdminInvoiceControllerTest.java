@@ -55,7 +55,7 @@ class AdminInvoiceControllerTest {
         PagedResult<InvoiceResponse> result = new PagedResult<>(
             List.of(stubInvoice(UUID.randomUUID(), companyId, InvoiceStatus.ISSUED)),
             PageMeta.builder().page(0).pageSize(20).total(1L).build());
-        when(invoiceService.listAll(isNull(), isNull(), any())).thenReturn(result);
+        when(invoiceService.listAll(isNull(), isNull(), isNull(), any())).thenReturn(result);
 
         mvc.perform(get("/api/v1/admin/invoices"))
             .andExpect(status().isOk())
@@ -68,7 +68,7 @@ class AdminInvoiceControllerTest {
         PagedResult<InvoiceResponse> result = new PagedResult<>(
             List.of(stubInvoice(UUID.randomUUID(), companyId, InvoiceStatus.OVERDUE)),
             PageMeta.builder().page(0).pageSize(20).total(1L).build());
-        when(invoiceService.listAll(eq(companyId), eq(InvoiceStatus.OVERDUE), any())).thenReturn(result);
+        when(invoiceService.listAll(eq(companyId), eq(InvoiceStatus.OVERDUE), isNull(), any())).thenReturn(result);
 
         mvc.perform(get("/api/v1/admin/invoices")
                 .param("companyId", companyId.toString())
@@ -108,7 +108,7 @@ class AdminInvoiceControllerTest {
         mvc.perform(post("/api/v1/admin/invoices/{id}/payments", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new RecordPaymentRequest(new BigDecimal("200.00"), "REF-001", null, null))))
+                    new RecordPaymentRequest(new BigDecimal("200.00"), null, "REF-001", null, null))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.status").value("PARTIAL"));
     }
@@ -121,7 +121,7 @@ class AdminInvoiceControllerTest {
         mvc.perform(post("/api/v1/admin/invoices/{id}/payments", UUID.randomUUID())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new RecordPaymentRequest(new BigDecimal("1.00"), null, null, null))))
+                    new RecordPaymentRequest(new BigDecimal("1.00"), null, null, null, null))))
             .andExpect(status().isConflict())
             .andExpect(jsonPath("$.error").value("INVOICE_NOT_PAYABLE"));
     }

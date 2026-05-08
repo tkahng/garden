@@ -12,6 +12,10 @@ import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.cart.model.CartStatus;
 import io.k2dv.garden.cart.repository.CartItemRepository;
 import io.k2dv.garden.cart.repository.CartRepository;
+import io.k2dv.garden.order.model.Order;
+import io.k2dv.garden.order.model.OrderItem;
+import io.k2dv.garden.order.repository.OrderItemRepository;
+import io.k2dv.garden.order.repository.OrderRepository;
 import io.k2dv.garden.product.model.Product;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.model.ProductVariant;
@@ -43,6 +47,8 @@ public class CartService {
     private final ProductImageResolver imageResolver;
     private final PriceListService priceListService;
     private final CompanyMembershipRepository membershipRepo;
+    private final OrderRepository orderRepo;
+    private final OrderItemRepository orderItemRepo;
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
@@ -123,6 +129,11 @@ public class CartService {
                 return i;
             });
         int newQty = item.getQuantity() + req.quantity();
+        int moq = variant.getMinimumOrderQty();
+        if (newQty < moq) {
+            throw new ValidationException("BELOW_MIN_ORDER_QTY",
+                "Minimum order quantity for this item is " + moq);
+        }
         item.setQuantity(newQty);
         item.setUnitPrice(resolveItemPrice(cart, variant, newQty));
         cartItemRepo.save(item);
@@ -135,6 +146,13 @@ public class CartService {
         Cart cart = findActiveCartOrThrow(userId);
         CartItem item = cartItemRepo.findByIdAndCartId(itemId, cart.getId())
             .orElseThrow(() -> new NotFoundException("CART_ITEM_NOT_FOUND", "Cart item not found"));
+        ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(item.getVariantId())
+            .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found"));
+        int moq = variant.getMinimumOrderQty();
+        if (req.quantity() < moq) {
+            throw new ValidationException("BELOW_MIN_ORDER_QTY",
+                "Minimum order quantity for this item is " + moq);
+        }
         item.setQuantity(req.quantity());
         // Re-price on qty change — volume tiers may apply
         if (cart.getCompanyId() != null) {
@@ -228,6 +246,44 @@ public class CartService {
         });
     }
 
+    @Transactional
+    public CartResponse reorderFromHistory(UUID userId, UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (!Objects.equals(order.getUserId(), userId)) {
+            throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
+        }
+        List<OrderItem> orderItems = orderItemRepo.findByOrderId(orderId);
+        if (orderItems.isEmpty()) {
+            throw new ValidationException("EMPTY_ORDER", "Order has no items to reorder");
+        }
+
+        Cart cart = cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
+            .orElseGet(() -> {
+                Cart c = new Cart();
+                c.setUserId(userId);
+                return cartRepo.save(c);
+            });
+        cartItemRepo.deleteAll(cartItemRepo.findByCartId(cart.getId()));
+
+        for (OrderItem oi : orderItems) {
+            if (oi.getVariantId() == null) continue;
+            ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(oi.getVariantId()).orElse(null);
+            if (variant == null) continue;
+            Product product = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId()).orElse(null);
+            if (product == null || product.getStatus() != ProductStatus.ACTIVE) continue;
+
+            BigDecimal price = resolveItemPrice(cart, variant, oi.getQuantity());
+            CartItem item = new CartItem();
+            item.setCartId(cart.getId());
+            item.setVariantId(oi.getVariantId());
+            item.setQuantity(oi.getQuantity());
+            item.setUnitPrice(price);
+            cartItemRepo.save(item);
+        }
+        return toResponse(cart);
+    }
+
     // --- Internal API for PaymentService ---
 
     @Transactional(readOnly = true)
@@ -305,7 +361,8 @@ public class CartService {
                         resolvedImageUrls.get(product.getId()));
                 }
             }
-            return new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
+            int moq = variant != null ? variant.getMinimumOrderQty() : 1;
+            return new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo, moq);
         }).toList();
 
         return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());

@@ -86,7 +86,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
         var req = new UpdateVariantRequest(
             new BigDecimal("25.00"), new BigDecimal("30.00"), "BAG-SKU", "1234567890",
-            new BigDecimal("0.5"), "kg", FulfillmentType.PRE_ORDER, InventoryPolicy.CONTINUE, 7);
+            new BigDecimal("0.5"), "kg", FulfillmentType.PRE_ORDER, InventoryPolicy.CONTINUE, 7, null);
         var updated = variantService.update(product.id(), created.id(), req);
 
         assertThat(updated.price()).isEqualByComparingTo("25.00");
@@ -104,7 +104,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
         var variant = variantService.create(product.id(),
             new CreateVariantRequest(new BigDecimal("15.00"), null, null, null, null, null, List.of()));
 
-        var req = new UpdateVariantRequest(new BigDecimal("20.00"), null, null, null, null, null, null, null, null);
+        var req = new UpdateVariantRequest(new BigDecimal("20.00"), null, null, null, null, null, null, null, null, null);
         assertThatThrownBy(() -> variantService.update(UUID.randomUUID(), variant.id(), req))
             .isInstanceOf(NotFoundException.class);
     }
@@ -117,7 +117,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
         // New price 80, compareAtPrice 70 — 70 <= 80 should throw
         var req = new UpdateVariantRequest(
-            new BigDecimal("80.00"), new BigDecimal("70.00"), null, null, null, null, null, null, null);
+            new BigDecimal("80.00"), new BigDecimal("70.00"), null, null, null, null, null, null, null, null);
         assertThatThrownBy(() -> variantService.update(product.id(), variant.id(), req))
             .isInstanceOf(ValidationException.class);
     }
@@ -130,7 +130,7 @@ class VariantServiceIT extends AbstractIntegrationTest {
 
         // No price in request; existing price is 50.00; compareAtPrice 40 <= 50 should throw
         var req = new UpdateVariantRequest(
-            null, new BigDecimal("40.00"), null, null, null, null, null, null, null);
+            null, new BigDecimal("40.00"), null, null, null, null, null, null, null, null);
         assertThatThrownBy(() -> variantService.update(product.id(), variant.id(), req))
             .isInstanceOf(ValidationException.class);
     }

@@ -103,7 +103,7 @@ class BlobServiceIT extends AbstractIntegrationTest {
     var resp = blobService.upload(file);
     uploadedKey = resp.key();
 
-    var updated = blobService.updateMetadata(resp.id(), new UpdateBlobRequest("alt text", "My Title"));
+    var updated = blobService.updateMetadata(resp.id(), new UpdateBlobRequest("alt text", "My Title", null));
 
     assertThat(updated.alt()).isEqualTo("alt text");
     assertThat(updated.title()).isEqualTo("My Title");
@@ -130,7 +130,7 @@ class BlobServiceIT extends AbstractIntegrationTest {
     var rb = blobService.upload(fb);
 
     var result = blobService.list(
-        new BlobFilter(null, null, "filename", "asc"),
+        new BlobFilter(null, null, null, false, "filename", "asc"),
         PageRequest.of(0, 100));
 
     var filenames = result.getContent().stream().map(r -> r.filename()).toList();
@@ -150,5 +150,128 @@ class BlobServiceIT extends AbstractIntegrationTest {
     List<BlobUsageResponse> usages = blobService.getUsages(resp.id());
 
     assertThat(usages).isEmpty();
+  }
+
+  @Test
+  void updateMetadata_withFolder_persistsFolder() {
+    var file = new MockMultipartFile("file", "folder-img.txt", "text/plain", "data".getBytes());
+    var resp = blobService.upload(file);
+    uploadedKey = resp.key();
+
+    var updated = blobService.updateMetadata(resp.id(), new UpdateBlobRequest(null, null, "products"));
+
+    assertThat(updated.folder()).isEqualTo("products");
+    assertThat(blobRepo.findById(resp.id()))
+        .isPresent()
+        .hasValueSatisfying(b -> assertThat(b.getFolder()).isEqualTo("products"));
+  }
+
+  @Test
+  void updateMetadata_clearFolder_setsNull() {
+    var file = new MockMultipartFile("file", "clear-folder.txt", "text/plain", "data".getBytes());
+    var resp = blobService.upload(file);
+    uploadedKey = resp.key();
+
+    blobService.updateMetadata(resp.id(), new UpdateBlobRequest(null, null, "products"));
+    var updated = blobService.updateMetadata(resp.id(), new UpdateBlobRequest(null, null, ""));
+
+    assertThat(updated.folder()).isNull();
+  }
+
+  @Test
+  void moveToFolder_assignsFolder() {
+    var fa = new MockMultipartFile("file", "move-a.txt", "text/plain", "a".getBytes());
+    var fb = new MockMultipartFile("file", "move-b.txt", "text/plain", "b".getBytes());
+    var ra = blobService.upload(fa);
+    var rb = blobService.upload(fb);
+
+    blobService.moveToFolder(List.of(ra.id(), rb.id()), "banners");
+
+    assertThat(blobRepo.findById(ra.id()))
+        .isPresent()
+        .hasValueSatisfying(b -> assertThat(b.getFolder()).isEqualTo("banners"));
+    assertThat(blobRepo.findById(rb.id()))
+        .isPresent()
+        .hasValueSatisfying(b -> assertThat(b.getFolder()).isEqualTo("banners"));
+
+    blobService.bulkDelete(List.of(ra.id(), rb.id()));
+  }
+
+  @Test
+  void moveToFolder_withNull_removesFolder() {
+    var file = new MockMultipartFile("file", "remove-folder.txt", "text/plain", "data".getBytes());
+    var r = blobService.upload(file);
+    uploadedKey = r.key();
+
+    blobService.moveToFolder(List.of(r.id()), "banners");
+    blobService.moveToFolder(List.of(r.id()), null);
+
+    assertThat(blobRepo.findById(r.id()))
+        .isPresent()
+        .hasValueSatisfying(b -> assertThat(b.getFolder()).isNull());
+  }
+
+  @Test
+  void listFolders_returnsDistinctSortedFolders() {
+    var f1 = new MockMultipartFile("file", "lf1.txt", "text/plain", "1".getBytes());
+    var f2 = new MockMultipartFile("file", "lf2.txt", "text/plain", "2".getBytes());
+    var f3 = new MockMultipartFile("file", "lf3.txt", "text/plain", "3".getBytes());
+    var r1 = blobService.upload(f1);
+    var r2 = blobService.upload(f2);
+    var r3 = blobService.upload(f3);
+
+    blobService.moveToFolder(List.of(r1.id()), "zz");
+    blobService.moveToFolder(List.of(r2.id()), "aa");
+    // r3 stays unorganized
+
+    var folders = blobService.listFolders();
+
+    assertThat(folders).contains("aa", "zz");
+    int indexAa = folders.indexOf("aa");
+    int indexZz = folders.indexOf("zz");
+    assertThat(indexAa).isLessThan(indexZz);
+    assertThat(folders).doesNotContainNull();
+
+    blobService.bulkDelete(List.of(r1.id(), r2.id(), r3.id()));
+  }
+
+  @Test
+  void list_filterByFolder_returnsOnlyMatchingBlobs() {
+    var fa = new MockMultipartFile("file", "gal-a.txt", "text/plain", "a".getBytes());
+    var fb = new MockMultipartFile("file", "gal-b.txt", "text/plain", "b".getBytes());
+    var ra = blobService.upload(fa);
+    var rb = blobService.upload(fb);
+
+    blobService.moveToFolder(List.of(ra.id()), "gallery");
+
+    var result = blobService.list(
+        new BlobFilter(null, null, "gallery", false, null, null),
+        PageRequest.of(0, 100));
+
+    var filenames = result.getContent().stream().map(r -> r.filename()).toList();
+    assertThat(filenames).contains("gal-a.txt");
+    assertThat(filenames).doesNotContain("gal-b.txt");
+
+    blobService.bulkDelete(List.of(ra.id(), rb.id()));
+  }
+
+  @Test
+  void list_unorganized_returnsOnlyBlobsWithoutFolder() {
+    var fa = new MockMultipartFile("file", "unorg-a.txt", "text/plain", "a".getBytes());
+    var fb = new MockMultipartFile("file", "unorg-b.txt", "text/plain", "b".getBytes());
+    var ra = blobService.upload(fa);
+    var rb = blobService.upload(fb);
+
+    blobService.moveToFolder(List.of(ra.id()), "gallery");
+
+    var result = blobService.list(
+        new BlobFilter(null, null, null, true, null, null),
+        PageRequest.of(0, 100));
+
+    var filenames = result.getContent().stream().map(r -> r.filename()).toList();
+    assertThat(filenames).contains("unorg-b.txt");
+    assertThat(filenames).doesNotContain("unorg-a.txt");
+
+    blobService.bulkDelete(List.of(ra.id(), rb.id()));
   }
 }

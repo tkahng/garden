@@ -6,6 +6,7 @@ import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.quote.model.QuoteItem;
 import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.inventory.service.InventoryService;
+import io.k2dv.garden.order.dto.CreateDraftOrderRequest;
 import io.k2dv.garden.order.dto.OrderEventResponse;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderItemProductInfo;
@@ -30,8 +31,12 @@ import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
+import io.k2dv.garden.notification.model.NotificationType;
+import io.k2dv.garden.notification.service.NotificationPreferenceService;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
@@ -45,6 +50,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -70,6 +76,8 @@ public class OrderService {
     private final InventoryService inventoryService;
     private final StripeGateway stripeGateway;
     private final OrderEventService orderEventService;
+    private final CompanyService companyService;
+    private final NotificationPreferenceService notificationPreferenceService;
 
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
@@ -86,7 +94,14 @@ public class OrderService {
     public Order createFromCart(UUID userId, List<CartItem> cartItems,
                                 UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                                 String poNumber) {
-        return buildOrder(userId, null, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+        return buildOrder(userId, null, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+    }
+
+    @Transactional
+    public Order createFromCart(UUID userId, UUID companyId, boolean taxExempt, List<CartItem> cartItems,
+                                UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
+                                String poNumber) {
+        return buildOrder(userId, null, companyId, taxExempt, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
     }
 
     @Transactional
@@ -99,10 +114,11 @@ public class OrderService {
     public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
                                   UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                                   String poNumber) {
-        return buildOrder(null, guestEmail, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+        return buildOrder(null, guestEmail, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
     }
 
-    private Order buildOrder(UUID userId, String guestEmail, List<CartItem> cartItems,
+    private Order buildOrder(UUID userId, String guestEmail, UUID companyId, boolean taxExempt,
+                             List<CartItem> cartItems,
                              UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                              String poNumber) {
         if (cartItems.isEmpty()) {
@@ -137,6 +153,8 @@ public class OrderService {
         Order order = new Order();
         order.setUserId(userId);
         order.setGuestEmail(guestEmail);
+        order.setCompanyId(companyId);
+        order.setTaxExempt(taxExempt);
         order.setTotalAmount(total);
         order.setShippingCost(shippingCost);
         order.setShippingRateId(shippingRateId);
@@ -218,6 +236,85 @@ public class OrderService {
     }
 
     @Transactional
+    public void holdForApproval(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setStatus(OrderStatus.PENDING_APPROVAL);
+        orderRepo.save(order);
+        orderEventService.emit(orderId, OrderEventType.ORDER_APPROVAL_REQUESTED,
+            "Order pending company approval — spending limit exceeded", null, "system", null);
+    }
+
+    @Transactional
+    public void recordApproval(UUID orderId, UUID approverId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setApproverId(approverId);
+        order.setApprovedAt(Instant.now());
+        order.setStatus(OrderStatus.PENDING_PAYMENT);
+        orderRepo.save(order);
+        orderEventService.emit(orderId, OrderEventType.ORDER_APPROVED,
+            "Order approved", approverId, null, null);
+    }
+
+    @Transactional
+    public OrderResponse rejectApproval(UUID orderId, UUID rejectorId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() != OrderStatus.PENDING_APPROVAL) {
+            throw new ConflictException("INVALID_ORDER_STATUS",
+                "Order must be in PENDING_APPROVAL status to reject approval");
+        }
+        if (order.getCompanyId() == null || !companyService.isOwnerOrManager(order.getCompanyId(), rejectorId)) {
+            throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can reject order approval");
+        }
+        order.setStatus(OrderStatus.CANCELLED);
+        orderRepo.save(order);
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
+            .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
+        orderEventService.emit(orderId, OrderEventType.ORDER_APPROVAL_REJECTED,
+            "Order approval rejected", rejectorId, null, null);
+        return toResponse(order);
+    }
+
+    @Transactional(readOnly = true)
+    public PagedResult<OrderResponse> listPendingApprovals(UUID companyId, Pageable pageable) {
+        Specification<Order> spec = (root, query, cb) -> cb.and(
+            cb.equal(root.get("companyId"), companyId),
+            cb.equal(root.get("status"), OrderStatus.PENDING_APPROVAL)
+        );
+        return PagedResult.of(orderRepo.findAll(spec, pageable), this::toResponse);
+    }
+
+    @Transactional(readOnly = true)
+    public List<OrderItem> getOrderItems(UUID orderId) {
+        return orderItemRepo.findByOrderId(orderId);
+    }
+
+    @Transactional
+    public void notifyNetTermsPlaced(Order order) {
+        orderEventService.emit(order.getId(), OrderEventType.INVOICE_ISSUED,
+            "Invoice issued on net terms", null, "system", null);
+        sendOrderConfirmationEmail(order);
+        if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
+    }
+
+    @Transactional
+    public void markPaidFromInvoice(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setStatus(OrderStatus.PAID);
+        orderRepo.save(order);
+        orderItemRepo.findByOrderId(orderId).stream()
+            .filter(item -> item.getVariantId() != null)
+            .forEach(item -> inventoryService.confirmSale(item.getVariantId(), item.getQuantity()));
+        orderEventService.emit(orderId, OrderEventType.PAYMENT_CONFIRMED,
+            "Payment confirmed via invoice", null, "system", null);
+    }
+
+    @Transactional
     public void markPaidDirectly(UUID orderId) {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
@@ -289,7 +386,8 @@ public class OrderService {
         Order order = orderRepo.findById(orderId)
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
         if (order.getStatus() == OrderStatus.CANCELLED) return;
-        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT
+                && order.getStatus() != OrderStatus.PENDING_APPROVAL) {
             throw new ConflictException("INVALID_ORDER_STATUS",
                 "Cannot cancel order in status: " + order.getStatus());
         }
@@ -319,8 +417,10 @@ public class OrderService {
         orderItemRepo.findByOrderId(orderId).stream()
             .filter(item -> item.getVariantId() != null)
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
-        String to = resolveCustomerEmail(order);
-        if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
+        if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
+            String to = resolveCustomerEmail(order);
+            if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
+        }
         return toResponse(order);
     }
 
@@ -336,8 +436,10 @@ public class OrderService {
                 .filter(item -> item.getVariantId() != null)
                 .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
             orderEventService.emit(order.getId(), OrderEventType.ORDER_CANCELLED, "Bulk cancelled", null, "admin", null);
-            String to = resolveCustomerEmail(order);
-            if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+            if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
+                String to = resolveCustomerEmail(order);
+                if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+            }
         }
     }
 
@@ -404,6 +506,7 @@ public class OrderService {
     }
 
     private void sendOrderConfirmationEmail(Order order) {
+        if (!notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CONFIRMATION)) return;
         String to = resolveCustomerEmail(order);
         if (to == null) return;
         List<OrderItem> items = orderItemRepo.findByOrderId(order.getId());
@@ -537,6 +640,97 @@ public class OrderService {
         return toResponse(order);
     }
 
+    @Transactional
+    public OrderResponse createDraft(CreateDraftOrderRequest req) {
+        if (req.userId() == null && (req.guestEmail() == null || req.guestEmail().isBlank())) {
+            throw new ValidationException("USER_OR_EMAIL_REQUIRED", "Either userId or guestEmail is required");
+        }
+
+        BigDecimal total = req.items().stream()
+            .map(i -> {
+                ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(i.variantId())
+                    .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found: " + i.variantId()));
+                BigDecimal price = i.unitPrice() != null ? i.unitPrice() : v.getPrice();
+                return price.multiply(BigDecimal.valueOf(i.quantity()));
+            })
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        Order order = new Order();
+        order.setUserId(req.userId());
+        order.setGuestEmail(req.guestEmail());
+        order.setStatus(OrderStatus.DRAFT);
+        order.setTotalAmount(total);
+        order.setCurrency(req.currency() != null ? req.currency() : "usd");
+        order.setShippingAddress(req.shippingAddress());
+        order.setPoNumber(req.poNumber());
+        order.setCompanyId(req.companyId());
+        order = orderRepo.save(order);
+
+        for (var item : req.items()) {
+            ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(item.variantId()).orElseThrow();
+            BigDecimal price = item.unitPrice() != null ? item.unitPrice() : v.getPrice();
+            OrderItem oi = new OrderItem();
+            oi.setOrderId(order.getId());
+            oi.setVariantId(item.variantId());
+            oi.setQuantity(item.quantity());
+            oi.setUnitPrice(price);
+            orderItemRepo.save(oi);
+        }
+        return toResponse(order);
+    }
+
+    @Transactional
+    public OrderResponse updateDraftItems(UUID orderId, java.util.List<io.k2dv.garden.order.dto.DraftOrderItemRequest> items) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() != OrderStatus.DRAFT) {
+            throw new ConflictException("NOT_DRAFT", "Order is not in DRAFT status");
+        }
+        orderItemRepo.deleteAll(orderItemRepo.findByOrderId(orderId));
+
+        BigDecimal total = BigDecimal.ZERO;
+        for (var item : items) {
+            ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(item.variantId())
+                .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND", "Variant not found: " + item.variantId()));
+            BigDecimal price = item.unitPrice() != null ? item.unitPrice() : v.getPrice();
+            OrderItem oi = new OrderItem();
+            oi.setOrderId(orderId);
+            oi.setVariantId(item.variantId());
+            oi.setQuantity(item.quantity());
+            oi.setUnitPrice(price);
+            orderItemRepo.save(oi);
+            total = total.add(price.multiply(BigDecimal.valueOf(item.quantity())));
+        }
+        order.setTotalAmount(total);
+        return toResponse(orderRepo.save(order));
+    }
+
+    @Transactional
+    public OrderResponse completeDraft(UUID orderId) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getStatus() != OrderStatus.DRAFT) {
+            throw new ConflictException("NOT_DRAFT", "Order is not in DRAFT status");
+        }
+        List<OrderItem> items = orderItemRepo.findByOrderId(orderId);
+        if (items.isEmpty()) {
+            throw new ValidationException("EMPTY_ORDER", "Draft order has no items");
+        }
+        for (OrderItem item : items) {
+            inventoryService.reserveStock(item.getVariantId(), item.getQuantity());
+        }
+        order.setStatus(OrderStatus.PENDING_PAYMENT);
+        return toResponse(orderRepo.save(order));
+    }
+
+    @Transactional
+    public OrderResponse updateMetadata(UUID orderId, java.util.Map<String, Object> metadata) {
+        Order order = orderRepo.findById(orderId)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        order.setMetadata(metadata);
+        return toResponse(orderRepo.save(order));
+    }
+
     private OrderResponse toResponse(Order order) {
         List<OrderItem> orderItems = orderItemRepo.findByOrderId(order.getId());
 
@@ -575,6 +769,6 @@ public class OrderService {
             order.getStripeSessionId(), order.getDiscountId(), order.getDiscountAmount(),
             order.getGiftCardId(), order.getGiftCardAmount(), order.getAdminNotes(),
             order.getShippingAddress(), order.getShippingCost(), order.getShippingRateId(),
-            items, order.getTaxAmount(), order.getPoNumber(), order.getCreatedAt());
+            items, order.getTaxAmount(), order.getPoNumber(), order.getMetadata(), order.getCreatedAt());
     }
 }

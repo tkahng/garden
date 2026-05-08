@@ -29,4 +29,15 @@ public interface PriceListEntryRepository extends JpaRepository<PriceListEntry, 
     );
 
     Optional<PriceListEntry> findByPriceListIdAndVariantIdAndMinQty(UUID priceListId, UUID variantId, int minQty);
+
+    @Query("""
+        SELECT e FROM PriceListEntry e
+        WHERE e.priceListId IN :listIds
+          AND e.variantId IN :variantIds
+        ORDER BY e.variantId ASC, e.minQty ASC
+        """)
+    List<PriceListEntry> findByPriceListIdsAndVariantIds(
+        @Param("listIds") List<UUID> listIds,
+        @Param("variantIds") List<UUID> variantIds
+    );
 }

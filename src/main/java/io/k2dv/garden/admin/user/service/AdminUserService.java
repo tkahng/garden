@@ -101,6 +101,14 @@ public class AdminUserService {
     }
 
     @Transactional
+    public AdminUserResponse updateMetadata(UUID id, java.util.Map<String, Object> metadata) {
+        User user = findUser(id);
+        user.setMetadata(metadata);
+        user = userRepo.save(user);
+        return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
+    }
+
+    @Transactional
     public void assignRole(UUID userId, String roleName) {
         iamService.assignRoleByName(userId, roleName);
     }

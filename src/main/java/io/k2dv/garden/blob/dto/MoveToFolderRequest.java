@@ -1,0 +1,9 @@
+package io.k2dv.garden.blob.dto;
+
+import java.util.List;
+import java.util.UUID;
+
+public record MoveToFolderRequest(
+    List<UUID> ids,
+    String folder
+) {}

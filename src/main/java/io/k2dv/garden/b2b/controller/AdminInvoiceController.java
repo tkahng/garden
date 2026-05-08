@@ -43,10 +43,11 @@ public class AdminInvoiceController {
     public ResponseEntity<ApiResponse<PagedResult<InvoiceResponse>>> list(
         @RequestParam(required = false) UUID companyId,
         @RequestParam(required = false) InvoiceStatus status,
+        @RequestParam(required = false) UUID orderId,
         @RequestParam(defaultValue = "0") int page,
         @RequestParam(defaultValue = "20") int size) {
         return ResponseEntity.ok(ApiResponse.of(
-            invoiceService.listAll(companyId, status, PageRequest.of(page, size))));
+            invoiceService.listAll(companyId, status, orderId, PageRequest.of(page, size))));
     }
 
     @GetMapping("/{id}")

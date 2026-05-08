@@ -3,6 +3,7 @@ package io.k2dv.garden.b2b.service;
 import io.k2dv.garden.auth.dto.RegisterRequest;
 import io.k2dv.garden.auth.service.AuthService;
 import io.k2dv.garden.b2b.dto.*;
+import io.k2dv.garden.b2b.model.PriceListAdjustmentType;
 import io.k2dv.garden.product.dto.AdminProductResponse;
 import io.k2dv.garden.product.dto.AdminVariantResponse;
 import io.k2dv.garden.product.dto.CreateProductRequest;
@@ -11,6 +12,7 @@ import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.product.service.VariantService;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -58,24 +60,34 @@ class PriceListServiceIT extends AbstractIntegrationTest {
         variantId = variant.id();
     }
 
+    private CreatePriceListRequest req(String name, String currency, int priority) {
+        return new CreatePriceListRequest(companyId, name, currency, priority, null, null, null, null);
+    }
+
+    private CreatePriceListRequest reqWithRule(String name, PriceListAdjustmentType type, BigDecimal value) {
+        return new CreatePriceListRequest(companyId, name, "USD", 0, null, null, type, value);
+    }
+
     // --- CRUD ---
 
     @Test
     void create_thenGetById_returnsCorrectList() {
         PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Contract 2026", "USD", 10, null, null));
+            new CreatePriceListRequest(companyId, "Contract 2026", "USD", 10, null, null, null, null));
 
         PriceListResponse found = priceListService.getById(pl.id());
         assertThat(found.name()).isEqualTo("Contract 2026");
         assertThat(found.currency()).isEqualTo("USD");
         assertThat(found.priority()).isEqualTo(10);
         assertThat(found.companyId()).isEqualTo(companyId);
+        assertThat(found.adjustmentType()).isNull();
+        assertThat(found.adjustmentValue()).isNull();
     }
 
     @Test
     void listByCompany_returnsAllLists() {
-        priceListService.create(new CreatePriceListRequest(companyId, "List A", "USD", 1, null, null));
-        priceListService.create(new CreatePriceListRequest(companyId, "List B", "USD", 2, null, null));
+        priceListService.create(req("List A", "USD", 1));
+        priceListService.create(req("List B", "USD", 2));
 
         List<PriceListResponse> lists = priceListService.listByCompany(companyId);
         assertThat(lists).hasSizeGreaterThanOrEqualTo(2);
@@ -84,9 +96,9 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void listByCompany_orderedByPriorityDesc() {
-        priceListService.create(new CreatePriceListRequest(companyId, "Low",  "USD", 1, null, null));
-        priceListService.create(new CreatePriceListRequest(companyId, "High", "USD", 9, null, null));
-        priceListService.create(new CreatePriceListRequest(companyId, "Mid",  "USD", 5, null, null));
+        priceListService.create(req("Low",  "USD", 1));
+        priceListService.create(req("High", "USD", 9));
+        priceListService.create(req("Mid",  "USD", 5));
 
         List<PriceListResponse> lists = priceListService.listByCompany(companyId);
         List<Integer> priorities = lists.stream().map(PriceListResponse::priority).toList();
@@ -95,13 +107,12 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void update_changesFields() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Old Name", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Old Name", "USD", 0));
 
         Instant start = Instant.now().plus(1, ChronoUnit.DAYS);
         Instant end   = Instant.now().plus(30, ChronoUnit.DAYS);
         PriceListResponse updated = priceListService.update(pl.id(),
-            new UpdatePriceListRequest("New Name", "EUR", 5, start, end));
+            new UpdatePriceListRequest("New Name", "EUR", 5, start, end, null, null));
 
         assertThat(updated.name()).isEqualTo("New Name");
         assertThat(updated.currency()).isEqualTo("EUR");
@@ -112,9 +123,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void delete_thenGetById_throwsNotFound() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Temp", "USD", 0, null, null));
-
+        PriceListResponse pl = priceListService.create(req("Temp", "USD", 0));
         priceListService.delete(pl.id());
 
         assertThatThrownBy(() -> priceListService.getById(pl.id()))
@@ -131,8 +140,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void upsertEntry_thenListEntries_containsEntry() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Test List", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Test List", "USD", 0));
 
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("75.00"), 1));
@@ -145,8 +153,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void upsertEntry_sameVariantAndMinQty_updatesPrice() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Test List", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Test List", "USD", 0));
 
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("80.00"), 1));
@@ -160,8 +167,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void upsertEntry_differentMinQty_createsVolumeTiers() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Volume List", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Volume List", "USD", 0));
 
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("90.00"), 1));
@@ -177,8 +183,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void deleteEntry_removesAllTiersForVariant() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Test List", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Test List", "USD", 0));
 
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("80.00"), 1));
@@ -203,8 +208,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void resolvePrice_activeListWithEntry_returnsContractPrice() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Contract", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Contract", "USD", 0));
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("55.00"), 1));
 
@@ -217,8 +221,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void resolvePrice_volumeTier_picksHighestMatchingMinQty() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Volume", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Volume", "USD", 0));
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("90.00"), 1));
         priceListService.upsertEntry(pl.id(), variantId,
@@ -239,7 +242,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
         Instant past = Instant.now().minus(10, ChronoUnit.DAYS);
         PriceListResponse pl = priceListService.create(
             new CreatePriceListRequest(companyId, "Expired", "USD", 0,
-                past.minus(20, ChronoUnit.DAYS), past));
+                past.minus(20, ChronoUnit.DAYS), past, null, null));
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("10.00"), 1));
 
@@ -253,7 +256,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
         Instant future = Instant.now().plus(10, ChronoUnit.DAYS);
         PriceListResponse pl = priceListService.create(
             new CreatePriceListRequest(companyId, "Future", "USD", 0,
-                future, future.plus(30, ChronoUnit.DAYS)));
+                future, future.plus(30, ChronoUnit.DAYS), null, null));
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("10.00"), 1));
 
@@ -263,10 +266,8 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void resolvePrice_higherPriorityListWins() {
-        PriceListResponse low = priceListService.create(
-            new CreatePriceListRequest(companyId, "Low Pri", "USD", 1, null, null));
-        PriceListResponse high = priceListService.create(
-            new CreatePriceListRequest(companyId, "High Pri", "USD", 10, null, null));
+        PriceListResponse low  = priceListService.create(req("Low Pri",  "USD", 1));
+        PriceListResponse high = priceListService.create(req("High Pri", "USD", 10));
 
         priceListService.upsertEntry(low.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("60.00"), 1));
@@ -290,12 +291,93 @@ class PriceListServiceIT extends AbstractIntegrationTest {
             .isInstanceOf(NotFoundException.class);
     }
 
+    // --- Adjustment rules ---
+
+    @Test
+    void create_withPercentageOffRule_persistsAndReturnsRule() {
+        PriceListResponse pl = priceListService.create(
+            reqWithRule("10% Off Everything", PriceListAdjustmentType.PERCENTAGE_OFF, new BigDecimal("10")));
+
+        assertThat(pl.adjustmentType()).isEqualTo(PriceListAdjustmentType.PERCENTAGE_OFF);
+        assertThat(pl.adjustmentValue()).isEqualByComparingTo("10");
+    }
+
+    @Test
+    void resolvePrice_percentageOffRule_appliesWhenNoEntry() {
+        // 10% off a $100 base → $90
+        priceListService.create(
+            reqWithRule("10% Off", PriceListAdjustmentType.PERCENTAGE_OFF, new BigDecimal("10")));
+
+        ResolvedPriceResponse resolved = priceListService.resolvePrice(companyId, variantId, 1);
+
+        assertThat(resolved.contractPrice()).isTrue();
+        assertThat(resolved.price()).isEqualByComparingTo("90.0000");
+    }
+
+    @Test
+    void resolvePrice_markupPercentageRule_appliesWhenNoEntry() {
+        // 15% markup on $100 base → $115
+        priceListService.create(
+            reqWithRule("15% Markup", PriceListAdjustmentType.MARKUP_PERCENTAGE, new BigDecimal("15")));
+
+        ResolvedPriceResponse resolved = priceListService.resolvePrice(companyId, variantId, 1);
+
+        assertThat(resolved.contractPrice()).isTrue();
+        assertThat(resolved.price()).isEqualByComparingTo("115.0000");
+    }
+
+    @Test
+    void resolvePrice_explicitEntryBeatsRule() {
+        PriceListResponse pl = priceListService.create(
+            reqWithRule("10% Off", PriceListAdjustmentType.PERCENTAGE_OFF, new BigDecimal("10")));
+        // explicit entry at $55 — should win over the computed $90
+        priceListService.upsertEntry(pl.id(), variantId,
+            new UpsertPriceListEntryRequest(new BigDecimal("55.00"), 1));
+
+        ResolvedPriceResponse resolved = priceListService.resolvePrice(companyId, variantId, 1);
+
+        assertThat(resolved.price()).isEqualByComparingTo("55.00");
+    }
+
+    @Test
+    void resolvePrice_higherPriorityRuleWins_overLowerPriorityRule() {
+        // priority 1 list: 5% off  → $95
+        // priority 10 list: 20% off → $80 (wins)
+        priceListService.create(new CreatePriceListRequest(companyId, "Low Rule", "USD", 1, null, null,
+            PriceListAdjustmentType.PERCENTAGE_OFF, new BigDecimal("5")));
+        priceListService.create(new CreatePriceListRequest(companyId, "High Rule", "USD", 10, null, null,
+            PriceListAdjustmentType.PERCENTAGE_OFF, new BigDecimal("20")));
+
+        ResolvedPriceResponse resolved = priceListService.resolvePrice(companyId, variantId, 1);
+
+        assertThat(resolved.price()).isEqualByComparingTo("80.0000");
+    }
+
+    @Test
+    void update_canClearAdjustmentRule() {
+        PriceListResponse pl = priceListService.create(
+            reqWithRule("10% Off", PriceListAdjustmentType.PERCENTAGE_OFF, new BigDecimal("10")));
+
+        PriceListResponse cleared = priceListService.update(pl.id(),
+            new UpdatePriceListRequest("10% Off", "USD", 0, null, null, null, null));
+
+        assertThat(cleared.adjustmentType()).isNull();
+        assertThat(cleared.adjustmentValue()).isNull();
+    }
+
+    @Test
+    void create_adjustmentTypeWithoutValue_throwsValidation() {
+        assertThatThrownBy(() -> priceListService.create(
+            new CreatePriceListRequest(companyId, "Bad", "USD", 0, null, null,
+                PriceListAdjustmentType.PERCENTAGE_OFF, null)))
+            .isInstanceOf(ValidationException.class);
+    }
+
     // --- listEntriesForCustomer ---
 
     @Test
     void listEntriesForCustomer_returnsEnrichedEntries() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Customer View", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Customer View", "USD", 0));
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("75.00"), 1));
 
@@ -313,8 +395,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void listEntriesForCustomer_volumeTiers_allReturned() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Volume", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Volume", "USD", 0));
         priceListService.upsertEntry(pl.id(), variantId,
             new UpsertPriceListEntryRequest(new BigDecimal("90.00"), 1));
         priceListService.upsertEntry(pl.id(), variantId,
@@ -329,8 +410,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void listEntriesForCustomer_wrongCompany_throwsNotFound() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Private", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Private", "USD", 0));
 
         UUID otherCompanyId = companyService.create(userId,
             new CreateCompanyRequest("Other Co", null, null, null, null, null, null, null, null)).id();
@@ -341,8 +421,7 @@ class PriceListServiceIT extends AbstractIntegrationTest {
 
     @Test
     void listEntriesForCustomer_emptyList_returnsEmpty() {
-        PriceListResponse pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Empty", "USD", 0, null, null));
+        PriceListResponse pl = priceListService.create(req("Empty", "USD", 0));
 
         List<CustomerPriceEntryResponse> entries =
             priceListService.listEntriesForCustomer(pl.id(), companyId);

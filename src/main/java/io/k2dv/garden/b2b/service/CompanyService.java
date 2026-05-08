@@ -5,11 +5,15 @@ import java.math.BigDecimal;
 import io.k2dv.garden.b2b.model.Company;
 import io.k2dv.garden.b2b.model.CompanyMembership;
 import io.k2dv.garden.b2b.model.CompanyRole;
+import io.k2dv.garden.b2b.model.CompanyProductCatalog;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
+import io.k2dv.garden.b2b.repository.CompanyProductCatalogRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
+import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
@@ -17,6 +21,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -26,6 +31,8 @@ public class CompanyService {
     private final CompanyRepository companyRepo;
     private final CompanyMembershipRepository membershipRepo;
     private final UserRepository userRepo;
+    private final CompanyProductCatalogRepository catalogRepo;
+    private final ProductRepository productRepo;
 
     @Transactional
     public CompanyResponse create(UUID requestorId, CreateCompanyRequest req) {
@@ -82,6 +89,7 @@ public class CompanyService {
         company.setBillingState(req.billingState());
         company.setBillingPostalCode(req.billingPostalCode());
         company.setBillingCountry(req.billingCountry());
+        if (req.taxExempt() != null) company.setTaxExempt(req.taxExempt());
         return toResponse(companyRepo.save(company));
     }
 
@@ -139,10 +147,64 @@ public class CompanyService {
     }
 
     @Transactional(readOnly = true)
-    public java.math.BigDecimal getSpendingLimit(UUID companyId, UUID userId) {
+    public List<CompanyResponse> listAll() {
+        return companyRepo.findAll().stream().map(this::toResponse).toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CompanyResponse adminGetById(UUID companyId) {
+        return companyRepo.findById(companyId)
+            .map(this::toResponse)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+    }
+
+    @Transactional
+    public CompanyResponse adminUpdate(UUID companyId, AdminUpdateCompanyRequest req) {
+        Company company = companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        if (req.name() != null) company.setName(req.name());
+        if (req.taxId() != null) company.setTaxId(req.taxId());
+        if (req.phone() != null) company.setPhone(req.phone());
+        if (req.billingAddressLine1() != null) company.setBillingAddressLine1(req.billingAddressLine1());
+        if (req.billingAddressLine2() != null) company.setBillingAddressLine2(req.billingAddressLine2());
+        if (req.billingCity() != null) company.setBillingCity(req.billingCity());
+        if (req.billingState() != null) company.setBillingState(req.billingState());
+        if (req.billingPostalCode() != null) company.setBillingPostalCode(req.billingPostalCode());
+        if (req.billingCountry() != null) company.setBillingCountry(req.billingCountry());
+        if (req.taxExempt() != null) company.setTaxExempt(req.taxExempt());
+        company.setSalesRepUserId(req.salesRepUserId());
+        return toResponse(companyRepo.save(company));
+    }
+
+    @Transactional
+    public CompanyResponse updateMetadata(UUID companyId, Map<String, Object> metadata) {
+        Company company = companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        company.setMetadata(metadata);
+        return toResponse(companyRepo.save(company));
+    }
+
+    @Transactional(readOnly = true)
+    public boolean isTaxExempt(UUID companyId) {
+        return companyRepo.findById(companyId)
+            .map(Company::isTaxExempt)
+            .orElse(false);
+    }
+
+    @Transactional(readOnly = true)
+    public BigDecimal getSpendingLimit(UUID companyId, UUID userId) {
         return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
             .map(CompanyMembership::getSpendingLimit)
             .orElse(null);
+    }
+
+    @Transactional(readOnly = true)
+    public void assertSpendingLimit(UUID companyId, UUID userId, BigDecimal orderTotal) {
+        BigDecimal limit = getSpendingLimit(companyId, userId);
+        if (limit != null && orderTotal.compareTo(limit) > 0) {
+            throw new ValidationException("SPENDING_LIMIT_EXCEEDED",
+                "Order total exceeds your spending limit of " + limit);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -197,8 +259,41 @@ public class CompanyService {
             c.getBillingAddressLine1(), c.getBillingAddressLine2(),
             c.getBillingCity(), c.getBillingState(),
             c.getBillingPostalCode(), c.getBillingCountry(),
+            c.isTaxExempt(), c.getSalesRepUserId(), c.getMetadata(),
             c.getCreatedAt(), c.getUpdatedAt()
         );
+    }
+
+    // ─── Catalog ──────────────────────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public List<UUID> getCatalogProductIds(UUID companyId) {
+        assertCompanyExists(companyId);
+        return catalogRepo.findProductIdsByCompanyId(companyId);
+    }
+
+    @Transactional
+    public void addToCatalog(UUID companyId, UUID productId) {
+        assertCompanyExists(companyId);
+        productRepo.findByIdAndDeletedAtIsNull(productId)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        if (!catalogRepo.existsByCompanyIdAndProductId(companyId, productId)) {
+            CompanyProductCatalog entry = new CompanyProductCatalog();
+            entry.setCompanyId(companyId);
+            entry.setProductId(productId);
+            catalogRepo.save(entry);
+        }
+    }
+
+    @Transactional
+    public void removeFromCatalog(UUID companyId, UUID productId) {
+        catalogRepo.deleteByCompanyIdAndProductId(companyId, productId);
+    }
+
+    private void assertCompanyExists(UUID companyId) {
+        if (!companyRepo.existsById(companyId)) {
+            throw new NotFoundException("COMPANY_NOT_FOUND", "Company not found");
+        }
     }
 
     private CompanyMemberResponse toMemberResponse(CompanyMembership m, User user) {

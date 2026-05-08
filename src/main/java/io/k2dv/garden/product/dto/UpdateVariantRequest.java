@@ -14,5 +14,6 @@ public record UpdateVariantRequest(
     String weightUnit,
     FulfillmentType fulfillmentType,
     InventoryPolicy inventoryPolicy,
-    Integer leadTimeDays
+    Integer leadTimeDays,
+    Integer minimumOrderQty
 ) {}

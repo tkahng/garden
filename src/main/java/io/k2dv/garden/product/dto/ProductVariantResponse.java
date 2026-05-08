@@ -16,5 +16,6 @@ public record ProductVariantResponse(
     List<OptionValueLabel> optionValues,
     FulfillmentType fulfillmentType,
     InventoryPolicy inventoryPolicy,
-    int leadTimeDays
+    int leadTimeDays,
+    int minimumOrderQty
 ) {}

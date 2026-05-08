@@ -40,6 +40,43 @@ public interface CollectionProductRepository extends JpaRepository<CollectionPro
            "  SELECT p FROM io.k2dv.garden.product.model.Product p " +
            "  WHERE p.id = cp.productId AND p.status = io.k2dv.garden.product.model.ProductStatus.ACTIVE AND p.deletedAt IS NULL" +
            ") " +
-           "ORDER BY cp.position ASC, cp.createdAt ASC")
-    Page<CollectionProduct> findActiveProductsByCollectionId(@Param("collectionId") UUID collectionId, Pageable pageable);
+           "AND NOT EXISTS (" +
+           "  SELECT cpc FROM io.k2dv.garden.b2b.model.CompanyProductCatalog cpc WHERE cpc.productId = cp.productId" +
+           ") ")
+    Page<CollectionProduct> findActivePublicProductsByCollectionId(@Param("collectionId") UUID collectionId, Pageable pageable);
+
+    @Query("SELECT cp FROM CollectionProduct cp " +
+           "WHERE cp.collectionId = :collectionId " +
+           "AND EXISTS (" +
+           "  SELECT p FROM io.k2dv.garden.product.model.Product p " +
+           "  WHERE p.id = cp.productId AND p.status = io.k2dv.garden.product.model.ProductStatus.ACTIVE AND p.deletedAt IS NULL" +
+           ") " +
+           "AND (" +
+           "  NOT EXISTS (SELECT cpc FROM io.k2dv.garden.b2b.model.CompanyProductCatalog cpc WHERE cpc.productId = cp.productId)" +
+           "  OR EXISTS (SELECT cpc2 FROM io.k2dv.garden.b2b.model.CompanyProductCatalog cpc2 WHERE cpc2.productId = cp.productId AND cpc2.companyId = :companyId)" +
+           ") ")
+    Page<CollectionProduct> findActiveProductsByCollectionIdForCompany(@Param("collectionId") UUID collectionId, @Param("companyId") UUID companyId, Pageable pageable);
+
+    @Query("SELECT cp.productId FROM CollectionProduct cp " +
+           "WHERE cp.collectionId = :collectionId " +
+           "AND EXISTS (" +
+           "  SELECT p FROM io.k2dv.garden.product.model.Product p " +
+           "  WHERE p.id = cp.productId AND p.status = io.k2dv.garden.product.model.ProductStatus.ACTIVE AND p.deletedAt IS NULL" +
+           ") " +
+           "AND NOT EXISTS (" +
+           "  SELECT cpc FROM io.k2dv.garden.b2b.model.CompanyProductCatalog cpc WHERE cpc.productId = cp.productId" +
+           ") ")
+    List<UUID> findActivePublicProductIdsByCollectionId(@Param("collectionId") UUID collectionId);
+
+    @Query("SELECT cp.productId FROM CollectionProduct cp " +
+           "WHERE cp.collectionId = :collectionId " +
+           "AND EXISTS (" +
+           "  SELECT p FROM io.k2dv.garden.product.model.Product p " +
+           "  WHERE p.id = cp.productId AND p.status = io.k2dv.garden.product.model.ProductStatus.ACTIVE AND p.deletedAt IS NULL" +
+           ") " +
+           "AND (" +
+           "  NOT EXISTS (SELECT cpc FROM io.k2dv.garden.b2b.model.CompanyProductCatalog cpc WHERE cpc.productId = cp.productId)" +
+           "  OR EXISTS (SELECT cpc2 FROM io.k2dv.garden.b2b.model.CompanyProductCatalog cpc2 WHERE cpc2.productId = cp.productId AND cpc2.companyId = :companyId)" +
+           ") ")
+    List<UUID> findActiveProductIdsByCollectionIdForCompany(@Param("collectionId") UUID collectionId, @Param("companyId") UUID companyId);
 }

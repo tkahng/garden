@@ -85,7 +85,7 @@ class CompanyServiceIT extends AbstractIntegrationTest {
             new CreateCompanyRequest("Old Name", null, null, null, null, null, null, null, null));
 
         CompanyResponse updated = companyService.update(company.id(), ownerUserId,
-            new UpdateCompanyRequest("New Name", "TX123", null, null, null, null, null, null, null));
+            new UpdateCompanyRequest("New Name", "TX123", null, null, null, null, null, null, null, null));
 
         assertThat(updated.name()).isEqualTo("New Name");
         assertThat(updated.taxId()).isEqualTo("TX123");
@@ -99,7 +99,7 @@ class CompanyServiceIT extends AbstractIntegrationTest {
         companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
 
         assertThatThrownBy(() -> companyService.update(company.id(), memberUserId,
-            new UpdateCompanyRequest("Hacked", null, null, null, null, null, null, null, null)))
+            new UpdateCompanyRequest("Hacked", null, null, null, null, null, null, null, null, null)))
             .isInstanceOf(ForbiddenException.class);
     }
 

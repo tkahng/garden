@@ -33,7 +33,7 @@ class AdminUserControllerTest {
     @Test
     void listUsers_returns200WithPage() throws Exception {
         var user = new AdminUserResponse(UUID.randomUUID(), "u@example.com", "U", "U",
-            null, UserStatus.ACTIVE, null, null, List.of("CUSTOMER"), null, List.of());
+            null, UserStatus.ACTIVE, null, null, List.of("CUSTOMER"), null, List.of(), null);
         var paged = new PagedResult<>(List.of(user), PageMeta.builder().page(0).pageSize(20).total(1).build());
         when(adminUserService.listUsers(any(), any())).thenReturn(paged);
 

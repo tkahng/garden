@@ -1,5 +1,6 @@
 package io.k2dv.garden.product.service;
 
+import io.k2dv.garden.b2b.repository.CompanyProductCatalogRepository;
 import io.k2dv.garden.blob.repository.BlobObjectRepository;
 import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.collection.service.CollectionMembershipService;
@@ -42,6 +43,7 @@ public class ProductService {
     private final StorageService storageService;
     private final CollectionMembershipService collectionMembershipService;
     private final ProductReviewService reviewService;
+    private final CompanyProductCatalogRepository catalogRepo;
 
     @Transactional
     public AdminProductResponse create(CreateProductRequest req) {
@@ -118,6 +120,14 @@ public class ProductService {
         if (req.status() == ProductStatus.ARCHIVED) {
             collectionMembershipService.removeProductFromAllCollections(p.getId());
         }
+        return toAdminResponse(productRepo.save(p));
+    }
+
+    @Transactional
+    public AdminProductResponse updateMetadata(UUID id, Map<String, Object> metadata) {
+        Product p = productRepo.findByIdAndDeletedAtIsNull(id)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        p.setMetadata(metadata);
         return toAdminResponse(productRepo.save(p));
     }
 
@@ -204,10 +214,38 @@ public class ProductService {
     }
 
     @Transactional(readOnly = true)
-    public ProductDetailResponse getByHandle(String handle) {
+    public VariantLookupResponse lookupBySku(String sku) {
+        ProductVariant variant = variantRepo.findBySkuIgnoreCaseAndDeletedAtIsNull(sku)
+            .orElseThrow(() -> new NotFoundException("SKU_NOT_FOUND", "No active variant found with SKU: " + sku));
+        Product product = productRepo.findById(variant.getProductId())
+            .filter(p -> p.getStatus() == ProductStatus.ACTIVE && p.getDeletedAt() == null)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found for this variant"));
+
+        String featuredImageUrl = null;
+        if (product.getFeaturedImageId() != null) {
+            featuredImageUrl = imageRepo.findById(product.getFeaturedImageId())
+                .flatMap(img -> blobRepo.findById(img.getBlobId()))
+                .map(blob -> storageService.resolveUrl(blob.getKey()))
+                .orElse(null);
+        }
+
+        return new VariantLookupResponse(
+            variant.getId(), product.getId(),
+            product.getTitle(), product.getHandle(),
+            variant.getTitle(), variant.getSku(),
+            variant.getPrice(), featuredImageUrl
+        );
+    }
+
+    public ProductDetailResponse getByHandle(String handle, UUID companyId) {
         Product p = productRepo.findByHandle(handle)
             .filter(prod -> prod.getStatus() == ProductStatus.ACTIVE && prod.getDeletedAt() == null)
             .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+        if (catalogRepo.existsByProductId(p.getId())) {
+            if (companyId == null || !catalogRepo.existsByCompanyIdAndProductId(companyId, p.getId())) {
+                throw new NotFoundException("PRODUCT_NOT_FOUND", "Product not found");
+            }
+        }
         return toDetailResponse(p);
     }
 
@@ -268,7 +306,8 @@ public class ProductService {
                 .toList();
             return new AdminVariantResponse(v.getId(), v.getTitle(), v.getSku(), v.getBarcode(),
                 v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
-                labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(), v.getDeletedAt());
+                labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(),
+                v.getMinimumOrderQty(), v.getDeletedAt());
         }).toList();
 
         Set<UUID> blobIds = images.stream().map(ProductImage::getBlobId).collect(Collectors.toSet());
@@ -285,7 +324,7 @@ public class ProductService {
         return new AdminProductResponse(p.getId(), p.getTitle(), p.getDescription(), p.getHandle(),
             p.getVendor(), p.getProductType(), p.getStatus(), p.getFeaturedImageId(),
             variantResponses, optionResponses, imageResponses, tagNames,
-            p.getMetaTitle(), p.getMetaDescription(),
+            p.getMetaTitle(), p.getMetaDescription(), p.getMetadata(),
             p.getCreatedAt(), p.getUpdatedAt(), p.getDeletedAt());
     }
 
@@ -304,7 +343,8 @@ public class ProductService {
                 .toList();
             return new ProductVariantResponse(v.getId(), v.getTitle(), v.getSku(),
                 v.getPrice(), v.getCompareAtPrice(), labels,
-                v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays());
+                v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(),
+                v.getMinimumOrderQty());
         }).toList();
 
         Set<UUID> blobIds = images.stream().map(ProductImage::getBlobId).collect(Collectors.toSet());

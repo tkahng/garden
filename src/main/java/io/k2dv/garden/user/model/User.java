@@ -45,6 +45,10 @@ public class User extends BaseEntity {
     @Column(name = "tags", columnDefinition = "text[]")
     private List<String> tags = new java.util.ArrayList<>();
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "metadata", columnDefinition = "jsonb")
+    private java.util.Map<String, Object> metadata = new java.util.HashMap<>();
+
     @ManyToMany(fetch = FetchType.LAZY)
     @JoinTable(
         schema = "auth",

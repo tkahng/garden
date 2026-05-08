@@ -103,6 +103,7 @@ public class VariantService {
         if (req.fulfillmentType() != null) v.setFulfillmentType(req.fulfillmentType());
         if (req.inventoryPolicy() != null) v.setInventoryPolicy(req.inventoryPolicy());
         if (req.leadTimeDays() != null) v.setLeadTimeDays(req.leadTimeDays());
+        if (req.minimumOrderQty() != null) v.setMinimumOrderQty(req.minimumOrderQty());
         return toResponse(variantRepo.save(v));
     }
 
@@ -138,6 +139,7 @@ public class VariantService {
             .toList();
         return new AdminVariantResponse(v.getId(), v.getTitle(), v.getSku(), v.getBarcode(),
             v.getPrice(), v.getCompareAtPrice(), v.getWeight(), v.getWeightUnit(),
-            labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(), v.getDeletedAt());
+            labels, v.getFulfillmentType(), v.getInventoryPolicy(), v.getLeadTimeDays(),
+            v.getMinimumOrderQty(), v.getDeletedAt());
     }
 }

@@ -4,6 +4,8 @@ import io.k2dv.garden.blob.dto.BlobResponse;
 import io.k2dv.garden.blob.dto.BlobUsageResponse;
 import io.k2dv.garden.blob.service.BlobService;
 import io.k2dv.garden.config.TestSecurityConfig;
+import io.k2dv.garden.shared.dto.PageMeta;
+import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.GlobalExceptionHandler;
 import io.k2dv.garden.shared.exception.ValidationException;
 import org.junit.jupiter.api.Test;
@@ -40,7 +42,13 @@ class BlobControllerTest {
     private BlobResponse sampleBlob(UUID id) {
         return new BlobResponse(id, "uploads/abc-test.jpg", "test.jpg", "image/jpeg", 4L,
             "http://localhost:9000/test/uploads/abc-test.jpg",
-            "A test image", "Test Title", 800, 600, Instant.now());
+            "A test image", "Test Title", 800, 600, null, Instant.now());
+    }
+
+    private BlobResponse sampleBlobWithFolder(UUID id, String folder) {
+        return new BlobResponse(id, "uploads/abc-test.jpg", "test.jpg", "image/jpeg", 4L,
+            "http://localhost:9000/test/uploads/abc-test.jpg",
+            "A test image", "Test Title", 800, 600, folder, Instant.now());
     }
 
     @Test
@@ -110,5 +118,48 @@ class BlobControllerTest {
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data[0].entityType").value("product"))
             .andExpect(jsonPath("$.data[0].entityId").value(productId.toString()));
+    }
+
+    @Test
+    void listFolders_returns200() throws Exception {
+        when(blobService.listFolders()).thenReturn(List.of("banners", "products"));
+
+        mvc.perform(get("/api/v1/admin/blobs/folders"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0]").value("banners"));
+    }
+
+    @Test
+    void move_returns204() throws Exception {
+        doNothing().when(blobService).moveToFolder(any(), any());
+
+        mvc.perform(post("/api/v1/admin/blobs/move")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"ids\":[\"" + UUID.randomUUID() + "\"],\"folder\":\"banners\"}"))
+            .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void update_metadata_withFolder_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(blobService.updateMetadata(eq(id), any())).thenReturn(sampleBlobWithFolder(id, "products"));
+
+        mvc.perform(patch("/api/v1/admin/blobs/{id}", id)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"folder\":\"products\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.folder").value("products"));
+    }
+
+    @Test
+    void list_withFolderParam_returns200() throws Exception {
+        var emptyResult = new PagedResult<BlobResponse>(
+            List.of(),
+            PageMeta.builder().page(0).pageSize(100).total(0).build()
+        );
+        when(blobService.list(any(), any())).thenReturn(emptyResult);
+
+        mvc.perform(get("/api/v1/admin/blobs").param("folder", "gallery"))
+            .andExpect(status().isOk());
     }
 }

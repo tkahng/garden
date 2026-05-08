@@ -43,7 +43,7 @@ class CartControllerTest {
         CartItemProductInfo productInfo = new CartItemProductInfo(
             productId, "Test Product", "Default Title", null);
         return new CartResponse(id, CartStatus.ACTIVE, null,
-            List.of(new CartItemResponse(UUID.randomUUID(), UUID.randomUUID(), 2, new BigDecimal("49.99"), productInfo)),
+            List.of(new CartItemResponse(UUID.randomUUID(), UUID.randomUUID(), 2, new BigDecimal("49.99"), productInfo, 1)),
             /* createdAt */ null);
     }
 

@@ -5,6 +5,7 @@ import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.CompanyRole;
 import io.k2dv.garden.b2b.service.CompanyInvitationService;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.CompanyShippingAddressService;
 import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.config.TestCurrentUserConfig;
@@ -47,10 +48,14 @@ class CompanyControllerTest {
     PriceListService priceListService;
     @MockitoBean
     InvoiceService invoiceService;
+    @MockitoBean
+    io.k2dv.garden.b2b.service.CreditAccountService creditAccountService;
+    @MockitoBean
+    CompanyShippingAddressService shippingAddressService;
 
     private CompanyResponse stubCompany(UUID id) {
-        return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null,
-            Instant.now(), Instant.now());
+        return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null, false,
+            null, null, Instant.now(), Instant.now());
     }
 
     private CompanyMemberResponse stubMember(UUID userId) {
@@ -107,7 +112,7 @@ class CompanyControllerTest {
         mvc.perform(put("/api/v1/companies/{id}", id)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new UpdateCompanyRequest("Updated", null, null, null, null, null, null, null, null))))
+                    new UpdateCompanyRequest("Updated", null, null, null, null, null, null, null, null, null))))
             .andExpect(status().isOk());
     }
 
@@ -168,5 +173,106 @@ class CompanyControllerTest {
 
         mvc.perform(delete("/api/v1/companies/{id}/members/{userId}", companyId, memberId))
             .andExpect(status().isNoContent());
+    }
+
+    // ─── Shipping addresses ───────────────────────────────────────────────────
+
+    private CompanyAddressResponse stubAddress(UUID companyId, UUID addressId, boolean isDefault) {
+        return new CompanyAddressResponse(addressId, companyId, "HQ",
+            "Jane", "Doe", "Acme", "123 Main St", null, "Springfield",
+            "IL", "62701", "US", isDefault, Instant.now(), Instant.now());
+    }
+
+    private CompanyAddressRequest addressReq(boolean isDefault) {
+        return new CompanyAddressRequest("HQ", "Jane", "Doe", "Acme",
+            "123 Main St", null, "Springfield", "IL", "62701", "US", isDefault);
+    }
+
+    @Test
+    void listAddresses_member_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+        when(shippingAddressService.list(eq(companyId), any()))
+            .thenReturn(List.of(stubAddress(companyId, addressId, true)));
+
+        mvc.perform(get("/api/v1/companies/{id}/addresses", companyId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data").isArray())
+            .andExpect(jsonPath("$.data[0].id").value(addressId.toString()))
+            .andExpect(jsonPath("$.data[0].isDefault").value(true));
+    }
+
+    @Test
+    void addAddress_ownerOrManager_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+        when(shippingAddressService.add(eq(companyId), any(), any()))
+            .thenReturn(stubAddress(companyId, addressId, false));
+
+        mvc.perform(post("/api/v1/companies/{id}/addresses", companyId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(addressReq(false))))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.id").value(addressId.toString()));
+    }
+
+    @Test
+    void addAddress_nonManager_returns403() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        when(shippingAddressService.add(eq(companyId), any(), any()))
+            .thenThrow(new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can manage shipping addresses"));
+
+        mvc.perform(post("/api/v1/companies/{id}/addresses", companyId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(addressReq(false))))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value("INSUFFICIENT_COMPANY_ROLE"));
+    }
+
+    @Test
+    void updateAddress_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+        when(shippingAddressService.update(eq(companyId), eq(addressId), any(), any()))
+            .thenReturn(stubAddress(companyId, addressId, false));
+
+        mvc.perform(put("/api/v1/companies/{id}/addresses/{addressId}", companyId, addressId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(addressReq(false))))
+            .andExpect(status().isOk());
+    }
+
+    @Test
+    void deleteAddress_returns204() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+        doNothing().when(shippingAddressService).delete(eq(companyId), eq(addressId), any());
+
+        mvc.perform(delete("/api/v1/companies/{id}/addresses/{addressId}", companyId, addressId))
+            .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void setDefaultAddress_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+        when(shippingAddressService.setDefault(eq(companyId), eq(addressId), any()))
+            .thenReturn(stubAddress(companyId, addressId, true));
+
+        mvc.perform(put("/api/v1/companies/{id}/addresses/{addressId}/default", companyId, addressId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.isDefault").value(true));
+    }
+
+    @Test
+    void setDefaultAddress_notFound_returns404() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID addressId = UUID.randomUUID();
+        when(shippingAddressService.setDefault(eq(companyId), eq(addressId), any()))
+            .thenThrow(new NotFoundException("ADDRESS_NOT_FOUND", "Shipping address not found"));
+
+        mvc.perform(put("/api/v1/companies/{id}/addresses/{addressId}/default", companyId, addressId))
+            .andExpect(status().isNotFound());
     }
 }

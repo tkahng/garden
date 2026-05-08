@@ -2,6 +2,7 @@ package io.k2dv.garden.b2b.service;
 
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.PriceList;
+import io.k2dv.garden.b2b.model.PriceListAdjustmentType;
 import io.k2dv.garden.b2b.model.PriceListEntry;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.b2b.repository.PriceListEntryRepository;
@@ -11,11 +12,16 @@ import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -36,6 +42,8 @@ public class PriceListService {
         companyRepo.findById(req.companyId())
             .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
 
+        validateAdjustment(req.adjustmentType(), req.adjustmentValue());
+
         PriceList pl = new PriceList();
         pl.setCompanyId(req.companyId());
         pl.setName(req.name());
@@ -43,6 +51,8 @@ public class PriceListService {
         pl.setPriority(req.priority() != null ? req.priority() : 0);
         pl.setStartsAt(req.startsAt());
         pl.setEndsAt(req.endsAt());
+        pl.setAdjustmentType(req.adjustmentType());
+        pl.setAdjustmentValue(req.adjustmentValue());
         return toResponse(priceListRepo.save(pl));
     }
 
@@ -59,12 +69,16 @@ public class PriceListService {
 
     @Transactional
     public PriceListResponse update(UUID id, UpdatePriceListRequest req) {
+        validateAdjustment(req.adjustmentType(), req.adjustmentValue());
+
         PriceList pl = requirePriceList(id);
         pl.setName(req.name());
         if (req.currency() != null) pl.setCurrency(req.currency());
         if (req.priority() != null) pl.setPriority(req.priority());
         pl.setStartsAt(req.startsAt());
         pl.setEndsAt(req.endsAt());
+        pl.setAdjustmentType(req.adjustmentType());
+        pl.setAdjustmentValue(req.adjustmentValue());
         return toResponse(priceListRepo.save(pl));
     }
 
@@ -128,6 +142,18 @@ public class PriceListService {
                     matchedList.getId(), true
                 );
             }
+
+            // No per-variant entry — check for a list-level adjustment rule (highest priority first)
+            for (PriceList pl : activeLists) {
+                if (pl.getAdjustmentType() != null) {
+                    BigDecimal adjusted = applyAdjustment(variant.getPrice(), pl.getAdjustmentType(), pl.getAdjustmentValue());
+                    return new ResolvedPriceResponse(
+                        variantId, companyId, qty,
+                        adjusted, pl.getCurrency(),
+                        pl.getId(), true
+                    );
+                }
+            }
         }
 
         return new ResolvedPriceResponse(
@@ -170,6 +196,36 @@ public class PriceListService {
         }).toList();
     }
 
+    @Transactional(readOnly = true)
+    public List<VariantPriceTiersResponse> getProductTiers(UUID companyId, String productHandle) {
+        companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        Product product = productRepo.findByHandle(productHandle)
+            .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND", "Product not found"));
+
+        List<UUID> variantIds = variantRepo.findByProductIdAndDeletedAtIsNullOrderByCreatedAtAsc(product.getId())
+            .stream().map(ProductVariant::getId).toList();
+        if (variantIds.isEmpty()) return List.of();
+
+        List<PriceList> activeLists = priceListRepo.findActiveLists(companyId, Instant.now());
+        if (activeLists.isEmpty()) return List.of();
+
+        List<UUID> listIds = activeLists.stream().map(PriceList::getId).toList();
+        List<PriceListEntry> entries = entryRepo.findByPriceListIdsAndVariantIds(listIds, variantIds);
+
+        Map<UUID, List<PriceTierEntry>> tiersMap = new LinkedHashMap<>();
+        for (UUID vid : variantIds) tiersMap.put(vid, new ArrayList<>());
+        for (PriceListEntry e : entries) {
+            tiersMap.computeIfPresent(e.getVariantId(),
+                (k, list) -> { list.add(new PriceTierEntry(e.getMinQty(), e.getPrice())); return list; });
+        }
+
+        return tiersMap.entrySet().stream()
+            .filter(entry -> !entry.getValue().isEmpty())
+            .map(entry -> new VariantPriceTiersResponse(entry.getKey(), entry.getValue()))
+            .toList();
+    }
+
     private PriceListEntry pickBestEntry(List<PriceListEntry> candidates, List<PriceList> orderedLists) {
         // Among candidates with equal minQty, prefer the entry in the highest-priority list
         int bestMinQty = candidates.get(0).getMinQty();
@@ -191,10 +247,29 @@ public class PriceListService {
             .orElseThrow(() -> new NotFoundException("PRICE_LIST_NOT_FOUND", "Price list not found"));
     }
 
+    private void validateAdjustment(PriceListAdjustmentType type, BigDecimal value) {
+        if ((type == null) != (value == null)) {
+            throw new ValidationException("INVALID_ADJUSTMENT",
+                "adjustmentType and adjustmentValue must both be set or both be null");
+        }
+    }
+
+    private BigDecimal applyAdjustment(BigDecimal base, PriceListAdjustmentType type, BigDecimal value) {
+        return switch (type) {
+            case PERCENTAGE_OFF ->
+                base.multiply(BigDecimal.ONE.subtract(value.divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP)))
+                    .setScale(4, RoundingMode.HALF_UP);
+            case MARKUP_PERCENTAGE ->
+                base.multiply(BigDecimal.ONE.add(value.divide(new BigDecimal("100"), 10, RoundingMode.HALF_UP)))
+                    .setScale(4, RoundingMode.HALF_UP);
+        };
+    }
+
     private PriceListResponse toResponse(PriceList pl) {
         return new PriceListResponse(
             pl.getId(), pl.getCompanyId(), pl.getName(), pl.getCurrency(),
             pl.getPriority(), pl.getStartsAt(), pl.getEndsAt(),
+            pl.getAdjustmentType(), pl.getAdjustmentValue(),
             pl.getCreatedAt(), pl.getUpdatedAt()
         );
     }

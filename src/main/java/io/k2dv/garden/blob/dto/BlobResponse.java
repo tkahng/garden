@@ -16,6 +16,7 @@ public record BlobResponse(
     String title,
     Integer width,
     Integer height,
+    String folder,
     Instant createdAt
 ) {
     public static BlobResponse from(BlobObject blob, String url) {
@@ -30,6 +31,7 @@ public record BlobResponse(
             blob.getTitle(),
             blob.getWidth(),
             blob.getHeight(),
+            blob.getFolder(),
             blob.getCreatedAt());
     }
 }

@@ -78,19 +78,29 @@ class PaymentServiceTest {
   io.k2dv.garden.b2b.service.InvoiceService invoiceService;
   @Mock
   io.k2dv.garden.shipping.service.ShippingService shippingService;
+  @Mock
+  io.k2dv.garden.b2b.service.CompanyService companyService;
+  @Mock
+  io.k2dv.garden.b2b.service.CreditAccountService creditAccountService;
 
   PaymentService paymentService;
 
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService, companyService, creditAccountService);
   }
 
   private Cart stubCart(UUID userId) {
     Cart cart = new Cart();
     cart.setUserId(userId);
     cart.setStatus(CartStatus.ACTIVE);
+    return cart;
+  }
+
+  private Cart stubCart(UUID userId, UUID companyId) {
+    Cart cart = stubCart(userId);
+    cart.setCompanyId(companyId);
     return cart;
   }
 
@@ -129,7 +139,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
@@ -137,6 +147,7 @@ class PaymentServiceTest {
 
     assertThat(response.checkoutUrl()).isEqualTo("https://checkout.stripe.com/pay/cs_test_123");
     assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.pendingApproval()).isFalse();
 
     verify(orderService).setStripeSession(order.getId(), "cs_test_123");
     verify(cartService).markCheckedOut(cart.getId());
@@ -156,7 +167,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(stubCartItem(variantId)));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any()))
         .thenThrow(mock(StripeException.class));
@@ -186,7 +197,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(item));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findById(variantId)).thenReturn(Optional.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
@@ -401,7 +412,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), any(), any(), any(), any(), any())).thenReturn(orderAfterCreate);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(orderAfterCreate);
     when(discountService.redeem(eq("SAVE10"), any(), any()))
         .thenReturn(new DiscountApplication(discountId, "SAVE10", DiscountType.FIXED_AMOUNT, new BigDecimal("10.00"), new BigDecimal("10.00")));
     when(orderService.getById(orderAfterCreate.getId())).thenReturn(orderAfterDiscount);
@@ -422,6 +433,58 @@ class PaymentServiceTest {
     // no collapsed single "Order Total" item
     assertThat(lineItems).noneMatch(li ->
         li.getPriceData().getProductData().getName().contains("Order Total"));
+  }
+
+  @Test
+  void initiateCheckout_netTerms_skipsStripeCreatesInvoiceAndNotifies() {
+    UUID userId = UUID.randomUUID();
+    UUID companyId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    Cart cart = stubCart(userId, companyId);
+    CartItem cartItem = stubCartItem(variantId);
+    Order order = stubOrder(UUID.randomUUID(), userId);
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(creditAccountService.getPaymentTermsDays(companyId)).thenReturn(30);
+
+    CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
+
+    assertThat(response.checkoutUrl()).isNull();
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.pendingApproval()).isFalse();
+    verify(invoiceService).createManualInvoice(order.getId(), companyId, 30);
+    verify(orderService).notifyNetTermsPlaced(order);
+    verify(cartService).markCheckedOut(cart.getId());
+    verifyNoInteractions(stripeGateway);
+  }
+
+  @Test
+  void initiateCheckout_spendingLimitExceeded_holdsForApproval() {
+    UUID userId = UUID.randomUUID();
+    UUID companyId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    Cart cart = stubCart(userId, companyId);
+    CartItem cartItem = stubCartItem(variantId); // unitPrice=49.99, qty=2 → total=99.98
+    Order order = stubOrder(UUID.randomUUID(), userId);
+    order.setTotalAmount(new BigDecimal("99.98"));
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(companyService.getSpendingLimit(companyId, userId)).thenReturn(new BigDecimal("50.00"));
+
+    CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
+
+    assertThat(response.checkoutUrl()).isNull();
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.pendingApproval()).isTrue();
+    verify(orderService).holdForApproval(order.getId());
+    verify(cartService).markCheckedOut(cart.getId());
+    verifyNoInteractions(stripeGateway, invoiceService);
   }
 
   @Test

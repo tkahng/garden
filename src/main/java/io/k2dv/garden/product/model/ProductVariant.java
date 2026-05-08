@@ -42,6 +42,8 @@ public class ProductVariant extends BaseEntity {
     private BigDecimal weight;
     @Column(name = "weight_unit")
     private String weightUnit;
+    @Column(name = "min_order_qty", nullable = false)
+    private int minimumOrderQty = 1;
     @Column(name = "deleted_at")
     private Instant deletedAt;
     @ManyToMany(fetch = FetchType.LAZY)

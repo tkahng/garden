@@ -9,6 +9,8 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -26,4 +28,14 @@ public interface DiscountRepository extends JpaRepository<Discount, UUID>, JpaSp
         WHERE d.id = :id AND (d.maxUses IS NULL OR d.usedCount < d.maxUses)
         """)
     int incrementUsedCount(@Param("id") UUID id);
+
+    @Query("""
+        SELECT d FROM Discount d
+        WHERE d.automatic = true AND d.isActive = true
+          AND (d.startsAt IS NULL OR d.startsAt <= :now)
+          AND (d.endsAt IS NULL OR d.endsAt >= :now)
+          AND (d.maxUses IS NULL OR d.usedCount < d.maxUses)
+          AND (d.companyId IS NULL OR d.companyId = :companyId)
+        """)
+    List<Discount> findActiveAutomatic(@Param("now") Instant now, @Param("companyId") UUID companyId);
 }

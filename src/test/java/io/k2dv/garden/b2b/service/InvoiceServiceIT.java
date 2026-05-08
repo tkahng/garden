@@ -83,7 +83,7 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
             companyId, order.getId(), null, new BigDecimal("500.00"), "USD", 30);
 
         InvoiceResponse resp = invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("200.00"), "REF-001", null, null));
+            new RecordPaymentRequest(new BigDecimal("200.00"), null, "REF-001", null, null));
 
         assertThat(resp.status()).isEqualTo(InvoiceStatus.PARTIAL);
         assertThat(resp.paidAmount()).isEqualByComparingTo("200.00");
@@ -98,7 +98,7 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
             companyId, order.getId(), null, new BigDecimal("500.00"), "USD", 30);
 
         InvoiceResponse resp = invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("500.00"), "REF-FULL", null, null));
+            new RecordPaymentRequest(new BigDecimal("500.00"), null, "REF-FULL", null, null));
 
         assertThat(resp.status()).isEqualTo(InvoiceStatus.PAID);
         assertThat(resp.outstandingAmount()).isEqualByComparingTo(BigDecimal.ZERO);
@@ -114,11 +114,11 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
             companyId, order.getId(), null, new BigDecimal("500.00"), "USD", 30);
 
         invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("200.00"), "P1", null, null));
+            new RecordPaymentRequest(new BigDecimal("200.00"), null, "P1", null, null));
         invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("200.00"), "P2", null, null));
+            new RecordPaymentRequest(new BigDecimal("200.00"), null, "P2", null, null));
         InvoiceResponse final_ = invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("100.00"), "P3", null, null));
+            new RecordPaymentRequest(new BigDecimal("100.00"), null, "P3", null, null));
 
         assertThat(final_.status()).isEqualTo(InvoiceStatus.PAID);
         assertThat(final_.payments()).hasSize(3);
@@ -131,7 +131,7 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
             companyId, order.getId(), null, new BigDecimal("500.00"), "USD", 30);
 
         assertThatThrownBy(() -> invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("600.00"), null, null, null)))
+            new RecordPaymentRequest(new BigDecimal("600.00"), null, null, null, null)))
             .isInstanceOf(ValidationException.class)
             .satisfies(e -> assertThat(((ValidationException) e).getErrorCode()).isEqualTo("OVERPAYMENT"));
     }
@@ -142,10 +142,10 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
         var invoice = invoiceService.createFromOrder(
             companyId, order.getId(), null, new BigDecimal("100.00"), "USD", 30);
         invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null));
+            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null, null));
 
         assertThatThrownBy(() -> invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("1.00"), null, null, null)))
+            new RecordPaymentRequest(new BigDecimal("1.00"), null, null, null, null)))
             .isInstanceOf(ConflictException.class)
             .satisfies(e -> assertThat(((ConflictException) e).getErrorCode()).isEqualTo("INVOICE_NOT_PAYABLE"));
     }
@@ -166,7 +166,7 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
         var invoice = invoiceService.createFromOrder(
             companyId, order.getId(), null, new BigDecimal("500.00"), "USD", 30);
         invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null));
+            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null, null));
 
         InvoiceResponse resp = invoiceService.markOverdue(invoice.getId());
         assertThat(resp.status()).isEqualTo(InvoiceStatus.OVERDUE);
@@ -178,7 +178,7 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
         var invoice = invoiceService.createFromOrder(
             companyId, order.getId(), null, new BigDecimal("100.00"), "USD", 30);
         invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null));
+            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null, null));
 
         assertThatThrownBy(() -> invoiceService.markOverdue(invoice.getId()))
             .isInstanceOf(ConflictException.class)
@@ -204,7 +204,7 @@ class InvoiceServiceIT extends AbstractIntegrationTest {
         var invoice = invoiceService.createFromOrder(
             companyId, order.getId(), null, new BigDecimal("100.00"), "USD", 30);
         invoiceService.recordPayment(invoice.getId(),
-            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null));
+            new RecordPaymentRequest(new BigDecimal("100.00"), null, null, null, null));
 
         assertThatThrownBy(() -> invoiceService.voidInvoice(invoice.getId()))
             .isInstanceOf(ConflictException.class)

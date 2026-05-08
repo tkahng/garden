@@ -1,13 +1,20 @@
 package io.k2dv.garden.order.controller;
 
+import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.config.TestCurrentUserConfig;
 import io.k2dv.garden.config.TestSecurityConfig;
+import io.k2dv.garden.fulfillment.dto.FulfillmentResponse;
+import io.k2dv.garden.fulfillment.model.FulfillmentStatus;
+import io.k2dv.garden.fulfillment.service.FulfillmentService;
 import io.k2dv.garden.order.dto.OrderResponse;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
+import io.k2dv.garden.payment.dto.CheckoutResponse;
+import io.k2dv.garden.payment.service.PaymentService;
 import io.k2dv.garden.shared.dto.PageMeta;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.GlobalExceptionHandler;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import org.junit.jupiter.api.Test;
@@ -24,6 +31,8 @@ import java.util.UUID;
 import static io.k2dv.garden.config.TestCurrentUserConfig.STUB_USER_ID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -34,10 +43,14 @@ class StorefrontOrderControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean OrderService orderService;
+    @MockitoBean io.k2dv.garden.cart.service.CartService cartService;
+    @MockitoBean PaymentService paymentService;
+    @MockitoBean CompanyService companyService;
+    @MockitoBean FulfillmentService fulfillmentService;
 
     private OrderResponse stubOrder(UUID id, UUID userId, OrderStatus status) {
         return new OrderResponse(id, userId, null, status,
-            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null, null, null);
+            new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null, null, null, null);
     }
 
     @Test
@@ -171,6 +184,100 @@ class StorefrontOrderControllerTest {
                 "Order does not belong to current user"));
 
         mvc.perform(post("/api/v1/storefront/orders/{id}/refund", id))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("ORDER_NOT_OWNED"));
+    }
+
+    @Test
+    void listPendingApprovals_ownerOrManager_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        doNothing().when(companyService).requireMemberAccess(companyId, STUB_USER_ID);
+        when(companyService.isOwnerOrManager(companyId, STUB_USER_ID)).thenReturn(true);
+        PagedResult<OrderResponse> result = new PagedResult<>(
+            List.of(stubOrder(orderId, STUB_USER_ID, OrderStatus.PENDING_APPROVAL)),
+            PageMeta.builder().page(0).pageSize(20).total(1L).build());
+        when(orderService.listPendingApprovals(eq(companyId), any())).thenReturn(result);
+
+        mvc.perform(get("/api/v1/storefront/orders/pending-approvals")
+                .param("companyId", companyId.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content[0].status").value("PENDING_APPROVAL"));
+    }
+
+    @Test
+    void listPendingApprovals_memberOnly_returns403() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        doNothing().when(companyService).requireMemberAccess(companyId, STUB_USER_ID);
+        when(companyService.isOwnerOrManager(companyId, STUB_USER_ID)).thenReturn(false);
+
+        mvc.perform(get("/api/v1/storefront/orders/pending-approvals")
+                .param("companyId", companyId.toString()))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value("INSUFFICIENT_COMPANY_ROLE"));
+    }
+
+    @Test
+    void approveOrder_managerApproves_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(paymentService.approveCartOrder(eq(id), eq(STUB_USER_ID)))
+            .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test", id, false));
+
+        mvc.perform(post("/api/v1/storefront/orders/{id}/approve", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.orderId").value(id.toString()))
+            .andExpect(jsonPath("$.data.pendingApproval").value(false));
+    }
+
+    @Test
+    void rejectApproval_managerRejects_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.rejectApproval(eq(id), eq(STUB_USER_ID)))
+            .thenReturn(stubOrder(id, STUB_USER_ID, OrderStatus.CANCELLED));
+
+        mvc.perform(post("/api/v1/storefront/orders/{id}/reject-approval", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+    }
+
+    @Test
+    void rejectApproval_nonManager_returns403() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.rejectApproval(eq(id), eq(STUB_USER_ID)))
+            .thenThrow(new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can reject approval"));
+
+        mvc.perform(post("/api/v1/storefront/orders/{id}/reject-approval", id))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value("INSUFFICIENT_COMPANY_ROLE"));
+    }
+
+    @Test
+    void listFulfillments_ownedOrder_returns200WithTrackingInfo() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        UUID fulfillmentId = UUID.randomUUID();
+        when(orderService.getOrderResponse(orderId))
+            .thenReturn(stubOrder(orderId, STUB_USER_ID, OrderStatus.FULFILLED));
+        when(fulfillmentService.list(orderId))
+            .thenReturn(List.of(new FulfillmentResponse(
+                fulfillmentId, orderId, FulfillmentStatus.SHIPPED,
+                "1Z999AA10123456784", "UPS", "https://tracking.ups.com/track?1Z999AA10123456784",
+                null, List.of(), null)));
+
+        mvc.perform(get("/api/v1/storefront/orders/{id}/fulfillments", orderId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].trackingNumber").value("1Z999AA10123456784"))
+            .andExpect(jsonPath("$.data[0].trackingCompany").value("UPS"))
+            .andExpect(jsonPath("$.data[0].status").value("SHIPPED"));
+    }
+
+    @Test
+    void listFulfillments_anotherUsersOrder_returns400() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        when(orderService.getOrderResponse(orderId))
+            .thenReturn(stubOrder(orderId, UUID.randomUUID(), OrderStatus.FULFILLED));
+
+        mvc.perform(get("/api/v1/storefront/orders/{id}/fulfillments", orderId))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.error").value("ORDER_NOT_OWNED"));
     }

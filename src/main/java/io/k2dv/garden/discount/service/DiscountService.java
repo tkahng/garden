@@ -22,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -46,11 +47,16 @@ public class DiscountService {
         if (req.startsAt() != null && req.endsAt() != null && !req.startsAt().isBefore(req.endsAt())) {
             throw new ValidationException("INVALID_DATE_RANGE", "startsAt must be before endsAt");
         }
-        if (discountRepo.findByCodeIgnoreCase(req.code()).isPresent()) {
+        if (!req.automatic() && (req.code() == null || req.code().isBlank())) {
+            throw new ValidationException("CODE_REQUIRED", "A discount code is required for non-automatic promotions");
+        }
+        if (req.code() != null && !req.code().isBlank()
+                && discountRepo.findByCodeIgnoreCase(req.code()).isPresent()) {
             throw new ConflictException("DISCOUNT_CODE_EXISTS", "Discount code already exists: " + req.code());
         }
         Discount d = new Discount();
-        d.setCode(req.code().toUpperCase());
+        d.setCode(req.code() != null && !req.code().isBlank() ? req.code().toUpperCase() : null);
+        d.setAutomatic(req.automatic());
         d.setType(req.type());
         d.setValue(req.value());
         d.setMinOrderAmount(req.minOrderAmount());
@@ -112,6 +118,25 @@ public class DiscountService {
         }
         BigDecimal discountedAmount = calculateDiscount(d, orderAmount);
         return new DiscountValidationResponse(true, d.getCode(), d.getType(), d.getValue(), discountedAmount, null);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<DiscountApplication> findBestAutomatic(BigDecimal orderAmount, UUID companyId) {
+        List<Discount> candidates = discountRepo.findActiveAutomatic(Instant.now(), companyId);
+        return candidates.stream()
+            .filter(d -> d.getMinOrderAmount() == null || orderAmount.compareTo(d.getMinOrderAmount()) >= 0)
+            .map(d -> new DiscountApplication(d.getId(), d.getCode(), d.getType(), d.getValue(),
+                calculateDiscount(d, orderAmount)))
+            .max(java.util.Comparator.comparing(DiscountApplication::discountedAmount));
+    }
+
+    @Transactional
+    public DiscountApplication applyAutomatic(UUID discountId, BigDecimal orderAmount) {
+        Discount d = discountRepo.findById(discountId)
+            .orElseThrow(() -> new NotFoundException("DISCOUNT_NOT_FOUND", "Promotion not found"));
+        discountRepo.incrementUsedCount(d.getId());
+        return new DiscountApplication(d.getId(), d.getCode(), d.getType(), d.getValue(),
+            calculateDiscount(d, orderAmount));
     }
 
     @Transactional

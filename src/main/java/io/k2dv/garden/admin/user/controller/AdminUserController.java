@@ -10,6 +10,7 @@ import io.k2dv.garden.admin.user.service.AdminUserService;
 import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.BulkIdsRequest;
+import io.k2dv.garden.shared.dto.MetadataRequest;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.user.model.UserStatus;
 import jakarta.validation.Valid;
@@ -114,6 +115,14 @@ public class AdminUserController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdateTagsRequest req) {
         return ApiResponse.of(adminUserService.updateTags(id, req.tags()));
+    }
+
+    @PutMapping("/{id}/metadata")
+    @HasPermission("user:write")
+    public ApiResponse<AdminUserResponse> updateMetadata(
+            @PathVariable UUID id,
+            @Valid @RequestBody MetadataRequest req) {
+        return ApiResponse.of(adminUserService.updateMetadata(id, req.metadata()));
     }
 
     @PostMapping("/bulk/suspend")

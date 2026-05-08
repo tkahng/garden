@@ -21,5 +21,6 @@ public record AdminVariantResponse(
     FulfillmentType fulfillmentType,
     InventoryPolicy inventoryPolicy,
     int leadTimeDays,
+    int minimumOrderQty,
     Instant deletedAt
 ) {}
