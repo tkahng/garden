@@ -33,6 +33,9 @@ import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.notification.model.NotificationType;
 import io.k2dv.garden.notification.service.NotificationPreferenceService;
+import io.k2dv.garden.order.event.OrderCancelledEvent;
+import io.k2dv.garden.order.event.OrderConfirmedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -70,6 +73,7 @@ public class OrderService {
     private final ProductRepository productRepo;
     private final UserRepository userRepo;
     private final EmailService emailService;
+    private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final AutoTagService autoTagService;
     private final ProductImageResolver imageResolver;
@@ -419,7 +423,7 @@ public class OrderService {
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
         if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
             String to = resolveCustomerEmail(order);
-            if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
+            if (to != null) eventPublisher.publishEvent(new OrderCancelledEvent(to, shortRef(orderId), appProperties.getFrontendUrl()));
         }
         return toResponse(order);
     }
@@ -438,7 +442,7 @@ public class OrderService {
             orderEventService.emit(order.getId(), OrderEventType.ORDER_CANCELLED, "Bulk cancelled", null, "admin", null);
             if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
                 String to = resolveCustomerEmail(order);
-                if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+                if (to != null) eventPublisher.publishEvent(new OrderCancelledEvent(to, shortRef(order.getId()), appProperties.getFrontendUrl()));
             }
         }
     }
@@ -521,8 +525,9 @@ public class OrderService {
             BigDecimal lineTotal = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
             return String.format("%d × %s — $%.2f", item.getQuantity(), title, lineTotal);
         }).toList();
-        emailService.sendOrderConfirmation(to, shortRef(order.getId()),
-            order.getTotalAmount(), order.getCurrency(), itemLines, appProperties.getFrontendUrl());
+        eventPublisher.publishEvent(new OrderConfirmedEvent(
+            to, shortRef(order.getId()), order.getTotalAmount(),
+            order.getCurrency(), itemLines, appProperties.getFrontendUrl()));
     }
 
     private String resolveCustomerEmail(Order order) {
