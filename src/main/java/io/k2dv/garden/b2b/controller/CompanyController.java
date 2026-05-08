@@ -5,6 +5,7 @@ import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.service.CompanyInvitationService;
 import io.k2dv.garden.b2b.service.CompanyService;
+import io.k2dv.garden.b2b.service.CompanyShippingAddressService;
 import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.b2b.service.InvoiceService;
 import io.k2dv.garden.b2b.service.PriceListService;
@@ -34,6 +35,7 @@ public class CompanyController {
     private final PriceListService priceListService;
     private final InvoiceService invoiceService;
     private final CreditAccountService creditAccountService;
+    private final CompanyShippingAddressService shippingAddressService;
 
     @PostMapping
     public ResponseEntity<ApiResponse<CompanyResponse>> create(
@@ -170,6 +172,49 @@ public class CompanyController {
         @PathVariable UUID id) {
         companyService.requireMemberAccess(id, user.getId());
         return ResponseEntity.ok(ApiResponse.of(creditAccountService.getByCompany(id)));
+    }
+
+    // ─── Shipping addresses ───────────────────────────────────────────────────
+
+    @GetMapping("/{id}/addresses")
+    public ResponseEntity<ApiResponse<List<CompanyAddressResponse>>> listAddresses(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(shippingAddressService.list(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/addresses")
+    public ResponseEntity<ApiResponse<CompanyAddressResponse>> addAddress(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @Valid @RequestBody CompanyAddressRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(shippingAddressService.add(id, user.getId(), req)));
+    }
+
+    @PutMapping("/{id}/addresses/{addressId}")
+    public ResponseEntity<ApiResponse<CompanyAddressResponse>> updateAddress(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID addressId,
+        @Valid @RequestBody CompanyAddressRequest req) {
+        return ResponseEntity.ok(ApiResponse.of(shippingAddressService.update(id, addressId, user.getId(), req)));
+    }
+
+    @DeleteMapping("/{id}/addresses/{addressId}")
+    public ResponseEntity<Void> deleteAddress(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID addressId) {
+        shippingAddressService.delete(id, addressId, user.getId());
+        return ResponseEntity.noContent().build();
+    }
+
+    @PutMapping("/{id}/addresses/{addressId}/default")
+    public ResponseEntity<ApiResponse<CompanyAddressResponse>> setDefaultAddress(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID addressId) {
+        return ResponseEntity.ok(ApiResponse.of(shippingAddressService.setDefault(id, addressId, user.getId())));
     }
 
     @GetMapping("/{id}/statement")
