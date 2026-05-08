@@ -5,6 +5,8 @@ import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.cart.dto.CartResponse;
 import io.k2dv.garden.cart.service.CartService;
+import io.k2dv.garden.fulfillment.dto.FulfillmentResponse;
+import io.k2dv.garden.fulfillment.service.FulfillmentService;
 import io.k2dv.garden.order.dto.OrderFilter;
 import io.k2dv.garden.order.dto.OrderResponse;
 import io.k2dv.garden.order.service.OrderService;
@@ -22,6 +24,7 @@ import org.springframework.data.domain.Sort;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -36,6 +39,7 @@ public class StorefrontOrderController {
     private final CartService cartService;
     private final PaymentService paymentService;
     private final CompanyService companyService;
+    private final FulfillmentService fulfillmentService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<PagedResult<OrderResponse>>> listOrders(
@@ -114,5 +118,16 @@ public class StorefrontOrderController {
             @CurrentUser User user,
             @PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.of(orderService.rejectApproval(id, user.getId())));
+    }
+
+    @GetMapping("/{id}/fulfillments")
+    public ResponseEntity<ApiResponse<List<FulfillmentResponse>>> listFulfillments(
+            @CurrentUser User user,
+            @PathVariable UUID id) {
+        OrderResponse order = orderService.getOrderResponse(id);
+        if (!Objects.equals(order.userId(), user.getId())) {
+            throw new ValidationException("ORDER_NOT_OWNED", "Order does not belong to current user");
+        }
+        return ResponseEntity.ok(ApiResponse.of(fulfillmentService.list(id)));
     }
 }

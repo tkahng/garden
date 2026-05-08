@@ -3,6 +3,9 @@ package io.k2dv.garden.order.controller;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.config.TestCurrentUserConfig;
 import io.k2dv.garden.config.TestSecurityConfig;
+import io.k2dv.garden.fulfillment.dto.FulfillmentResponse;
+import io.k2dv.garden.fulfillment.model.FulfillmentStatus;
+import io.k2dv.garden.fulfillment.service.FulfillmentService;
 import io.k2dv.garden.order.dto.OrderResponse;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
@@ -43,6 +46,7 @@ class StorefrontOrderControllerTest {
     @MockitoBean io.k2dv.garden.cart.service.CartService cartService;
     @MockitoBean PaymentService paymentService;
     @MockitoBean CompanyService companyService;
+    @MockitoBean FulfillmentService fulfillmentService;
 
     private OrderResponse stubOrder(UUID id, UUID userId, OrderStatus status) {
         return new OrderResponse(id, userId, null, status,
@@ -246,5 +250,35 @@ class StorefrontOrderControllerTest {
         mvc.perform(post("/api/v1/storefront/orders/{id}/reject-approval", id))
             .andExpect(status().isForbidden())
             .andExpect(jsonPath("$.error").value("INSUFFICIENT_COMPANY_ROLE"));
+    }
+
+    @Test
+    void listFulfillments_ownedOrder_returns200WithTrackingInfo() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        UUID fulfillmentId = UUID.randomUUID();
+        when(orderService.getOrderResponse(orderId))
+            .thenReturn(stubOrder(orderId, STUB_USER_ID, OrderStatus.FULFILLED));
+        when(fulfillmentService.list(orderId))
+            .thenReturn(List.of(new FulfillmentResponse(
+                fulfillmentId, orderId, FulfillmentStatus.SHIPPED,
+                "1Z999AA10123456784", "UPS", "https://tracking.ups.com/track?1Z999AA10123456784",
+                null, List.of(), null)));
+
+        mvc.perform(get("/api/v1/storefront/orders/{id}/fulfillments", orderId))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data[0].trackingNumber").value("1Z999AA10123456784"))
+            .andExpect(jsonPath("$.data[0].trackingCompany").value("UPS"))
+            .andExpect(jsonPath("$.data[0].status").value("SHIPPED"));
+    }
+
+    @Test
+    void listFulfillments_anotherUsersOrder_returns400() throws Exception {
+        UUID orderId = UUID.randomUUID();
+        when(orderService.getOrderResponse(orderId))
+            .thenReturn(stubOrder(orderId, UUID.randomUUID(), OrderStatus.FULFILLED));
+
+        mvc.perform(get("/api/v1/storefront/orders/{id}/fulfillments", orderId))
+            .andExpect(status().isBadRequest())
+            .andExpect(jsonPath("$.error").value("ORDER_NOT_OWNED"));
     }
 }
