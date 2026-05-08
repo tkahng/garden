@@ -71,8 +71,8 @@ class AdminIamServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
-    void listPermissions_returns49() { // 46 existing + 3 webhook permissions from V40
+    void listPermissions_returns51() { // 46 existing + 3 webhook (V40) + 2 return (V56)
         var perms = adminIamService.listPermissions();
-        assertThat(perms).hasSize(49);
+        assertThat(perms).hasSize(51);
     }
 }
