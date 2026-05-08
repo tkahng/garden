@@ -58,7 +58,8 @@ public class DevDataSeeder implements ApplicationRunner {
         seedShipping();
         seedOrders(customerUserId, productIds, variantProductIds);
         seedDiscounts();
-        seedGiftCards();
+        List<UUID> gcIds = seedGiftCards();
+        seedGiftCardTransactions(gcIds.get(0), gcIds.get(1));
         seedB2bCompany(customerUserId);
         seedBlog();
         seedReviews(customerUserId, productIds, variantProductIds);
@@ -1112,14 +1113,22 @@ public class DevDataSeeder implements ApplicationRunner {
             ON CONFLICT DO NOTHING
             """, UUID.randomUUID());
 
-        log.info("DevDataSeeder: seeded discount codes (WELCOME10, SAVE5, SUMMER25)");
+        // Automatic 10% off on orders >= $75 — no code needed
+        jdbc.update("""
+            INSERT INTO checkout.discounts
+              (id, code, type, value, min_order_amount, automatic, starts_at, is_active)
+            VALUES (?, NULL, 'PERCENTAGE', 10.00, 75.00, true, clock_timestamp(), true)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID());
+
+        log.info("DevDataSeeder: seeded discount codes (WELCOME10, SAVE5, SUMMER25) + 1 automatic discount");
     }
 
     // -------------------------------------------------------------------------
     // Gift cards
     // -------------------------------------------------------------------------
 
-    private void seedGiftCards() {
+    private List<UUID> seedGiftCards() {
         UUID gcId = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.gift_cards
@@ -1128,8 +1137,8 @@ public class DevDataSeeder implements ApplicationRunner {
                     'Seeded gift card for local dev testing')
             ON CONFLICT DO NOTHING
             """, gcId);
+        gcId = jdbc.queryForObject("SELECT id FROM checkout.gift_cards WHERE LOWER(code) = 'gift-5000-seed'", UUID.class);
 
-        // A partially spent one
         UUID gc2Id = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.gift_cards
@@ -1138,8 +1147,30 @@ public class DevDataSeeder implements ApplicationRunner {
                     'Partially spent seeded gift card')
             ON CONFLICT DO NOTHING
             """, gc2Id);
+        gc2Id = jdbc.queryForObject("SELECT id FROM checkout.gift_cards WHERE LOWER(code) = 'gift-2500-seed'", UUID.class);
 
         log.info("DevDataSeeder: seeded gift cards (GIFT-5000-SEED, GIFT-2500-SEED)");
+        return List.of(gcId, gc2Id);
+    }
+
+    private void seedGiftCardTransactions(UUID gc1Id, UUID gc2Id) {
+        // GIFT-5000-SEED: initial load
+        jdbc.update("""
+            INSERT INTO checkout.gift_card_transactions (id, gift_card_id, delta, note)
+            VALUES (?, ?, 50.00, 'Initial load')
+            """, UUID.randomUUID(), gc1Id);
+
+        // GIFT-2500-SEED: initial load then partial spend
+        jdbc.update("""
+            INSERT INTO checkout.gift_card_transactions (id, gift_card_id, delta, note)
+            VALUES (?, ?, 25.00, 'Initial load')
+            """, UUID.randomUUID(), gc2Id);
+        jdbc.update("""
+            INSERT INTO checkout.gift_card_transactions (id, gift_card_id, delta, note)
+            VALUES (?, ?, -12.50, 'Applied at checkout')
+            """, UUID.randomUUID(), gc2Id);
+
+        log.info("DevDataSeeder: seeded gift card transactions");
     }
 
     // -------------------------------------------------------------------------

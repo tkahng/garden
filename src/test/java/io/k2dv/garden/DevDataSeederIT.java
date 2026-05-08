@@ -346,4 +346,33 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             """, String.class);
         assertThat(tags).contains("vip", "repeat-buyer");
     }
+
+    // ─── Gift card transactions ───────────────────────────────────────────────
+
+    @Test
+    void seeder_giftCardTransactionsExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.gift_card_transactions", Long.class);
+        assertThat(count).isEqualTo(3L); // 1 for gc1, 2 for gc2 (load + spend)
+    }
+
+    @Test
+    void seeder_partiallySpentGiftCardHasTwoTransactions() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.gift_card_transactions gct
+            JOIN checkout.gift_cards gc ON gc.id = gct.gift_card_id
+            WHERE LOWER(gc.code) = 'gift-2500-seed'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    // ─── Automatic discount ───────────────────────────────────────────────────
+
+    @Test
+    void seeder_automaticDiscountExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.discounts WHERE automatic = true AND is_active = true",
+            Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
 }
