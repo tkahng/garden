@@ -147,6 +147,7 @@ class PaymentServiceTest {
 
     assertThat(response.checkoutUrl()).isEqualTo("https://checkout.stripe.com/pay/cs_test_123");
     assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.pendingApproval()).isFalse();
 
     verify(orderService).setStripeSession(order.getId(), "cs_test_123");
     verify(cartService).markCheckedOut(cart.getId());
@@ -453,10 +454,37 @@ class PaymentServiceTest {
 
     assertThat(response.checkoutUrl()).isNull();
     assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.pendingApproval()).isFalse();
     verify(invoiceService).createManualInvoice(order.getId(), companyId, 30);
     verify(orderService).notifyNetTermsPlaced(order);
     verify(cartService).markCheckedOut(cart.getId());
     verifyNoInteractions(stripeGateway);
+  }
+
+  @Test
+  void initiateCheckout_spendingLimitExceeded_holdsForApproval() {
+    UUID userId = UUID.randomUUID();
+    UUID companyId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    Cart cart = stubCart(userId, companyId);
+    CartItem cartItem = stubCartItem(variantId); // unitPrice=49.99, qty=2 → total=99.98
+    Order order = stubOrder(UUID.randomUUID(), userId);
+    order.setTotalAmount(new BigDecimal("99.98"));
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(companyService.getSpendingLimit(companyId, userId)).thenReturn(new BigDecimal("50.00"));
+
+    CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
+
+    assertThat(response.checkoutUrl()).isNull();
+    assertThat(response.orderId()).isEqualTo(order.getId());
+    assertThat(response.pendingApproval()).isTrue();
+    verify(orderService).holdForApproval(order.getId());
+    verify(cartService).markCheckedOut(cart.getId());
+    verifyNoInteractions(stripeGateway, invoiceService);
   }
 
   @Test

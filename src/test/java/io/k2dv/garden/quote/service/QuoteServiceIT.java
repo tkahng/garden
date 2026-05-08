@@ -113,7 +113,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         doNothing().when(storageService).delete(any());
         when(pdfService.generate(any(), any(), any())).thenReturn(new byte[]{1, 2, 3});
         when(paymentService.createCheckoutSessionFromQuote(any(), any(), any()))
-            .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID()));
+            .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test", UUID.randomUUID(), false));
     }
 
     private QuoteRequestResponse submitQuote() {

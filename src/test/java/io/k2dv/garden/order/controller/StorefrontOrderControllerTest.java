@@ -1,13 +1,17 @@
 package io.k2dv.garden.order.controller;
 
+import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.config.TestCurrentUserConfig;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.order.dto.OrderResponse;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
+import io.k2dv.garden.payment.dto.CheckoutResponse;
+import io.k2dv.garden.payment.service.PaymentService;
 import io.k2dv.garden.shared.dto.PageMeta;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.GlobalExceptionHandler;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import org.junit.jupiter.api.Test;
@@ -24,6 +28,8 @@ import java.util.UUID;
 import static io.k2dv.garden.config.TestCurrentUserConfig.STUB_USER_ID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -35,6 +41,8 @@ class StorefrontOrderControllerTest {
     @Autowired MockMvc mvc;
     @MockitoBean OrderService orderService;
     @MockitoBean io.k2dv.garden.cart.service.CartService cartService;
+    @MockitoBean PaymentService paymentService;
+    @MockitoBean CompanyService companyService;
 
     private OrderResponse stubOrder(UUID id, UUID userId, OrderStatus status) {
         return new OrderResponse(id, userId, null, status,
@@ -174,5 +182,69 @@ class StorefrontOrderControllerTest {
         mvc.perform(post("/api/v1/storefront/orders/{id}/refund", id))
             .andExpect(status().isBadRequest())
             .andExpect(jsonPath("$.error").value("ORDER_NOT_OWNED"));
+    }
+
+    @Test
+    void listPendingApprovals_ownerOrManager_returns200() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        UUID orderId = UUID.randomUUID();
+        doNothing().when(companyService).requireMemberAccess(companyId, STUB_USER_ID);
+        when(companyService.isOwnerOrManager(companyId, STUB_USER_ID)).thenReturn(true);
+        PagedResult<OrderResponse> result = new PagedResult<>(
+            List.of(stubOrder(orderId, STUB_USER_ID, OrderStatus.PENDING_APPROVAL)),
+            PageMeta.builder().page(0).pageSize(20).total(1L).build());
+        when(orderService.listPendingApprovals(eq(companyId), any())).thenReturn(result);
+
+        mvc.perform(get("/api/v1/storefront/orders/pending-approvals")
+                .param("companyId", companyId.toString()))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.content[0].status").value("PENDING_APPROVAL"));
+    }
+
+    @Test
+    void listPendingApprovals_memberOnly_returns403() throws Exception {
+        UUID companyId = UUID.randomUUID();
+        doNothing().when(companyService).requireMemberAccess(companyId, STUB_USER_ID);
+        when(companyService.isOwnerOrManager(companyId, STUB_USER_ID)).thenReturn(false);
+
+        mvc.perform(get("/api/v1/storefront/orders/pending-approvals")
+                .param("companyId", companyId.toString()))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value("INSUFFICIENT_COMPANY_ROLE"));
+    }
+
+    @Test
+    void approveOrder_managerApproves_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(paymentService.approveCartOrder(eq(id), eq(STUB_USER_ID)))
+            .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test", id, false));
+
+        mvc.perform(post("/api/v1/storefront/orders/{id}/approve", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.orderId").value(id.toString()))
+            .andExpect(jsonPath("$.data.pendingApproval").value(false));
+    }
+
+    @Test
+    void rejectApproval_managerRejects_returns200() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.rejectApproval(eq(id), eq(STUB_USER_ID)))
+            .thenReturn(stubOrder(id, STUB_USER_ID, OrderStatus.CANCELLED));
+
+        mvc.perform(post("/api/v1/storefront/orders/{id}/reject-approval", id))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.status").value("CANCELLED"));
+    }
+
+    @Test
+    void rejectApproval_nonManager_returns403() throws Exception {
+        UUID id = UUID.randomUUID();
+        when(orderService.rejectApproval(eq(id), eq(STUB_USER_ID)))
+            .thenThrow(new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
+                "Only a company owner or manager can reject approval"));
+
+        mvc.perform(post("/api/v1/storefront/orders/{id}/reject-approval", id))
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.error").value("INSUFFICIENT_COMPANY_ROLE"));
     }
 }

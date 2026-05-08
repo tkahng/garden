@@ -38,7 +38,7 @@ class CheckoutControllerTest {
   void checkout_happyPath_returns200WithUrl() throws Exception {
     UUID orderId = UUID.randomUUID();
     when(paymentService.initiateCheckout(any(), any(), any(), any(), any()))
-        .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test_123", orderId));
+        .thenReturn(new CheckoutResponse("https://checkout.stripe.com/pay/cs_test_123", orderId, false));
 
     mvc.perform(post("/api/v1/checkout"))
         .andExpect(status().isOk())
