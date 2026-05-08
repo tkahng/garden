@@ -66,6 +66,10 @@ public class DevDataSeeder implements ApplicationRunner {
         seedReviews(customerUserId, productIds, variantProductIds);
         seedWishlist(customerUserId, productIds, quoteOnlyProductIds);
         seedCustomerAddress(customerUserId);
+        seedReturnRequests(customerUserId);
+        seedNotificationPreferences(customerUserId);
+        seedOrderTemplates(customerUserId, productIds, variantProductIds);
+        seedNewsletterSubscribers();
         log.info("DevDataSeeder: done.");
     }
 
@@ -1717,6 +1721,156 @@ public class DevDataSeeder implements ApplicationRunner {
             """, UUID.randomUUID(), customerUserId);
 
         log.info("DevDataSeeder: seeded saved address for Carol");
+    }
+
+    // -------------------------------------------------------------------------
+    // Return requests (RMA)
+    // -------------------------------------------------------------------------
+
+    private void seedReturnRequests(UUID customerUserId) {
+        UUID staffId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'staff@garden.local'", UUID.class);
+
+        // Return 1: PENDING — cracked watering can from fulfilled order 3
+        UUID fulfilledOrderId = jdbc.queryForObject(
+            "SELECT id FROM checkout.orders WHERE stripe_session_id = 'cs_test_seed_003'", UUID.class);
+        UUID canItemId = jdbc.queryForObject("""
+            SELECT oi.id FROM checkout.order_items oi
+            JOIN catalog.product_variants pv ON pv.id = oi.variant_id
+            WHERE oi.order_id = ? AND pv.sku = 'SKU-006'
+            """, UUID.class, fulfilledOrderId);
+
+        UUID return1Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.return_requests
+              (id, order_id, user_id, reason, notes, resolution, status)
+            VALUES (?, ?, ?, 'DAMAGED', 'Watering can arrived with a cracked spout.', 'REFUND', 'PENDING')
+            """, return1Id, fulfilledOrderId, customerUserId);
+        jdbc.update("""
+            INSERT INTO checkout.return_request_items (id, return_request_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 1)
+            """, UUID.randomUUID(), return1Id, canItemId);
+
+        // Return 2: COMPLETED — seeds not as described (refunded order 6 sunflowers)
+        UUID refundedOrderId = jdbc.queryForObject(
+            "SELECT id FROM checkout.orders WHERE stripe_session_id = 'cs_test_seed_006'", UUID.class);
+        UUID sunflowerItemId = jdbc.queryForObject("""
+            SELECT oi.id FROM checkout.order_items oi
+            JOIN catalog.product_variants pv ON pv.id = oi.variant_id
+            WHERE oi.order_id = ? AND pv.sku = 'SKU-003'
+            """, UUID.class, refundedOrderId);
+
+        UUID return2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.return_requests
+              (id, order_id, user_id, reason, notes, resolution, status,
+               staff_notes, resolved_by, resolved_at)
+            VALUES (?, ?, ?, 'NOT_AS_DESCRIBED', 'Seeds did not match the variety description.',
+                    'REFUND', 'COMPLETED',
+                    'Full refund approved and processed.', ?,
+                    clock_timestamp() - INTERVAL '5 days')
+            """, return2Id, refundedOrderId, customerUserId, staffId);
+        jdbc.update("""
+            INSERT INTO checkout.return_request_items (id, return_request_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 3)
+            """, UUID.randomUUID(), return2Id, sunflowerItemId);
+
+        log.info("DevDataSeeder: seeded 2 return requests (1 PENDING, 1 COMPLETED)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Notification preferences
+    // -------------------------------------------------------------------------
+
+    private void seedNotificationPreferences(UUID customerUserId) {
+        // Customer: all enabled except MARKETING
+        for (String type : List.of(
+                "ORDER_CONFIRMATION", "ORDER_SHIPPED", "ORDER_DELIVERED",
+                "ORDER_CANCELLED", "QUOTE_UPDATE")) {
+            jdbc.update("""
+                INSERT INTO auth.notification_preferences (id, user_id, notification_type, enabled)
+                VALUES (?, ?, ?, true)
+                ON CONFLICT ON CONSTRAINT uq_notification_pref DO NOTHING
+                """, UUID.randomUUID(), customerUserId, type);
+        }
+        jdbc.update("""
+            INSERT INTO auth.notification_preferences (id, user_id, notification_type, enabled)
+            VALUES (?, ?, 'MARKETING', false)
+            ON CONFLICT ON CONSTRAINT uq_notification_pref DO NOTHING
+            """, UUID.randomUUID(), customerUserId);
+
+        // B2B manager: order + quote notifications only
+        UUID managerId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'b2b-manager@garden.local'", UUID.class);
+        for (String type : List.of("ORDER_CONFIRMATION", "ORDER_SHIPPED", "QUOTE_UPDATE")) {
+            jdbc.update("""
+                INSERT INTO auth.notification_preferences (id, user_id, notification_type, enabled)
+                VALUES (?, ?, ?, true)
+                ON CONFLICT ON CONSTRAINT uq_notification_pref DO NOTHING
+                """, UUID.randomUUID(), managerId, type);
+        }
+
+        log.info("DevDataSeeder: seeded notification preferences for customer and B2B manager");
+    }
+
+    // -------------------------------------------------------------------------
+    // Order templates (saved carts for repeat B2B ordering)
+    // -------------------------------------------------------------------------
+
+    private void seedOrderTemplates(UUID customerUserId, List<UUID> productIds, List<UUID> variantProductIds) {
+        // Template 1: Spring Seed Restock
+        UUID template1Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.order_templates (id, user_id, name) VALUES (?, ?, 'Spring Seed Restock')
+            """, template1Id, customerUserId);
+        insertOrderTemplateItem(template1Id, firstVariantOf(productIds.get(0)), 2); // tomato x2
+        insertOrderTemplateItem(template1Id, firstVariantOf(productIds.get(1)), 1); // lavender x1
+        insertOrderTemplateItem(template1Id, firstVariantOf(productIds.get(2)), 1); // sunflower x1
+
+        // Template 2: Tool Kit Reorder
+        UUID template2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.order_templates (id, user_id, name) VALUES (?, ?, 'Tool Kit Reorder')
+            """, template2Id, customerUserId);
+        insertOrderTemplateItem(template2Id, firstVariantOf(productIds.get(3)), 1); // trowel x1
+        insertOrderTemplateItem(template2Id, firstVariantOf(productIds.get(4)), 1); // shears x1
+        insertOrderTemplateItem(template2Id, variantIdBySku("SKU-G-M-GRN"), 1);    // gloves M/Forest Green x1
+
+        log.info("DevDataSeeder: seeded 2 order templates for Carol");
+    }
+
+    private void insertOrderTemplateItem(UUID templateId, UUID variantId, int quantity) {
+        jdbc.update("""
+            INSERT INTO checkout.order_template_items (id, template_id, variant_id, quantity)
+            VALUES (?, ?, ?, ?)
+            """, UUID.randomUUID(), templateId, variantId, quantity);
+    }
+
+    // -------------------------------------------------------------------------
+    // Newsletter subscribers
+    // -------------------------------------------------------------------------
+
+    private void seedNewsletterSubscribers() {
+        for (String email : List.of(
+                "customer@garden.local",
+                "newsletter-fan@example.com",
+                "greenthumb@example.com",
+                "gardenclub@example.org")) {
+            jdbc.update("""
+                INSERT INTO marketing.newsletter_subscribers (id, email, source)
+                VALUES (?, ?, 'storefront')
+                ON CONFLICT (email) DO NOTHING
+                """, UUID.randomUUID(), email);
+        }
+        // One unsubscribed subscriber
+        jdbc.update("""
+            INSERT INTO marketing.newsletter_subscribers (id, email, source, unsubscribed_at)
+            VALUES (?, 'opted-out@example.com', 'storefront',
+                    clock_timestamp() - INTERVAL '10 days')
+            ON CONFLICT (email) DO NOTHING
+            """, UUID.randomUUID());
+
+        log.info("DevDataSeeder: seeded 5 newsletter subscribers (4 active, 1 unsubscribed)");
     }
 
     // -------------------------------------------------------------------------

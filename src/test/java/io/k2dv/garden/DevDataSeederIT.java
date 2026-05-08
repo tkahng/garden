@@ -459,4 +459,82 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             """, Long.class);
         assertThat(count).isEqualTo(1L);
     }
+
+    // ─── Return requests ─────────────────────────────────────────────────────
+
+    @Test
+    void seeder_returnRequestStatusesPresent() {
+        var statuses = jdbc.queryForList(
+            "SELECT DISTINCT status FROM checkout.return_requests ORDER BY status", String.class);
+        assertThat(statuses).containsExactlyInAnyOrder("PENDING", "COMPLETED");
+    }
+
+    @Test
+    void seeder_pendingReturnHasOneItem() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.return_request_items rri
+            JOIN checkout.return_requests rr ON rr.id = rri.return_request_id
+            WHERE rr.status = 'PENDING'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Notification preferences ─────────────────────────────────────────────
+
+    @Test
+    void seeder_customerNotificationPreferencesSeeded() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM auth.notification_preferences np
+            JOIN auth.users u ON u.id = np.user_id
+            WHERE u.email = 'customer@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(6L); // 5 enabled + MARKETING disabled
+    }
+
+    @Test
+    void seeder_customerMarketingPreferenceDisabled() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM auth.notification_preferences np
+            JOIN auth.users u ON u.id = np.user_id
+            WHERE u.email = 'customer@garden.local'
+              AND np.notification_type = 'MARKETING' AND np.enabled = false
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Order templates ─────────────────────────────────────────────────────
+
+    @Test
+    void seeder_orderTemplatesExist() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.order_templates ot
+            JOIN auth.users u ON u.id = ot.user_id
+            WHERE u.email = 'customer@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    @Test
+    void seeder_orderTemplateItemsExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.order_template_items", Long.class);
+        assertThat(count).isEqualTo(6L); // 3 items per template × 2 templates
+    }
+
+    // ─── Newsletter subscribers ───────────────────────────────────────────────
+
+    @Test
+    void seeder_newsletterSubscribersExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM marketing.newsletter_subscribers", Long.class);
+        assertThat(count).isEqualTo(5L);
+    }
+
+    @Test
+    void seeder_newsletterHasOneUnsubscribed() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM marketing.newsletter_subscribers WHERE unsubscribed_at IS NOT NULL",
+            Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
 }
