@@ -36,7 +36,7 @@ class AdminPriceListControllerTest {
 
     private PriceListResponse stubList(UUID id, UUID companyId) {
         return new PriceListResponse(id, companyId, "Contract", "USD", 0,
-            null, null, Instant.now(), Instant.now());
+            null, null, null, null, Instant.now(), Instant.now());
     }
 
     private PriceListEntryResponse stubEntry(UUID listId, UUID variantId) {
@@ -53,7 +53,7 @@ class AdminPriceListControllerTest {
         mvc.perform(post("/api/v1/admin/price-lists")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new CreatePriceListRequest(companyId, "Contract", "USD", 0, null, null))))
+                    new CreatePriceListRequest(companyId, "Contract", "USD", 0, null, null, null, null))))
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.data.id").value(listId.toString()))
             .andExpect(jsonPath("$.data.name").value("Contract"));
@@ -97,7 +97,7 @@ class AdminPriceListControllerTest {
         mvc.perform(put("/api/v1/admin/price-lists/{id}", listId)
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(
-                    new UpdatePriceListRequest("Updated", "EUR", 5, null, null))))
+                    new UpdatePriceListRequest("Updated", "EUR", 5, null, null, null, null))))
             .andExpect(status().isOk());
     }
 

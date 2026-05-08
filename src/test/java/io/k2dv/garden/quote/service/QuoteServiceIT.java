@@ -687,7 +687,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
     @Test
     void submit_withContractPriceList_prePricedLineItems() {
         var pl = priceListService.create(
-            new CreatePriceListRequest(companyId, "Contract", "USD", 10, null, null));
+            new CreatePriceListRequest(companyId, "Contract", "USD", 10, null, null, null, null));
         priceListService.upsertEntry(pl.id(), variant.id(),
             new UpsertPriceListEntryRequest(new BigDecimal("7.50"), 1));
 
