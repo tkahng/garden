@@ -28,11 +28,15 @@ import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.product.service.ProductImageResolver;
+import io.k2dv.garden.audit.aspect.Audited;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.notification.model.NotificationType;
 import io.k2dv.garden.notification.service.NotificationPreferenceService;
+import io.k2dv.garden.order.event.OrderCancelledEvent;
+import io.k2dv.garden.order.event.OrderConfirmedEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -70,6 +74,7 @@ public class OrderService {
     private final ProductRepository productRepo;
     private final UserRepository userRepo;
     private final EmailService emailService;
+    private final ApplicationEventPublisher eventPublisher;
     private final AppProperties appProperties;
     private final AutoTagService autoTagService;
     private final ProductImageResolver imageResolver;
@@ -125,13 +130,27 @@ public class OrderService {
             throw new ValidationException("EMPTY_CART", "Cart is empty");
         }
 
+        // Batch-fetch variants and products to avoid N+1 on validation
+        Set<UUID> variantIds = cartItems.stream()
+            .map(CartItem::getVariantId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+            .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+        Set<UUID> productIds = variantsById.values().stream()
+            .map(ProductVariant::getProductId).collect(Collectors.toSet());
+        Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, p -> p));
+
         for (CartItem cartItem : cartItems) {
-            ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(cartItem.getVariantId())
-                .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
-                    "Variant not found: " + cartItem.getVariantId()));
-            Product product = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId())
-                .orElseThrow(() -> new NotFoundException("PRODUCT_NOT_FOUND",
-                    "Product not found for variant: " + cartItem.getVariantId()));
+            ProductVariant variant = variantsById.get(cartItem.getVariantId());
+            if (variant == null || variant.getDeletedAt() != null) {
+                throw new NotFoundException("VARIANT_NOT_FOUND",
+                    "Variant not found: " + cartItem.getVariantId());
+            }
+            Product product = productsById.get(variant.getProductId());
+            if (product == null || product.getDeletedAt() != null) {
+                throw new NotFoundException("PRODUCT_NOT_FOUND",
+                    "Product not found for variant: " + cartItem.getVariantId());
+            }
             if (product.getStatus() != ProductStatus.ACTIVE) {
                 throw new ValidationException("PRODUCT_NOT_ACTIVE",
                     "Product is not active: " + product.getTitle());
@@ -162,14 +181,16 @@ public class OrderService {
         order.setPoNumber(poNumber);
         order = orderRepo.save(order);
 
+        List<OrderItem> items = new ArrayList<>();
         for (CartItem cartItem : cartItems) {
             OrderItem item = new OrderItem();
             item.setOrderId(order.getId());
             item.setVariantId(cartItem.getVariantId());
             item.setQuantity(cartItem.getQuantity());
             item.setUnitPrice(cartItem.getUnitPrice());
-            orderItemRepo.save(item);
+            items.add(item);
         }
+        orderItemRepo.saveAll(items);
 
         orderEventService.emit(order.getId(), OrderEventType.ORDER_PLACED,
             "Order placed", null, "system", null);
@@ -381,6 +402,7 @@ public class OrderService {
         });
     }
 
+    @Audited(entityType = "order", entityId = "#orderId")
     @Transactional
     public void cancelOrder(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -419,7 +441,7 @@ public class OrderService {
             .forEach(item -> inventoryService.releaseReservation(item.getVariantId(), item.getQuantity()));
         if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
             String to = resolveCustomerEmail(order);
-            if (to != null) emailService.sendOrderCancelled(to, shortRef(orderId), appProperties.getFrontendUrl());
+            if (to != null) eventPublisher.publishEvent(new OrderCancelledEvent(to, shortRef(orderId), appProperties.getFrontendUrl()));
         }
         return toResponse(order);
     }
@@ -438,7 +460,7 @@ public class OrderService {
             orderEventService.emit(order.getId(), OrderEventType.ORDER_CANCELLED, "Bulk cancelled", null, "admin", null);
             if (notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_CANCELLED)) {
                 String to = resolveCustomerEmail(order);
-                if (to != null) emailService.sendOrderCancelled(to, shortRef(order.getId()), appProperties.getFrontendUrl());
+                if (to != null) eventPublisher.publishEvent(new OrderCancelledEvent(to, shortRef(order.getId()), appProperties.getFrontendUrl()));
             }
         }
     }
@@ -521,8 +543,9 @@ public class OrderService {
             BigDecimal lineTotal = item.getUnitPrice().multiply(BigDecimal.valueOf(item.getQuantity()));
             return String.format("%d × %s — $%.2f", item.getQuantity(), title, lineTotal);
         }).toList();
-        emailService.sendOrderConfirmation(to, shortRef(order.getId()),
-            order.getTotalAmount(), order.getCurrency(), itemLines, appProperties.getFrontendUrl());
+        eventPublisher.publishEvent(new OrderConfirmedEvent(
+            to, shortRef(order.getId()), order.getTotalAmount(),
+            order.getCurrency(), itemLines, appProperties.getFrontendUrl()));
     }
 
     private String resolveCustomerEmail(Order order) {
@@ -608,6 +631,7 @@ public class OrderService {
         return toResponse(orderRepo.save(order));
     }
 
+    @Audited(entityType = "order", entityId = "#orderId")
     @Transactional
     public OrderResponse refundOrder(UUID orderId, UUID requestingUserId) {
         Order order = orderRepo.findById(orderId)

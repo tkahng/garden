@@ -1,6 +1,8 @@
 package io.k2dv.garden.config;
 
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.support.NoOpCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -15,6 +17,11 @@ import org.springframework.security.web.SecurityFilterChain;
 @TestConfiguration
 @EnableMethodSecurity(prePostEnabled = false)
 public class TestSecurityConfig {
+
+    @Bean
+    CacheManager cacheManager() {
+        return new NoOpCacheManager();
+    }
 
     @Bean
     SecurityFilterChain testSecurityFilterChain(HttpSecurity http) throws Exception {

@@ -2,6 +2,8 @@ package io.k2dv.garden.product.repository;
 
 import io.k2dv.garden.product.model.Product;
 import io.k2dv.garden.product.model.ProductStatus;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Query;
@@ -18,6 +20,20 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     Optional<Product> findByHandle(String handle);
     List<Product> findAllByStatusAndDeletedAtIsNull(ProductStatus status);
     List<Product> findAllByIdInAndDeletedAtIsNull(List<UUID> ids);
+
+    @Query(value = """
+        SELECT * FROM catalog.products
+        WHERE deleted_at IS NULL AND status = 'ACTIVE'
+          AND search_vector @@ plainto_tsquery('english', :query)
+        ORDER BY ts_rank(search_vector, plainto_tsquery('english', :query)) DESC
+        """,
+        countQuery = """
+        SELECT COUNT(*) FROM catalog.products
+        WHERE deleted_at IS NULL AND status = 'ACTIVE'
+          AND search_vector @@ plainto_tsquery('english', :query)
+        """,
+        nativeQuery = true)
+    Page<Product> fullTextSearch(@Param("query") String query, Pageable pageable);
 
     @Query(value = """
         SELECT p.* FROM catalog.product_product_tags t

@@ -67,6 +67,10 @@ class DevDataSeederIT extends AbstractIntegrationTest {
         seeder.run(null); // second run — should not insert duplicates
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(14L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(4L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM checkout.return_requests", Long.class)).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM checkout.order_templates", Long.class)).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM marketing.newsletter_subscribers", Long.class)).isEqualTo(5L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM checkout.gift_card_transactions", Long.class)).isEqualTo(3L);
     }
 
     @Test
@@ -337,6 +341,19 @@ class DevDataSeederIT extends AbstractIntegrationTest {
         assertThat(count).isEqualTo(1L);
     }
 
+    // ─── Users ───────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_allTestUsersExist() {
+        for (String email : java.util.List.of(
+                "customer@garden.local", "staff@garden.local", "manager@garden.local",
+                "b2b-manager@garden.local", "b2b-member@garden.local")) {
+            Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth.users WHERE email = ?", Long.class, email);
+            assertThat(count).as("user %s should exist", email).isEqualTo(1L);
+        }
+    }
+
     // ─── User tags ────────────────────────────────────────────────────────────
 
     @Test
@@ -345,6 +362,52 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             SELECT array_to_string(tags, ',') FROM auth.users WHERE email = 'customer@garden.local'
             """, String.class);
         assertThat(tags).contains("vip", "repeat-buyer");
+    }
+
+    // ─── Inventory ───────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_inventoryLevelsPopulated() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM inventory.inventory_levels WHERE quantity_on_hand = 50", Long.class);
+        // 8 simple products + 8 gloves variants + 9 ceramic planter variants = 25 stockable variants
+        assertThat(count).isGreaterThanOrEqualTo(25L);
+    }
+
+    @Test
+    void seeder_singleWarehouseLocation() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM inventory.locations WHERE name = 'Main Warehouse'", Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Shipping ─────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_shippingZonesExist() {
+        var zones = jdbc.queryForList(
+            "SELECT name FROM shipping.shipping_zones ORDER BY name", String.class);
+        assertThat(zones).containsExactlyInAnyOrder("International", "United States");
+    }
+
+    @Test
+    void seeder_usShippingHasThreeRates() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM shipping.shipping_rates sr
+            JOIN shipping.shipping_zones sz ON sz.id = sr.zone_id
+            WHERE sz.name = 'United States'
+            """, Long.class);
+        assertThat(count).isEqualTo(3L); // Standard, Free (over $50), Express
+    }
+
+    // ─── Discounts ────────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_codeDiscountsExist() {
+        var codes = jdbc.queryForList(
+            "SELECT UPPER(code) FROM checkout.discounts WHERE code IS NOT NULL ORDER BY UPPER(code)",
+            String.class);
+        assertThat(codes).contains("SAVE5", "SUMMER25", "WELCOME10");
     }
 
     // ─── Gift card transactions ───────────────────────────────────────────────
@@ -479,6 +542,18 @@ class DevDataSeederIT extends AbstractIntegrationTest {
         assertThat(count).isEqualTo(1L);
     }
 
+    // ─── Return requests (continued) ─────────────────────────────────────────
+
+    @Test
+    void seeder_completedReturnHasItems() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.return_request_items rri
+            JOIN checkout.return_requests rr ON rr.id = rri.return_request_id
+            WHERE rr.status = 'COMPLETED'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
     // ─── Notification preferences ─────────────────────────────────────────────
 
     @Test
@@ -500,6 +575,16 @@ class DevDataSeederIT extends AbstractIntegrationTest {
               AND np.notification_type = 'MARKETING' AND np.enabled = false
             """, Long.class);
         assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_b2bManagerNotificationPreferencesSeeded() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM auth.notification_preferences np
+            JOIN auth.users u ON u.id = np.user_id
+            WHERE u.email = 'b2b-manager@garden.local'
+            """, Long.class);
+        assertThat(count).isEqualTo(3L); // ORDER_CONFIRMATION, ORDER_SHIPPED, QUOTE_UPDATE
     }
 
     // ─── Order templates ─────────────────────────────────────────────────────
@@ -536,5 +621,31 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             "SELECT COUNT(*) FROM marketing.newsletter_subscribers WHERE unsubscribed_at IS NOT NULL",
             Long.class);
         assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Full-text search vectors ─────────────────────────────────────────────
+
+    @Test
+    void seeder_productsHaveSearchVectors() {
+        Long withoutVector = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.products WHERE search_vector IS NULL", Long.class);
+        assertThat(withoutVector).isEqualTo(0L);
+    }
+
+    @Test
+    void seeder_searchVectorsMatchProductTitles() {
+        // 'tomato' should match the Heirloom Tomato Seeds product
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM catalog.products
+            WHERE search_vector @@ plainto_tsquery('english', 'tomato')
+            """, Long.class);
+        assertThat(count).isGreaterThanOrEqualTo(1L);
+    }
+
+    @Test
+    void seeder_articlesHaveSearchVectors() {
+        Long withoutVector = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM content.articles WHERE search_vector IS NULL", Long.class);
+        assertThat(withoutVector).isEqualTo(0L);
     }
 }

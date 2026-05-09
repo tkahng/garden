@@ -31,6 +31,8 @@ import io.k2dv.garden.product.dto.ProductStatusRequest;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.product.service.VariantService;
+import io.k2dv.garden.order.event.OrderCancelledEvent;
+import io.k2dv.garden.order.event.OrderConfirmedEvent;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
@@ -38,6 +40,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -45,6 +49,7 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.contains;
 import static org.mockito.Mockito.never;
@@ -54,6 +59,7 @@ import static org.mockito.Mockito.verify;
  * Verifies that notification preference gates suppress or allow emails
  * in OrderService, FulfillmentService, and related services.
  */
+@RecordApplicationEvents
 class NotificationPreferenceGateIT extends AbstractIntegrationTest {
 
     @Autowired OrderService orderService;
@@ -70,6 +76,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
     @Autowired InventoryLevelRepository levelRepo;
     @Autowired NotificationPreferenceService preferenceService;
     @MockitoBean EmailService emailService;
+    @Autowired ApplicationEvents applicationEvents;
 
     private static final AtomicInteger counter = new AtomicInteger(0);
 
@@ -119,7 +126,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
     @Test
     void orderConfirmation_enabled_sendsCalled() {
         createAndPayOrder();
-        verify(emailService).sendOrderConfirmation(any(), any(), any(), any(), any(), any());
+        assertThat(applicationEvents.stream(OrderConfirmedEvent.class).count()).isEqualTo(1);
     }
 
     @Test
@@ -129,7 +136,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
 
         createAndPayOrder();
 
-        verify(emailService, never()).sendOrderConfirmation(any(), any(), any(), any(), any(), any());
+        assertThat(applicationEvents.stream(OrderConfirmedEvent.class).count()).isZero();
     }
 
     // ─── ORDER_CANCELLED gate ─────────────────────────────────────────────────
@@ -140,7 +147,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
         Order order = orderService.createFromCart(userId,
             cartService.getCartItems(cartService.requireActiveCart(userId).getId()));
         orderService.cancelAndReturn(order.getId());
-        verify(emailService).sendOrderCancelled(any(), any(), any());
+        assertThat(applicationEvents.stream(OrderCancelledEvent.class).count()).isEqualTo(1);
     }
 
     @Test
@@ -153,7 +160,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
             cartService.getCartItems(cartService.requireActiveCart(userId).getId()));
         orderService.cancelAndReturn(order.getId());
 
-        verify(emailService, never()).sendOrderCancelled(any(), any(), any());
+        assertThat(applicationEvents.stream(OrderCancelledEvent.class).count()).isZero();
     }
 
     // ─── ORDER_SHIPPED gate ───────────────────────────────────────────────────

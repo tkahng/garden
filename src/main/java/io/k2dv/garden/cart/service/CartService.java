@@ -266,12 +266,24 @@ public class CartService {
             });
         cartItemRepo.deleteAll(cartItemRepo.findByCartId(cart.getId()));
 
+        // Batch-fetch variants and products to avoid per-item queries
+        Set<UUID> variantIds = orderItems.stream()
+            .map(OrderItem::getVariantId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+            .filter(v -> v.getDeletedAt() == null)
+            .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+        Set<UUID> productIds = variantsById.values().stream()
+            .map(ProductVariant::getProductId).collect(Collectors.toSet());
+        Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
+            .filter(p -> p.getDeletedAt() == null && p.getStatus() == ProductStatus.ACTIVE)
+            .collect(Collectors.toMap(Product::getId, p -> p));
+
+        List<CartItem> newItems = new java.util.ArrayList<>();
         for (OrderItem oi : orderItems) {
             if (oi.getVariantId() == null) continue;
-            ProductVariant variant = variantRepo.findByIdAndDeletedAtIsNull(oi.getVariantId()).orElse(null);
+            ProductVariant variant = variantsById.get(oi.getVariantId());
             if (variant == null) continue;
-            Product product = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId()).orElse(null);
-            if (product == null || product.getStatus() != ProductStatus.ACTIVE) continue;
+            if (!productsById.containsKey(variant.getProductId())) continue;
 
             BigDecimal price = resolveItemPrice(cart, variant, oi.getQuantity());
             CartItem item = new CartItem();
@@ -279,8 +291,9 @@ public class CartService {
             item.setVariantId(oi.getVariantId());
             item.setQuantity(oi.getQuantity());
             item.setUnitPrice(price);
-            cartItemRepo.save(item);
+            newItems.add(item);
         }
+        cartItemRepo.saveAll(newItems);
         return toResponse(cart);
     }
 

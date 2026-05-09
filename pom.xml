@@ -168,6 +168,38 @@
 		<version>8.10.1</version>
 	</dependency>
 
+	<!-- Caching -->
+	<dependency>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-cache</artifactId>
+	</dependency>
+	<dependency>
+		<groupId>com.github.ben-manes.caffeine</groupId>
+		<artifactId>caffeine</artifactId>
+	</dependency>
+
+	<!-- Observability -->
+	<dependency>
+		<groupId>org.springframework.boot</groupId>
+		<artifactId>spring-boot-starter-actuator</artifactId>
+	</dependency>
+	<dependency>
+		<groupId>io.micrometer</groupId>
+		<artifactId>micrometer-registry-prometheus</artifactId>
+	</dependency>
+
+	<!-- ShedLock — distributed scheduler lock -->
+	<dependency>
+		<groupId>net.javacrumbs.shedlock</groupId>
+		<artifactId>shedlock-spring</artifactId>
+		<version>6.9.0</version>
+	</dependency>
+	<dependency>
+		<groupId>net.javacrumbs.shedlock</groupId>
+		<artifactId>shedlock-provider-jdbc-template</artifactId>
+		<version>6.9.0</version>
+	</dependency>
+
 	<!-- Stripe SDK -->
 	<dependency>
 		<groupId>com.stripe</groupId>

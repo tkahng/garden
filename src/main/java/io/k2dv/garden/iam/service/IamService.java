@@ -7,6 +7,8 @@ import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +23,7 @@ public class IamService {
     private final RoleRepository roleRepo;
     private final PermissionRepository permissionRepo;
 
+    @Cacheable(value = "permissions", key = "#userId")
     @Transactional(readOnly = true)
     public List<String> loadPermissionsForUser(UUID userId) {
         List<String> roleNames = userRepo.findRoleNamesByUserId(userId);
@@ -30,6 +33,7 @@ public class IamService {
         return userRepo.findPermissionNamesByUserId(userId);
     }
 
+    @CacheEvict(value = "permissions", key = "#userId")
     @Transactional
     public void assignRoleByName(UUID userId, String roleName) {
         User user = userRepo.findById(userId)
@@ -40,6 +44,7 @@ public class IamService {
         userRepo.save(user);
     }
 
+    @CacheEvict(value = "permissions", key = "#userId")
     @Transactional
     public void removeRoleByName(UUID userId, String roleName) {
         User user = userRepo.findById(userId)

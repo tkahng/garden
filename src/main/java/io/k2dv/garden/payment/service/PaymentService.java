@@ -44,9 +44,12 @@ import io.k2dv.garden.b2b.dto.RecordPaymentRequest;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.b2b.service.InvoiceService;
+import io.k2dv.garden.payment.model.ProcessedStripeEvent;
+import io.k2dv.garden.payment.repository.ProcessedStripeEventRepository;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -54,7 +57,9 @@ import java.math.RoundingMode;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -77,6 +82,7 @@ public class PaymentService {
   private final io.k2dv.garden.shipping.service.ShippingService shippingService;
   private final CompanyService companyService;
   private final CreditAccountService creditAccountService;
+  private final ProcessedStripeEventRepository processedStripeEventRepo;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -355,6 +361,16 @@ public class PaymentService {
       throw new ValidationException("INVALID_WEBHOOK_SIGNATURE", "Invalid Stripe webhook signature");
     }
 
+    // Idempotency guard — Stripe retries events; ignore any we have already processed.
+    try {
+      var marker = new ProcessedStripeEvent();
+      marker.setEventId(event.getId());
+      processedStripeEventRepo.saveAndFlush(marker);
+    } catch (DataIntegrityViolationException dup) {
+      log.info("Stripe event {} already processed, skipping", event.getId());
+      return;
+    }
+
     switch (event.getType()) {
       case "checkout.session.completed" -> {
         Session session = deserializeSession(event);
@@ -403,10 +419,14 @@ public class PaymentService {
                             Order order, ShippingRate shippingRate, boolean discountApplied) {
     String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
 
+    Set<UUID> variantIds = cartItems.stream().map(CartItem::getVariantId).collect(Collectors.toSet());
+    Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+        .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
     for (CartItem cartItem : cartItems) {
-      ProductVariant variant = variantRepo.findById(cartItem.getVariantId())
-          .orElseThrow(() -> new NotFoundException("VARIANT_NOT_FOUND",
-              "Variant not found: " + cartItem.getVariantId()));
+      ProductVariant variant = variantsById.get(cartItem.getVariantId());
+      if (variant == null) throw new NotFoundException("VARIANT_NOT_FOUND",
+          "Variant not found: " + cartItem.getVariantId());
       long unitAmountCents = cartItem.getUnitPrice()
           .multiply(BigDecimal.valueOf(100))
           .setScale(0, RoundingMode.HALF_UP)
@@ -471,10 +491,16 @@ public class PaymentService {
 
   private void addLineItemsFromOrder(SessionCreateParams.Builder builder, List<OrderItem> orderItems, Order order) {
     String currency = order.getCurrency() != null ? order.getCurrency() : "usd";
+
+    Set<UUID> variantIds = orderItems.stream()
+        .map(OrderItem::getVariantId).filter(id -> id != null).collect(Collectors.toSet());
+    Map<UUID, String> titleById = variantRepo.findAllById(variantIds).stream()
+        .collect(Collectors.toMap(ProductVariant::getId, ProductVariant::getTitle));
+
     for (OrderItem item : orderItems) {
       if (item.getUnitPrice() == null) continue;
       String title = item.getVariantId() != null
-          ? variantRepo.findById(item.getVariantId()).map(ProductVariant::getTitle).orElse("Item")
+          ? titleById.getOrDefault(item.getVariantId(), "Item")
           : "Item";
       long unitAmountCents = item.getUnitPrice()
           .multiply(BigDecimal.valueOf(100))
