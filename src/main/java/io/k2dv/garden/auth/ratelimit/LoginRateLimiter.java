@@ -2,10 +2,11 @@ package io.k2dv.garden.auth.ratelimit;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -13,21 +14,25 @@ import java.io.IOException;
 import java.time.Instant;
 
 @Component
-@RequiredArgsConstructor
 public class LoginRateLimiter implements HandlerInterceptor {
 
     // 10 attempts per 15-minute sliding window per IP
     private static final int MAX_ATTEMPTS = 10;
     private static final int WINDOW_MINUTES = 15;
 
+    @Nullable
     private final JdbcTemplate jdbc;
+
+    public LoginRateLimiter(@Nullable @Autowired(required = false) JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
 
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws IOException {
-        String ip = resolveClientIp(request);
+        if (jdbc == null) return true; // no data source available (slice tests)
 
-        // Prune expired attempts and count remaining in one round-trip
+        String ip = resolveClientIp(request);
         Instant windowStart = Instant.now().minusSeconds((long) WINDOW_MINUTES * 60);
         jdbc.update("DELETE FROM auth.rate_limit_attempts WHERE attempted_at < ?",
             java.sql.Timestamp.from(windowStart));

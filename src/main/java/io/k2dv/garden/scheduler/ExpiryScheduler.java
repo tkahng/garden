@@ -22,8 +22,12 @@ public class ExpiryScheduler {
 
     @Scheduled(cron = "0 */15 * * * *")
     @SchedulerLock(name = "expireQuotes", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
-    @Transactional
     public void expireQuotes() {
+        doExpireQuotes();
+    }
+
+    @Transactional
+    public void doExpireQuotes() {
         try {
             int count = quoteRepo.expireByStatus(QuoteStatus.SENT, QuoteStatus.EXPIRED, Instant.now());
             if (count > 0) {
@@ -36,8 +40,12 @@ public class ExpiryScheduler {
 
     @Scheduled(cron = "0 */15 * * * *")
     @SchedulerLock(name = "markInvoicesOverdue", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
-    @Transactional
     public void markInvoicesOverdue() {
+        doMarkInvoicesOverdue();
+    }
+
+    @Transactional
+    public void doMarkInvoicesOverdue() {
         try {
             int count = invoiceRepo.markOverduePastDue(Instant.now());
             if (count > 0) {

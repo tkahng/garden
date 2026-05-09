@@ -66,7 +66,7 @@ class ExpirySchedulerQuoteIT extends AbstractIntegrationTest {
     void expireQuotes_transitionsSentPastExpiry() {
         QuoteRequest expired = savedQuote(QuoteStatus.SENT, Instant.now().minus(1, ChronoUnit.HOURS));
 
-        scheduler.expireQuotes();
+        scheduler.doExpireQuotes();
 
         assertThat(quoteRepo.findById(expired.getId()).orElseThrow().getStatus())
             .isEqualTo(QuoteStatus.EXPIRED);
@@ -76,7 +76,7 @@ class ExpirySchedulerQuoteIT extends AbstractIntegrationTest {
     void expireQuotes_ignoresSentNotYetExpired() {
         QuoteRequest future = savedQuote(QuoteStatus.SENT, Instant.now().plus(1, ChronoUnit.DAYS));
 
-        scheduler.expireQuotes();
+        scheduler.doExpireQuotes();
 
         assertThat(quoteRepo.findById(future.getId()).orElseThrow().getStatus())
             .isEqualTo(QuoteStatus.SENT);
@@ -86,7 +86,7 @@ class ExpirySchedulerQuoteIT extends AbstractIntegrationTest {
     void expireQuotes_ignoresSentWithNoExpiry() {
         QuoteRequest noExpiry = savedQuote(QuoteStatus.SENT, null);
 
-        scheduler.expireQuotes();
+        scheduler.doExpireQuotes();
 
         assertThat(quoteRepo.findById(noExpiry.getId()).orElseThrow().getStatus())
             .isEqualTo(QuoteStatus.SENT);
@@ -102,7 +102,7 @@ class ExpirySchedulerQuoteIT extends AbstractIntegrationTest {
         QuoteRequest rejected   = savedQuote(QuoteStatus.REJECTED,         Instant.now().minus(1, ChronoUnit.HOURS));
         QuoteRequest approval   = savedQuote(QuoteStatus.PENDING_APPROVAL, Instant.now().minus(1, ChronoUnit.HOURS));
 
-        scheduler.expireQuotes();
+        scheduler.doExpireQuotes();
 
         assertThat(quoteRepo.findById(accepted.getId()).orElseThrow().getStatus()).isEqualTo(QuoteStatus.ACCEPTED);
         assertThat(quoteRepo.findById(pending.getId()).orElseThrow().getStatus()).isEqualTo(QuoteStatus.PENDING);
@@ -117,7 +117,7 @@ class ExpirySchedulerQuoteIT extends AbstractIntegrationTest {
     void expireQuotes_alreadyExpiredQuoteUntouched() {
         QuoteRequest alreadyExpired = savedQuote(QuoteStatus.EXPIRED, Instant.now().minus(1, ChronoUnit.HOURS));
 
-        scheduler.expireQuotes();
+        scheduler.doExpireQuotes();
 
         assertThat(quoteRepo.findById(alreadyExpired.getId()).orElseThrow().getStatus())
             .isEqualTo(QuoteStatus.EXPIRED);

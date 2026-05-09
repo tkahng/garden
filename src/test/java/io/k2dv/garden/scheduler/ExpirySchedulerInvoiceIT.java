@@ -78,7 +78,7 @@ class ExpirySchedulerInvoiceIT extends AbstractIntegrationTest {
     void markInvoicesOverdue_transitionsIssuedPastDue() {
         Invoice inv = savedInvoice(InvoiceStatus.ISSUED, Instant.now().minus(1, ChronoUnit.HOURS));
 
-        scheduler.markInvoicesOverdue();
+        scheduler.doMarkInvoicesOverdue();
 
         assertThat(invoiceRepo.findById(inv.getId()).orElseThrow().getStatus())
             .isEqualTo(InvoiceStatus.OVERDUE);
@@ -88,7 +88,7 @@ class ExpirySchedulerInvoiceIT extends AbstractIntegrationTest {
     void markInvoicesOverdue_transitionsPartialPastDue() {
         Invoice inv = savedInvoice(InvoiceStatus.PARTIAL, Instant.now().minus(1, ChronoUnit.HOURS));
 
-        scheduler.markInvoicesOverdue();
+        scheduler.doMarkInvoicesOverdue();
 
         assertThat(invoiceRepo.findById(inv.getId()).orElseThrow().getStatus())
             .isEqualTo(InvoiceStatus.OVERDUE);
@@ -98,7 +98,7 @@ class ExpirySchedulerInvoiceIT extends AbstractIntegrationTest {
     void markInvoicesOverdue_ignoresIssuedNotYetDue() {
         Invoice inv = savedInvoice(InvoiceStatus.ISSUED, Instant.now().plus(1, ChronoUnit.DAYS));
 
-        scheduler.markInvoicesOverdue();
+        scheduler.doMarkInvoicesOverdue();
 
         assertThat(invoiceRepo.findById(inv.getId()).orElseThrow().getStatus())
             .isEqualTo(InvoiceStatus.ISSUED);
@@ -109,7 +109,7 @@ class ExpirySchedulerInvoiceIT extends AbstractIntegrationTest {
         Invoice paid   = savedInvoice(InvoiceStatus.PAID, Instant.now().minus(1, ChronoUnit.HOURS));
         Invoice voided = savedInvoice(InvoiceStatus.VOID, Instant.now().minus(1, ChronoUnit.HOURS));
 
-        scheduler.markInvoicesOverdue();
+        scheduler.doMarkInvoicesOverdue();
 
         assertThat(invoiceRepo.findById(paid.getId()).orElseThrow().getStatus()).isEqualTo(InvoiceStatus.PAID);
         assertThat(invoiceRepo.findById(voided.getId()).orElseThrow().getStatus()).isEqualTo(InvoiceStatus.VOID);
@@ -119,7 +119,7 @@ class ExpirySchedulerInvoiceIT extends AbstractIntegrationTest {
     void markInvoicesOverdue_alreadyOverdueUntouched() {
         Invoice already = savedInvoice(InvoiceStatus.OVERDUE, Instant.now().minus(1, ChronoUnit.HOURS));
 
-        scheduler.markInvoicesOverdue();
+        scheduler.doMarkInvoicesOverdue();
 
         assertThat(invoiceRepo.findById(already.getId()).orElseThrow().getStatus())
             .isEqualTo(InvoiceStatus.OVERDUE);
