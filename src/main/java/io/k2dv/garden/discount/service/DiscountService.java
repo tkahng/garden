@@ -11,6 +11,7 @@ import io.k2dv.garden.discount.model.DiscountType;
 import io.k2dv.garden.discount.repository.DiscountRepository;
 import io.k2dv.garden.discount.specification.DiscountSpecification;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.k2dv.garden.audit.aspect.Audited;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
@@ -67,6 +68,7 @@ public class DiscountService {
         return DiscountResponse.from(discountRepo.save(d));
     }
 
+    @Audited(entityType = "discount", entityId = "#id")
     @Transactional
     public DiscountResponse update(UUID id, UpdateDiscountRequest req) {
         Discount d = findOrThrow(id);
@@ -95,6 +97,7 @@ public class DiscountService {
         return DiscountResponse.from(discountRepo.save(d));
     }
 
+    @Audited(entityType = "discount", entityId = "#id")
     @Transactional
     public void delete(UUID id) {
         Discount d = findOrThrow(id);

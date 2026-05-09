@@ -28,6 +28,7 @@ import io.k2dv.garden.product.model.ProductVariant;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.product.service.ProductImageResolver;
+import io.k2dv.garden.audit.aspect.Audited;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.automation.AutoTagService;
 import io.k2dv.garden.config.AppProperties;
@@ -401,6 +402,7 @@ public class OrderService {
         });
     }
 
+    @Audited(entityType = "order", entityId = "#orderId")
     @Transactional
     public void cancelOrder(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -629,6 +631,7 @@ public class OrderService {
         return toResponse(orderRepo.save(order));
     }
 
+    @Audited(entityType = "order", entityId = "#orderId")
     @Transactional
     public OrderResponse refundOrder(UUID orderId, UUID requestingUserId) {
         Order order = orderRepo.findById(orderId)
