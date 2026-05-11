@@ -11,6 +11,7 @@ import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.cart.model.CartStatus;
 import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.config.AppProperties;
+import io.k2dv.garden.payment.config.StripeProperties;
 import io.k2dv.garden.order.model.Order;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
@@ -61,6 +62,8 @@ class PaymentServiceTest {
   @Mock
   AppProperties appProperties;
   @Mock
+  StripeProperties stripeProperties;
+  @Mock
   QuoteRequestRepository quoteRequestRepo;
   @Mock
   AddressRepository addressRepo;
@@ -90,7 +93,7 @@ class PaymentServiceTest {
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService, companyService, creditAccountService, processedStripeEventRepo);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, stripeProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService, companyService, creditAccountService, processedStripeEventRepo);
   }
 
   private Cart stubCart(UUID userId) {

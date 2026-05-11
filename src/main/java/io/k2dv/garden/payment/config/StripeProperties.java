@@ -17,4 +17,6 @@ public class StripeProperties {
 
     @NotBlank
     private String webhookSecret;
+
+    private boolean automaticTaxEnabled = false;
 }
