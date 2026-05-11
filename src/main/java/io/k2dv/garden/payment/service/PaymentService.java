@@ -23,6 +23,7 @@ import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
 import io.k2dv.garden.payment.dto.GuestAddressRequest;
+import io.k2dv.garden.payment.config.StripeProperties;
 import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
@@ -71,6 +72,7 @@ public class PaymentService {
   private final StripeGateway stripeGateway;
   private final ProductVariantRepository variantRepo;
   private final AppProperties appProperties;
+  private final StripeProperties stripeProperties;
   private final QuoteRequestRepository quoteRequestRepo;
   private final AddressRepository addressRepo;
   private final DiscountService discountService;
@@ -174,6 +176,7 @@ public class PaymentService {
       return new CheckoutResponse(session.getUrl(), order.getId(), false);
 
     } catch (StripeException e) {
+      log.error("Stripe session creation failed for order {}: [{}] {}", order.getId(), e.getCode(), e.getMessage());
       orderService.cancelOrder(order.getId());
       throw new PaymentException("STRIPE_ERROR", "Failed to create checkout session: " + e.getMessage());
     }
@@ -233,6 +236,7 @@ public class PaymentService {
       return new CheckoutResponse(session.getUrl(), order.getId(), false);
 
     } catch (StripeException e) {
+      log.error("Stripe guest session creation failed: [{}] {}", e.getCode(), e.getMessage());
       orderService.cancelOrder(order.getId());
       throw new PaymentException("STRIPE_ERROR", "Failed to create checkout session: " + e.getMessage());
     }
@@ -283,6 +287,7 @@ public class PaymentService {
       return new CheckoutResponse(session.getUrl(), order.getId(), false);
 
     } catch (StripeException e) {
+      log.error("Stripe quote session creation failed for order {}: [{}] {}", order.getId(), e.getCode(), e.getMessage());
       orderService.cancelOrder(order.getId());
       throw new PaymentException("STRIPE_ERROR",
           "Failed to create checkout session: " + e.getMessage());
@@ -326,6 +331,7 @@ public class PaymentService {
       orderService.setStripeSession(orderId, session.getId());
       return new CheckoutResponse(session.getUrl(), orderId, false);
     } catch (StripeException e) {
+      log.error("Stripe approval session creation failed for order {}: [{}] {}", orderId, e.getCode(), e.getMessage());
       throw new PaymentException("STRIPE_ERROR", "Failed to create checkout session: " + e.getMessage());
     }
   }
@@ -409,7 +415,7 @@ public class PaymentService {
         .setSuccessUrl(appProperties.getFrontendUrl() + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
         .setCancelUrl(appProperties.getFrontendUrl() + "/checkout/return?session_id={CHECKOUT_SESSION_ID}")
         .putMetadata("orderId", orderId != null ? orderId.toString() : "");
-    if (!taxExempt) {
+    if (!taxExempt && stripeProperties.isAutomaticTaxEnabled()) {
       builder.setAutomaticTax(SessionCreateParams.AutomaticTax.builder().setEnabled(true).build());
     }
     return builder;
