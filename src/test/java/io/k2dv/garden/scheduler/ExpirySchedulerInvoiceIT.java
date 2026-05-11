@@ -124,4 +124,17 @@ class ExpirySchedulerInvoiceIT extends AbstractIntegrationTest {
         assertThat(invoiceRepo.findById(already.getId()).orElseThrow().getStatus())
             .isEqualTo(InvoiceStatus.OVERDUE);
     }
+
+    // Regression: markInvoicesOverdue() self-calls doMarkInvoicesOverdue() internally, bypassing
+    // the AOP proxy. Without @Transactional on markInvoicesOverdue() itself, the @Modifying query
+    // throws TransactionRequiredException at runtime.
+    @Test
+    void markInvoicesOverdue_viaScheduledEntryPoint_transitionsIssuedPastDue() {
+        Invoice inv = savedInvoice(InvoiceStatus.ISSUED, Instant.now().minus(1, ChronoUnit.HOURS));
+
+        scheduler.markInvoicesOverdue();
+
+        assertThat(invoiceRepo.findById(inv.getId()).orElseThrow().getStatus())
+            .isEqualTo(InvoiceStatus.OVERDUE);
+    }
 }

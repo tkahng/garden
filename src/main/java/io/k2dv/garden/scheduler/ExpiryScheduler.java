@@ -22,6 +22,7 @@ public class ExpiryScheduler {
 
     @Scheduled(cron = "0 */15 * * * *")
     @SchedulerLock(name = "expireQuotes", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
+    @Transactional
     public void expireQuotes() {
         doExpireQuotes();
     }
@@ -40,6 +41,7 @@ public class ExpiryScheduler {
 
     @Scheduled(cron = "0 */15 * * * *")
     @SchedulerLock(name = "markInvoicesOverdue", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
+    @Transactional
     public void markInvoicesOverdue() {
         doMarkInvoicesOverdue();
     }

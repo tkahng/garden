@@ -122,4 +122,17 @@ class ExpirySchedulerQuoteIT extends AbstractIntegrationTest {
         assertThat(quoteRepo.findById(alreadyExpired.getId()).orElseThrow().getStatus())
             .isEqualTo(QuoteStatus.EXPIRED);
     }
+
+    // Regression: expireQuotes() self-calls doExpireQuotes() internally, bypassing the AOP proxy.
+    // Without @Transactional on expireQuotes() itself, the @Modifying query throws
+    // TransactionRequiredException at runtime even though doExpireQuotes() is annotated.
+    @Test
+    void expireQuotes_viaScheduledEntryPoint_transitionsSentPastExpiry() {
+        QuoteRequest expired = savedQuote(QuoteStatus.SENT, Instant.now().minus(1, ChronoUnit.HOURS));
+
+        scheduler.expireQuotes();
+
+        assertThat(quoteRepo.findById(expired.getId()).orElseThrow().getStatus())
+            .isEqualTo(QuoteStatus.EXPIRED);
+    }
 }
