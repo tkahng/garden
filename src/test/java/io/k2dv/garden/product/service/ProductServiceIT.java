@@ -9,11 +9,18 @@ import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ConflictException;
+import io.k2dv.garden.shared.exception.NotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -28,6 +35,7 @@ class ProductServiceIT extends AbstractIntegrationTest {
     @Autowired ProductVariantRepository variantRepo;
     @Autowired InventoryItemRepository inventoryRepo;
     @Autowired BlobObjectRepository blobRepo;
+    @Autowired TransactionTemplate txTemplate;
 
     @Test
     void createProduct_persistsWithDraftStatusAndAutoHandle() {
@@ -153,5 +161,75 @@ class ProductServiceIT extends AbstractIntegrationTest {
 
         var variants = variantRepo.findByProductIdAndDeletedAtIsNullOrderByCreatedAtAsc(product.id());
         assertThat(variants).isEmpty();
+    }
+
+    // ── getByHandle ────────────────────────────────────────────────────────────
+
+    @Test
+    void getByHandle_activeProduct_returnsDetail() {
+        var product = productService.create(new CreateProductRequest("Spade", null, "spade-detail", null, null, List.of(), null, null));
+        productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
+
+        var detail = productService.getByHandle("spade-detail", null);
+
+        assertThat(detail.handle()).isEqualTo("spade-detail");
+        assertThat(detail.title()).isEqualTo("Spade");
+    }
+
+    @Test
+    void getByHandle_draftProduct_throwsNotFoundException() {
+        productService.create(new CreateProductRequest("Draft Item", null, "draft-item", null, null, List.of(), null, null));
+
+        assertThatThrownBy(() -> productService.getByHandle("draft-item", null))
+            .isInstanceOf(NotFoundException.class);
+    }
+
+    @Test
+    void getByHandle_unknownHandle_throwsNotFoundException() {
+        assertThatThrownBy(() -> productService.getByHandle("does-not-exist", null))
+            .isInstanceOf(NotFoundException.class);
+    }
+
+    /**
+     * Regression test for LazyInitializationException on optionValues.
+     *
+     * AbstractIntegrationTest wraps every test in a transaction, which keeps the
+     * JPA session open and masks lazy-loading failures. This test uses
+     * Propagation.NOT_SUPPORTED to suspend that outer transaction and call
+     * getByHandle exactly as production does (open-in-view=false, no surrounding
+     * transaction). Without @Transactional on getByHandle the lazy optionValues
+     * collection throws LazyInitializationException.
+     */
+    @Test
+    @Transactional(propagation = Propagation.NOT_SUPPORTED)
+    void getByHandle_withOptionValues_loadsLazyCollectionWithoutOuterTransaction() {
+        AtomicReference<UUID> productId = new AtomicReference<>();
+
+        String handle = txTemplate.execute(status -> {
+            var product = productService.create(new CreateProductRequest(
+                "Fountain", null, "fountain-lazy-it", null, null, List.of(), null, null));
+            productId.set(product.id());
+            var opt = optionService.createOption(product.id(), new CreateOptionRequest("Size", 1));
+            var val = optionService.createOptionValue(product.id(), opt.id(),
+                new CreateOptionValueRequest("Large", 1));
+            variantService.create(product.id(), new CreateVariantRequest(
+                new BigDecimal("299.99"), null, null, null, null, null, List.of(val.id())));
+            productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
+            return product.handle();
+        });
+
+        try {
+            var detail = productService.getByHandle(handle, null);
+
+            assertThat(detail.handle()).isEqualTo(handle);
+            assertThat(detail.variants()).hasSize(1);
+            assertThat(detail.variants().get(0).optionValues()).hasSize(1);
+            assertThat(detail.variants().get(0).optionValues().get(0).valueLabel()).isEqualTo("Large");
+        } finally {
+            txTemplate.execute(status -> {
+                productService.softDelete(productId.get());
+                return null;
+            });
+        }
     }
 }
