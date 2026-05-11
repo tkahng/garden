@@ -240,6 +240,7 @@ public class ProductService {
         );
     }
 
+    @Transactional(readOnly = true)
     public ProductDetailResponse getByHandle(String handle, UUID companyId) {
         Product p = productRepo.findByHandle(handle)
             .filter(prod -> prod.getStatus() == ProductStatus.ACTIVE && prod.getDeletedAt() == null)
