@@ -43,6 +43,7 @@ import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.shared.validation.AddressJsonCountry;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
 import jakarta.persistence.criteria.Predicate;
@@ -618,7 +619,7 @@ public class OrderService {
                 throw new ConflictException("ORDER_ALREADY_SHIPPED",
                     "Cannot update shipping address after order has been shipped");
             }
-            order.setShippingAddress(req.shippingAddress());
+            order.setShippingAddress(AddressJsonCountry.normalizeCountry(req.shippingAddress()));
         }
         if (req.adminNotes() != null) {
             order.setAdminNotes(req.adminNotes());
@@ -685,7 +686,7 @@ public class OrderService {
         order.setStatus(OrderStatus.DRAFT);
         order.setTotalAmount(total);
         order.setCurrency(req.currency() != null ? req.currency() : "usd");
-        order.setShippingAddress(req.shippingAddress());
+        order.setShippingAddress(AddressJsonCountry.normalizeCountry(req.shippingAddress()));
         order.setPoNumber(req.poNumber());
         order.setCompanyId(req.companyId());
         order = orderRepo.save(order);

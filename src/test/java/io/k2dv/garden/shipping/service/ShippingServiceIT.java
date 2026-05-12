@@ -2,6 +2,7 @@ package io.k2dv.garden.shipping.service;
 
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.shipping.dto.CreateShippingRateRequest;
 import io.k2dv.garden.shipping.dto.CreateShippingZoneRequest;
 import io.k2dv.garden.shipping.dto.ShippingRateResponse;
@@ -28,6 +29,23 @@ class ShippingServiceIT extends AbstractIntegrationTest {
         ShippingZoneResponse resp = shippingService.createZone(req);
         assertThat(resp.name()).isEqualTo("North America");
         assertThat(resp.isActive()).isTrue();
+    }
+
+    @Test
+    void createZone_normalizesCountryCodes() {
+        ShippingZoneResponse resp = shippingService.createZone(
+            new CreateShippingZoneRequest("North America", null, List.of(" us ", "ca"), null));
+
+        assertThat(resp.countryCodes()).containsExactly("US", "CA");
+    }
+
+    @Test
+    void createZone_rejectsIso3CountryCode() {
+        assertThatThrownBy(() -> shippingService.createZone(
+            new CreateShippingZoneRequest("Bad Zone", null, List.of("USA"), null)))
+            .isInstanceOf(ValidationException.class)
+            .extracting("errorCode")
+            .isEqualTo("INVALID_COUNTRY_CODE");
     }
 
     @Test
@@ -77,6 +95,26 @@ class ShippingServiceIT extends AbstractIntegrationTest {
 
         List<ShippingRateResponse> rates = shippingService.findRatesForAddress("US", null, null);
         assertThat(rates).anyMatch(r -> r.zoneId().equals(zone.id()) && r.name().equals("Ground"));
+    }
+
+    @Test
+    void findRatesForAddress_normalizesInputCountry() {
+        ShippingZoneResponse zone = shippingService.createZone(
+            new CreateShippingZoneRequest("US Zone Normalized", null, List.of("US"), null));
+        shippingService.createRate(zone.id(),
+            new CreateShippingRateRequest("Ground Normalized", new BigDecimal("6.00"),
+                null, null, null, null, null, null));
+
+        List<ShippingRateResponse> rates = shippingService.findRatesForAddress(" us ", null, null);
+        assertThat(rates).anyMatch(r -> r.zoneId().equals(zone.id()) && r.name().equals("Ground Normalized"));
+    }
+
+    @Test
+    void findRatesForAddress_rejectsIso3CountryCode() {
+        assertThatThrownBy(() -> shippingService.findRatesForAddress("USA", null, null))
+            .isInstanceOf(ValidationException.class)
+            .extracting("errorCode")
+            .isEqualTo("INVALID_COUNTRY_CODE");
     }
 
     @Test

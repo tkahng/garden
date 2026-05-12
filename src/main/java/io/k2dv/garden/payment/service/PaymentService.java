@@ -37,6 +37,7 @@ import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.shared.validation.CountryCode;
 import io.k2dv.garden.shipping.model.ShippingRate;
 import io.k2dv.garden.shipping.repository.ShippingRateRepository;
 import io.k2dv.garden.user.model.Address;
@@ -100,9 +101,10 @@ public class PaymentService {
 
   public CheckoutResponse initiateCheckout(UUID userId, String discountCode, String giftCardCode,
                                            UUID shippingRateId, String poNumber) {
-    Address defaultAddress = addressRepo.findByUserIdAndIsDefaultTrue(userId)
+    Address shippingAddress = addressRepo.findByUserIdAndIsDefaultTrue(userId)
+        .or(() -> addressRepo.findByUserId(userId).stream().findFirst())
         .orElseThrow(() -> new ValidationException("NO_SHIPPING_ADDRESS",
-            "A default shipping address is required before checkout"));
+            "A shipping address is required before checkout"));
 
     Cart cart = cartService.requireActiveCart(userId);
     List<CartItem> cartItems = cartService.getCartItems(cart.getId());
@@ -114,10 +116,11 @@ public class PaymentService {
     UUID companyId = cart.getCompanyId();
     boolean taxExempt = companyId != null && companyService.isTaxExempt(companyId);
 
+    String normalizedCountry = CountryCode.normalize(shippingAddress.getCountry());
     ShippingRate shippingRate = resolveShippingRate(shippingRateId);
-    if (shippingRate != null && defaultAddress.getCountry() != null) {
+    if (shippingRate != null) {
       shippingService.validateRateForAddress(shippingRate.getId(),
-          defaultAddress.getCountry(), defaultAddress.getProvince());
+          normalizedCountry, shippingAddress.getProvince());
     }
     BigDecimal shippingCost = shippingRate != null ? shippingRate.getPrice() : null;
 
@@ -130,7 +133,7 @@ public class PaymentService {
       creditAccountService.assertCreditAvailable(companyId, orderTotal);
     }
 
-    String shippingAddressJson = serializeAddress(defaultAddress);
+    String shippingAddressJson = serializeAddress(shippingAddress);
 
     Order order = orderService.createFromCart(userId, companyId, taxExempt, cartItems,
         shippingRateId, shippingCost, shippingAddressJson, poNumber);
@@ -199,10 +202,9 @@ public class PaymentService {
     ShippingRate shippingRate = shippingRateRepo.findById(shippingRateId)
         .orElseThrow(() -> new ValidationException("SHIPPING_RATE_NOT_FOUND", "Invalid shipping rate selected"));
 
-    if (guestAddress.country() != null) {
-      shippingService.validateRateForAddress(shippingRate.getId(),
-          guestAddress.country(), guestAddress.province());
-    }
+    String normalizedCountry = CountryCode.normalize(guestAddress.country());
+    shippingService.validateRateForAddress(shippingRate.getId(),
+        normalizedCountry, guestAddress.province());
 
     Cart cart = cartService.requireActiveGuestCart(sessionId);
     List<CartItem> cartItems = cartService.getCartItems(cart.getId());
@@ -212,7 +214,7 @@ public class PaymentService {
     }
 
     BigDecimal shippingCost = shippingRate.getPrice();
-    String shippingAddressJson = serializeGuestAddress(guestAddress);
+    String shippingAddressJson = serializeGuestAddress(guestAddress, normalizedCountry);
 
     Order order = orderService.createGuestOrder(guestEmail, cartItems, shippingRateId, shippingCost, shippingAddressJson, poNumber);
 
@@ -611,11 +613,11 @@ public class PaymentService {
     map.put("city", address.getCity());
     map.put("province", address.getProvince());
     map.put("zip", address.getZip());
-    map.put("country", address.getCountry());
+    map.put("country", CountryCode.normalize(address.getCountry()));
     return toJson(map);
   }
 
-  private String serializeGuestAddress(GuestAddressRequest req) {
+  private String serializeGuestAddress(GuestAddressRequest req, String normalizedCountry) {
     Map<String, Object> map = new LinkedHashMap<>();
     map.put("firstName", req.firstName());
     map.put("lastName", req.lastName());
@@ -624,7 +626,7 @@ public class PaymentService {
     map.put("city", req.city());
     map.put("province", req.province());
     map.put("zip", req.zip());
-    map.put("country", req.country());
+    map.put("country", normalizedCountry);
     return toJson(map);
   }
 

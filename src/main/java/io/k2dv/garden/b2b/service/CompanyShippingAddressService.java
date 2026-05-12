@@ -7,6 +7,7 @@ import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.b2b.repository.CompanyShippingAddressRepository;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.validation.CountryCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -86,7 +87,7 @@ public class CompanyShippingAddressService {
         a.setCity(req.city());
         a.setProvince(req.province());
         a.setZip(req.zip());
-        a.setCountry(req.country());
+        a.setCountry(CountryCode.normalize(req.country()));
         a.setDefault(req.isDefault());
     }
 

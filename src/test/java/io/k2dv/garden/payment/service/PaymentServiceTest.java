@@ -17,6 +17,7 @@ import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
+import io.k2dv.garden.payment.dto.GuestAddressRequest;
 import io.k2dv.garden.payment.exception.PaymentException;
 import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.model.ProductVariant;
@@ -26,6 +27,7 @@ import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
 import io.k2dv.garden.discount.dto.DiscountApplication;
 import io.k2dv.garden.discount.model.DiscountType;
+import io.k2dv.garden.shipping.model.ShippingRate;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.Address;
@@ -125,6 +127,26 @@ class PaymentServiceTest {
     return order;
   }
 
+  private Address stubAddress() {
+    Address address = new Address();
+    address.setCountry("US");
+    address.setProvince("OR");
+    return address;
+  }
+
+  private ShippingRate stubShippingRate(UUID rateId) {
+    ShippingRate rate = new ShippingRate();
+    org.springframework.test.util.ReflectionTestUtils.setField(rate, "id", rateId);
+    rate.setName("Ground");
+    rate.setPrice(new BigDecimal("6.00"));
+    return rate;
+  }
+
+  private GuestAddressRequest guestAddress(String country) {
+    return new GuestAddressRequest("Guest", "Buyer", "1 Main St", null,
+        "Portland", "OR", "97201", country);
+  }
+
   @Test
   void initiateCheckout_happyPath_returnsCheckoutUrl() throws StripeException {
     UUID userId = UUID.randomUUID();
@@ -142,7 +164,7 @@ class PaymentServiceTest {
     when(session.getId()).thenReturn("cs_test_123");
     when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_123");
 
-    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
     when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
@@ -171,7 +193,7 @@ class PaymentServiceTest {
     variant.setTitle("Large");
     variant.setPrice(new BigDecimal("20.00"));
 
-    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(stubCartItem(variantId)));
     when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
@@ -202,7 +224,7 @@ class PaymentServiceTest {
     when(session.getId()).thenReturn("cs_test_456");
     when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_456");
 
-    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(item));
     when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
@@ -223,7 +245,7 @@ class PaymentServiceTest {
     UUID userId = UUID.randomUUID();
     Cart cart = stubCart(userId);
 
-    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of());
 
@@ -234,15 +256,100 @@ class PaymentServiceTest {
   }
 
   @Test
-  void initiateCheckout_noDefaultShippingAddress_throwsValidation() {
+  void initiateCheckout_noShippingAddress_throwsValidation() {
     UUID userId = UUID.randomUUID();
 
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.empty());
+    when(addressRepo.findByUserId(userId)).thenReturn(List.of());
 
     assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null, null))
         .isInstanceOf(ValidationException.class)
         .extracting("errorCode")
         .isEqualTo("NO_SHIPPING_ADDRESS");
+  }
+
+  @Test
+  void initiateCheckout_usesFirstSavedAddressWhenNoDefaultExists() throws StripeException {
+    UUID userId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    Cart cart = stubCart(userId);
+    CartItem cartItem = stubCartItem(variantId);
+    Order order = stubOrder(UUID.randomUUID(), userId);
+    Address fallbackAddress = stubAddress();
+    fallbackAddress.setAddress1("Fallback St");
+
+    ProductVariant variant = new ProductVariant();
+    org.springframework.test.util.ReflectionTestUtils.setField(variant, "id", variantId);
+    variant.setTitle("Widget");
+    variant.setPrice(new BigDecimal("49.99"));
+
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_test_fallback");
+    when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_fallback");
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.empty());
+    when(addressRepo.findByUserId(userId)).thenReturn(List.of(fallbackAddress));
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
+    when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
+
+    paymentService.initiateCheckout(userId, null, null);
+
+    ArgumentCaptor<String> addressCaptor = ArgumentCaptor.forClass(String.class);
+    verify(orderService).createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), addressCaptor.capture(), any());
+    assertThat(addressCaptor.getValue()).contains("\"address1\":\"Fallback St\"");
+  }
+
+  @Test
+  void initiateGuestCheckout_rejectsIso3CountryCode() {
+    UUID shippingRateId = UUID.randomUUID();
+    when(userRepo.existsByEmail("guest@example.com")).thenReturn(false);
+    when(shippingRateRepo.findById(shippingRateId)).thenReturn(Optional.of(stubShippingRate(shippingRateId)));
+
+    assertThatThrownBy(() -> paymentService.initiateGuestCheckout(
+        "guest@example.com", guestAddress("USA"), shippingRateId, null, null, UUID.randomUUID()))
+        .isInstanceOf(ValidationException.class)
+        .extracting("errorCode")
+        .isEqualTo("INVALID_COUNTRY_CODE");
+  }
+
+  @Test
+  void initiateGuestCheckout_normalizesCountryBeforeValidationAndSerialization() throws StripeException {
+    UUID sessionId = UUID.randomUUID();
+    UUID shippingRateId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    Cart cart = stubCart(null);
+    CartItem cartItem = stubCartItem(variantId);
+    Order order = stubOrder(UUID.randomUUID(), null);
+
+    ProductVariant variant = new ProductVariant();
+    org.springframework.test.util.ReflectionTestUtils.setField(variant, "id", variantId);
+    variant.setTitle("Widget");
+    variant.setPrice(new BigDecimal("49.99"));
+
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_guest");
+    when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_guest");
+
+    when(userRepo.existsByEmail("guest@example.com")).thenReturn(false);
+    when(shippingRateRepo.findById(shippingRateId)).thenReturn(Optional.of(stubShippingRate(shippingRateId)));
+    when(cartService.requireActiveGuestCart(sessionId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createGuestOrder(eq("guest@example.com"), any(), eq(shippingRateId), any(), any(), any()))
+        .thenReturn(order);
+    when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
+    when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
+
+    paymentService.initiateGuestCheckout(
+        "guest@example.com", guestAddress(" us "), shippingRateId, null, null, sessionId);
+
+    verify(shippingService).validateRateForAddress(shippingRateId, "US", "OR");
+    ArgumentCaptor<String> addressCaptor = ArgumentCaptor.forClass(String.class);
+    verify(orderService).createGuestOrder(eq("guest@example.com"), any(), eq(shippingRateId),
+        any(), addressCaptor.capture(), any());
+    assertThat(addressCaptor.getValue()).contains("\"country\":\"US\"");
   }
 
   @Test
@@ -418,7 +525,7 @@ class PaymentServiceTest {
     when(session.getId()).thenReturn("cs_test_discount");
     when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_discount");
 
-    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
     when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(orderAfterCreate);
@@ -453,7 +560,7 @@ class PaymentServiceTest {
     CartItem cartItem = stubCartItem(variantId);
     Order order = stubOrder(UUID.randomUUID(), userId);
 
-    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
     when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
@@ -480,7 +587,7 @@ class PaymentServiceTest {
     Order order = stubOrder(UUID.randomUUID(), userId);
     order.setTotalAmount(new BigDecimal("99.98"));
 
-    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(new Address()));
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
     when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);

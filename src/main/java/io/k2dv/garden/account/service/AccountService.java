@@ -6,6 +6,7 @@ import io.k2dv.garden.account.dto.AddressResponse;
 import io.k2dv.garden.account.dto.UpdateAccountRequest;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.validation.CountryCode;
 import io.k2dv.garden.user.model.Address;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.AddressRepository;
@@ -107,7 +108,7 @@ public class AccountService {
         address.setCity(req.city());
         address.setProvince(req.province());
         address.setZip(req.zip());
-        address.setCountry(req.country());
+        address.setCountry(CountryCode.normalize(req.country()));
         address.setDefault(req.isDefault());
     }
 }
