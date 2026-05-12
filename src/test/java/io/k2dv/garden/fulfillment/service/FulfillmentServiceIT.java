@@ -44,6 +44,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 class FulfillmentServiceIT extends AbstractIntegrationTest {
 
@@ -231,6 +236,51 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void update_pendingToShipped_sendsShippingNotificationToCustomer() {
+        Order order = createPaidOrder(2);
+        var orderItem = orderItemRepo.findByOrderId(order.getId()).get(0);
+        FulfillmentResponse f = fulfillmentService.create(order.getId(),
+            new CreateFulfillmentRequest("T-SHIP", "UPS", "https://track.example/T-SHIP", null,
+                List.of(new FulfillmentItemRequest(orderItem.getId(), 2))),
+            adminUser);
+
+        fulfillmentService.update(order.getId(), f.id(),
+            new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
+
+        String orderRef = "#" + order.getId().toString().substring(0, 8).toUpperCase();
+        verify(emailService).sendShippingNotification(
+            eq(adminUser.getEmail()),
+            eq(orderRef),
+            eq("T-SHIP"),
+            eq("UPS"),
+            eq("https://track.example/T-SHIP"),
+            eq("http://localhost:3000"));
+    }
+
+    @Test
+    void update_reapplyingShippedStatus_doesNotResendShippingNotification() {
+        Order order = createPaidOrder(2);
+        var orderItem = orderItemRepo.findByOrderId(order.getId()).get(0);
+        FulfillmentResponse f = fulfillmentService.create(order.getId(),
+            new CreateFulfillmentRequest("T-ONCE", "UPS", null, null,
+                List.of(new FulfillmentItemRequest(orderItem.getId(), 2))),
+            adminUser);
+
+        fulfillmentService.update(order.getId(), f.id(),
+            new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
+        fulfillmentService.update(order.getId(), f.id(),
+            new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
+
+        verify(emailService, times(1)).sendShippingNotification(
+            eq(adminUser.getEmail()),
+            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
+            eq("T-ONCE"),
+            eq("UPS"),
+            isNull(),
+            eq("http://localhost:3000"));
+    }
+
+    @Test
     void update_shippedToDelivered_succeeds() {
         Order order = createPaidOrder(2);
         var orderItem = orderItemRepo.findByOrderId(order.getId()).get(0);
@@ -244,6 +294,53 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
         FulfillmentResponse delivered = fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.DELIVERED, null, null, null, null));
         assertThat(delivered.status()).isEqualTo(FulfillmentStatus.DELIVERED);
+    }
+
+    @Test
+    void update_shippedToDelivered_sendsDeliveredNotificationToCustomer() {
+        Order order = createPaidOrder(2);
+        var orderItem = orderItemRepo.findByOrderId(order.getId()).get(0);
+        FulfillmentResponse f = fulfillmentService.create(order.getId(),
+            new CreateFulfillmentRequest("T-DELIVER", null, null, null,
+                List.of(new FulfillmentItemRequest(orderItem.getId(), 2))),
+            adminUser);
+        fulfillmentService.update(order.getId(), f.id(),
+            new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
+
+        fulfillmentService.update(order.getId(), f.id(),
+            new UpdateFulfillmentRequest(FulfillmentStatus.DELIVERED, null, null, null, null));
+
+        verify(emailService).sendOrderDelivered(
+            eq(adminUser.getEmail()),
+            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
+            isNull(),
+            eq("http://localhost:3000"));
+    }
+
+    @Test
+    void update_cancelledFulfillment_doesNotSendShippingOrDeliveredNotification() {
+        Order order = createPaidOrder(2);
+        var orderItem = orderItemRepo.findByOrderId(order.getId()).get(0);
+        FulfillmentResponse f = fulfillmentService.create(order.getId(),
+            new CreateFulfillmentRequest("T-CANCEL", null, null, null,
+                List.of(new FulfillmentItemRequest(orderItem.getId(), 2))),
+            adminUser);
+
+        fulfillmentService.update(order.getId(), f.id(),
+            new UpdateFulfillmentRequest(FulfillmentStatus.CANCELLED, null, null, null, null));
+
+        verify(emailService, never()).sendShippingNotification(
+            eq(adminUser.getEmail()),
+            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
+            eq("T-CANCEL"),
+            isNull(),
+            isNull(),
+            eq("http://localhost:3000"));
+        verify(emailService, never()).sendOrderDelivered(
+            eq(adminUser.getEmail()),
+            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
+            isNull(),
+            eq("http://localhost:3000"));
     }
 
     @Test
