@@ -22,7 +22,6 @@ UPDATE shipping.shipping_zones
 SET country_codes = (
     SELECT array_agg(
         CASE
-            WHEN upper(trim(code)) = 'USA' THEN 'US'
             WHEN code ~* '^[[:space:]]*[a-z]{2}[[:space:]]*$' THEN upper(trim(code))
             ELSE code
         END
@@ -34,8 +33,7 @@ WHERE country_codes IS NOT NULL
   AND EXISTS (
       SELECT 1
       FROM unnest(country_codes) AS country_code(code)
-      WHERE upper(trim(code)) = 'USA'
-         OR code ~* '^[[:space:]]*[a-z]{2}[[:space:]]*$'
+      WHERE code ~* '^[[:space:]]*[a-z]{2}[[:space:]]*$'
   );
 
 UPDATE checkout.orders
