@@ -256,15 +256,50 @@ class PaymentServiceTest {
   }
 
   @Test
-  void initiateCheckout_noDefaultShippingAddress_throwsValidation() {
+  void initiateCheckout_noShippingAddress_throwsValidation() {
     UUID userId = UUID.randomUUID();
 
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.empty());
+    when(addressRepo.findByUserId(userId)).thenReturn(List.of());
 
     assertThatThrownBy(() -> paymentService.initiateCheckout(userId, null, null))
         .isInstanceOf(ValidationException.class)
         .extracting("errorCode")
         .isEqualTo("NO_SHIPPING_ADDRESS");
+  }
+
+  @Test
+  void initiateCheckout_usesFirstSavedAddressWhenNoDefaultExists() throws StripeException {
+    UUID userId = UUID.randomUUID();
+    UUID variantId = UUID.randomUUID();
+    Cart cart = stubCart(userId);
+    CartItem cartItem = stubCartItem(variantId);
+    Order order = stubOrder(UUID.randomUUID(), userId);
+    Address fallbackAddress = stubAddress();
+    fallbackAddress.setAddress1("Fallback St");
+
+    ProductVariant variant = new ProductVariant();
+    org.springframework.test.util.ReflectionTestUtils.setField(variant, "id", variantId);
+    variant.setTitle("Widget");
+    variant.setPrice(new BigDecimal("49.99"));
+
+    Session session = mock(Session.class);
+    when(session.getId()).thenReturn("cs_test_fallback");
+    when(session.getUrl()).thenReturn("https://checkout.stripe.com/pay/cs_test_fallback");
+
+    when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.empty());
+    when(addressRepo.findByUserId(userId)).thenReturn(List.of(fallbackAddress));
+    when(cartService.requireActiveCart(userId)).thenReturn(cart);
+    when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
+    when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
+
+    paymentService.initiateCheckout(userId, null, null);
+
+    ArgumentCaptor<String> addressCaptor = ArgumentCaptor.forClass(String.class);
+    verify(orderService).createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), addressCaptor.capture(), any());
+    assertThat(addressCaptor.getValue()).contains("\"address1\":\"Fallback St\"");
   }
 
   @Test

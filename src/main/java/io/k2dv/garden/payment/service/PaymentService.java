@@ -101,9 +101,10 @@ public class PaymentService {
 
   public CheckoutResponse initiateCheckout(UUID userId, String discountCode, String giftCardCode,
                                            UUID shippingRateId, String poNumber) {
-    Address defaultAddress = addressRepo.findByUserIdAndIsDefaultTrue(userId)
+    Address shippingAddress = addressRepo.findByUserIdAndIsDefaultTrue(userId)
+        .or(() -> addressRepo.findByUserId(userId).stream().findFirst())
         .orElseThrow(() -> new ValidationException("NO_SHIPPING_ADDRESS",
-            "A default shipping address is required before checkout"));
+            "A shipping address is required before checkout"));
 
     Cart cart = cartService.requireActiveCart(userId);
     List<CartItem> cartItems = cartService.getCartItems(cart.getId());
@@ -115,11 +116,11 @@ public class PaymentService {
     UUID companyId = cart.getCompanyId();
     boolean taxExempt = companyId != null && companyService.isTaxExempt(companyId);
 
-    String normalizedCountry = CountryCode.normalize(defaultAddress.getCountry());
+    String normalizedCountry = CountryCode.normalize(shippingAddress.getCountry());
     ShippingRate shippingRate = resolveShippingRate(shippingRateId);
     if (shippingRate != null) {
       shippingService.validateRateForAddress(shippingRate.getId(),
-          normalizedCountry, defaultAddress.getProvince());
+          normalizedCountry, shippingAddress.getProvince());
     }
     BigDecimal shippingCost = shippingRate != null ? shippingRate.getPrice() : null;
 
@@ -132,7 +133,7 @@ public class PaymentService {
       creditAccountService.assertCreditAvailable(companyId, orderTotal);
     }
 
-    String shippingAddressJson = serializeAddress(defaultAddress);
+    String shippingAddressJson = serializeAddress(shippingAddress);
 
     Order order = orderService.createFromCart(userId, companyId, taxExempt, cartItems,
         shippingRateId, shippingCost, shippingAddressJson, poNumber);
