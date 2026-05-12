@@ -22,8 +22,11 @@ public class TokenService {
 
     @Transactional
     public String createToken(UUID userId, TokenType type, Duration ttl) {
-        // Delete any prior token of the same type for this user (rotation)
-        tokenRepo.deleteByUserIdAndType(userId, type);
+        // Verification/reset tokens are single-purpose. Refresh tokens are
+        // per-session so logging in elsewhere does not revoke this session.
+        if (type != TokenType.REFRESH_TOKEN) {
+            tokenRepo.deleteByUserIdAndType(userId, type);
+        }
 
         String raw = UUID.randomUUID().toString();
         String hash = hash(raw);

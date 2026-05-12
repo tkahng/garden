@@ -117,4 +117,18 @@ class AuthServiceIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> authService.refresh(new RefreshRequest(first.refreshToken())))
             .isInstanceOf(UnauthorizedException.class);
     }
+
+    @Test
+    void login_multipleSessions_refreshTokensRemainValidIndependently() {
+        authService.register(new RegisterRequest("multi-session@example.com", "pass1234", "Multi", "Session"));
+        var firstSession = authService.login(new LoginRequest("multi-session@example.com", "pass1234"));
+        var secondSession = authService.login(new LoginRequest("multi-session@example.com", "pass1234"));
+
+        var refreshedFirst = authService.refresh(new RefreshRequest(firstSession.refreshToken()));
+        var refreshedSecond = authService.refresh(new RefreshRequest(secondSession.refreshToken()));
+
+        assertThat(refreshedFirst.refreshToken()).isNotBlank();
+        assertThat(refreshedSecond.refreshToken()).isNotBlank();
+        assertThat(refreshedFirst.refreshToken()).isNotEqualTo(refreshedSecond.refreshToken());
+    }
 }
