@@ -8,6 +8,7 @@ import io.k2dv.garden.b2b.dto.CreateCompanyRequest;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,27 @@ class CompanyShippingAddressServiceIT extends AbstractIntegrationTest {
     void add_withDefault_setsIsDefault() {
         CompanyAddressResponse addr = addressService.add(companyId, ownerUserId, req("Warehouse", true));
         assertThat(addr.isDefault()).isTrue();
+    }
+
+    @Test
+    void add_normalizesCountryCode() {
+        CompanyAddressResponse addr = addressService.add(companyId, ownerUserId,
+            new CompanyAddressRequest("HQ", "Jane", "Doe", "Acme",
+                "123 Main St", null, "Springfield", "IL", "62701", " us ", false));
+
+        assertThat(addr.country()).isEqualTo("US");
+    }
+
+    @Test
+    void update_rejectsIso3CountryCode() {
+        CompanyAddressResponse addr = addressService.add(companyId, ownerUserId, req("HQ", false));
+
+        assertThatThrownBy(() -> addressService.update(companyId, addr.id(), ownerUserId,
+            new CompanyAddressRequest("HQ", "Jane", "Doe", "Acme",
+                "123 Main St", null, "Springfield", "IL", "62701", "USA", false)))
+            .isInstanceOf(ValidationException.class)
+            .extracting("errorCode")
+            .isEqualTo("INVALID_COUNTRY_CODE");
     }
 
     @Test

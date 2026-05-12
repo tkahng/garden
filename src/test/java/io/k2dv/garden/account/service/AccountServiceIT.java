@@ -7,6 +7,7 @@ import io.k2dv.garden.account.dto.AddressRequest;
 import io.k2dv.garden.account.dto.UpdateAccountRequest;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ForbiddenException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -61,6 +62,26 @@ class AccountServiceIT extends AbstractIntegrationTest {
         assertThat(defaultCount).isEqualTo(1);
         assertThat(addresses.stream().filter(a -> a.isDefault()).findFirst().get().address1())
             .isEqualTo("2 Oak Ave");
+    }
+
+    @Test
+    void createAddress_normalizesCountryCode() {
+        var address = accountService.createAddress(userId,
+            new AddressRequest("Jane", "Doe", null, "1 Main St", null, "Portland", null, "97201", " us ", true));
+
+        assertThat(address.country()).isEqualTo("US");
+    }
+
+    @Test
+    void updateAddress_rejectsIso3CountryCode() {
+        var address = accountService.createAddress(userId,
+            new AddressRequest("Jane", "Doe", null, "1 Main St", null, "Portland", null, "97201", "US", false));
+
+        assertThatThrownBy(() -> accountService.updateAddress(userId, address.id(),
+            new AddressRequest("Jane", "Doe", null, "1 Main St", null, "Portland", null, "97201", "USA", false)))
+            .isInstanceOf(ValidationException.class)
+            .extracting("errorCode")
+            .isEqualTo("INVALID_COUNTRY_CODE");
     }
 
     @Test
