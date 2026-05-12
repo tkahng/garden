@@ -54,4 +54,28 @@ class TokenServiceIT extends AbstractIntegrationTest {
         assertThatThrownBy(() -> tokenService.validateAndConsume(raw, TokenType.EMAIL_VERIFICATION))
             .isInstanceOf(UnauthorizedException.class);
     }
+
+    @Test
+    void createToken_refreshToken_preservesOtherRefreshTokensForUser() {
+        var user = savedUser();
+        String first = tokenService.createToken(user.getId(), TokenType.REFRESH_TOKEN, Duration.ofDays(30));
+        String second = tokenService.createToken(user.getId(), TokenType.REFRESH_TOKEN, Duration.ofDays(30));
+
+        assertThat(tokenService.validateAndConsume(first, TokenType.REFRESH_TOKEN))
+            .isEqualTo(user.getId());
+        assertThat(tokenService.validateAndConsume(second, TokenType.REFRESH_TOKEN))
+            .isEqualTo(user.getId());
+    }
+
+    @Test
+    void createToken_emailVerification_replacesPriorTokenForUser() {
+        var user = savedUser();
+        String first = tokenService.createToken(user.getId(), TokenType.EMAIL_VERIFICATION, Duration.ofHours(24));
+        String second = tokenService.createToken(user.getId(), TokenType.EMAIL_VERIFICATION, Duration.ofHours(24));
+
+        assertThatThrownBy(() -> tokenService.validateAndConsume(first, TokenType.EMAIL_VERIFICATION))
+            .isInstanceOf(UnauthorizedException.class);
+        assertThat(tokenService.validateAndConsume(second, TokenType.EMAIL_VERIFICATION))
+            .isEqualTo(user.getId());
+    }
 }
