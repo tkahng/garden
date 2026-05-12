@@ -11,5 +11,5 @@ public record GuestAddressRequest(
     @NotBlank @Size(max = 128) String city,
     @Size(max = 128) String province,
     @NotBlank @Size(max = 20) String zip,
-    @NotBlank @Size(max = 2) String country
+    @NotBlank String country
 ) {}

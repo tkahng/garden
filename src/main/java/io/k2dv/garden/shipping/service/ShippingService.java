@@ -13,6 +13,7 @@ import io.k2dv.garden.shipping.repository.ShippingZoneRepository;
 import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
+import io.k2dv.garden.shared.validation.CountryCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -47,7 +48,7 @@ public class ShippingService {
         ShippingZone z = new ShippingZone();
         z.setName(req.name());
         z.setDescription(req.description());
-        z.setCountryCodes(req.countryCodes());
+        z.setCountryCodes(CountryCode.normalizeList(req.countryCodes()));
         z.setProvinces(req.provinces());
         return ShippingZoneResponse.from(zoneRepo.save(z));
     }
@@ -57,7 +58,7 @@ public class ShippingService {
         ShippingZone z = findZoneOrThrow(id);
         if (req.name() != null) z.setName(req.name());
         if (req.description() != null) z.setDescription(req.description());
-        if (req.countryCodes() != null) z.setCountryCodes(req.countryCodes());
+        if (req.countryCodes() != null) z.setCountryCodes(CountryCode.normalizeList(req.countryCodes()));
         if (req.provinces() != null) z.setProvinces(req.provinces());
         if (req.isActive() != null) z.setActive(req.isActive());
         return ShippingZoneResponse.from(zoneRepo.save(z));
@@ -125,18 +126,20 @@ public class ShippingService {
 
     @Transactional(readOnly = true)
     public void validateRateForAddress(UUID rateId, String country, String province) {
-        List<UUID> zoneIds = zoneRepo.findMatchingZones(country, province)
+        String normalizedCountry = CountryCode.normalize(country);
+        List<UUID> zoneIds = zoneRepo.findMatchingZones(normalizedCountry, province)
             .stream().map(ShippingZone::getId).toList();
         if (zoneIds.isEmpty() || !rateRepo.existsByIdAndZoneIdIn(rateId, zoneIds)) {
             throw new ValidationException("SHIPPING_RATE_NOT_AVAILABLE",
-                "Selected shipping rate is not available for address country: " + country);
+                "Selected shipping rate is not available for address country: " + normalizedCountry);
         }
     }
 
     @Transactional(readOnly = true)
     public List<ShippingRateResponse> findRatesForAddress(String country, String province,
                                                            BigDecimal orderAmount) {
-        List<ShippingZone> zones = zoneRepo.findMatchingZones(country, province);
+        String normalizedCountry = CountryCode.normalize(country);
+        List<ShippingZone> zones = zoneRepo.findMatchingZones(normalizedCountry, province);
         // Note: minWeightGrams / maxWeightGrams are stored on ShippingRate but weight-based
         // filtering is not applied here — cart weight calculation is not yet implemented.
         return zones.stream()
