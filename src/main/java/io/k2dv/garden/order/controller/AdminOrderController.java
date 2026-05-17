@@ -119,6 +119,12 @@ public class AdminOrderController {
         return ResponseEntity.ok(ApiResponse.of(orderService.updateMetadata(id, req.metadata())));
     }
 
+    @PostMapping("/{id}/sync-payment")
+    @HasPermission("order:write")
+    public ResponseEntity<ApiResponse<OrderResponse>> syncPayment(@PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(orderService.syncPaymentFromStripe(id)));
+    }
+
     @PostMapping("/bulk/cancel")
     @HasPermission("order:write")
     public ResponseEntity<Void> bulkCancel(@Valid @RequestBody BulkIdsRequest req) {

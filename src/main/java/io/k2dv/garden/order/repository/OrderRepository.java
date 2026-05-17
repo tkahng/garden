@@ -21,6 +21,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
 
     Optional<Order> findByStripeSessionId(String stripeSessionId);
 
+    List<Order> findByStatusAndStripeSessionIdIsNotNullAndCreatedAtBefore(OrderStatus status, Instant before);
+
     @Query("SELECT COUNT(o) FROM Order o WHERE o.status = :status AND o.createdAt >= :from AND o.createdAt <= :to")
     long countPaidOrdersBetween(
         @Param("from") Instant from,

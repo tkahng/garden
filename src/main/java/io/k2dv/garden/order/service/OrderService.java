@@ -1,6 +1,7 @@
 package io.k2dv.garden.order.service;
 
 import com.stripe.exception.StripeException;
+import com.stripe.model.checkout.Session;
 import com.stripe.param.RefundCreateParams;
 import io.k2dv.garden.cart.model.CartItem;
 import io.k2dv.garden.quote.model.QuoteItem;
@@ -349,6 +350,33 @@ public class OrderService {
             "Payment fulfilled via gift card", null, "system", null);
         sendOrderConfirmationEmail(order);
         if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
+    }
+
+    // NOT @Transactional — Stripe call is outside transaction; sub-calls manage their own tx
+    public OrderResponse syncPaymentFromStripe(UUID orderId) {
+        Order order = getById(orderId);
+        if (order.getStatus() != OrderStatus.PENDING_PAYMENT) {
+            throw new ConflictException("INVALID_ORDER_STATUS",
+                "Order must be PENDING_PAYMENT to sync; current status: " + order.getStatus());
+        }
+        if (order.getStripeSessionId() == null) {
+            throw new ConflictException("NO_STRIPE_SESSION", "Order has no Stripe session to sync");
+        }
+        try {
+            Session session = stripeGateway.retrieveSession(order.getStripeSessionId());
+            switch (session.getStatus()) {
+                case "complete" -> {
+                    Long taxAmountCents = session.getTotalDetails() != null
+                        ? session.getTotalDetails().getAmountTax() : null;
+                    confirmPayment(order.getStripeSessionId(), session.getPaymentIntent(), taxAmountCents);
+                }
+                case "expired" -> cancelBySession(order.getStripeSessionId());
+                // "open" → session still active, no action needed
+            }
+        } catch (StripeException e) {
+            throw new PaymentException("STRIPE_ERROR", "Failed to retrieve Stripe session: " + e.getMessage());
+        }
+        return getOrderResponse(orderId);
     }
 
     @Transactional
