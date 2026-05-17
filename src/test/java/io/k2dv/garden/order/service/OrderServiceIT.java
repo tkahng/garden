@@ -1,5 +1,7 @@
 package io.k2dv.garden.order.service;
 
+import com.stripe.exception.StripeException;
+import com.stripe.model.checkout.Session;
 import io.k2dv.garden.auth.dto.RegisterRequest;
 import io.k2dv.garden.auth.service.AuthService;
 import io.k2dv.garden.auth.service.EmailService;
@@ -12,6 +14,8 @@ import io.k2dv.garden.inventory.repository.LocationRepository;
 import io.k2dv.garden.order.model.Order;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.repository.OrderItemRepository;
+import io.k2dv.garden.payment.exception.PaymentException;
+import io.k2dv.garden.payment.gateway.StripeGateway;
 import io.k2dv.garden.product.dto.CreateProductRequest;
 import io.k2dv.garden.product.dto.CreateVariantRequest;
 import io.k2dv.garden.product.dto.AdminProductResponse;
@@ -32,6 +36,9 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -58,6 +65,8 @@ class OrderServiceIT extends AbstractIntegrationTest {
   UserRepository userRepo;
   @MockitoBean
   EmailService emailService;
+  @MockitoBean
+  StripeGateway stripeGateway;
 
   private static final AtomicInteger counter = new AtomicInteger(0);
 
@@ -248,5 +257,100 @@ class OrderServiceIT extends AbstractIntegrationTest {
   void cancelBySession_unknownSession_isNoOp() {
     // Should silently do nothing when session doesn't exist
     orderService.cancelBySession("cs_nonexistent_session");
+  }
+
+  // --- syncPaymentFromStripe ---
+
+  @Test
+  void syncPaymentFromStripe_completedSession_confirmsPaidAndDeductsInventory() throws Exception {
+    UUID userId = createUserId();
+    Order order = orderService.createFromCart(userId, List.of(cartItem(variant.id(), 2, new BigDecimal("50.00"))));
+    orderService.setStripeSession(order.getId(), "cs_sync_complete");
+
+    Session session = mock(Session.class);
+    when(session.getStatus()).thenReturn("complete");
+    when(session.getPaymentIntent()).thenReturn("pi_sync_complete");
+    when(session.getTotalDetails()).thenReturn(null);
+    when(stripeGateway.retrieveSession("cs_sync_complete")).thenReturn(session);
+
+    orderService.syncPaymentFromStripe(order.getId());
+
+    Order updated = orderService.getById(order.getId());
+    assertThat(updated.getStatus()).isEqualTo(OrderStatus.PAID);
+    assertThat(updated.getStripePaymentIntentId()).isEqualTo("pi_sync_complete");
+
+    InventoryLevel level = levelRepo.findByInventoryItemIdAndLocationId(
+        inventoryItemRepo.findByVariantId(variant.id()).orElseThrow().getId(),
+        location.getId()).orElseThrow();
+    assertThat(level.getQuantityOnHand()).isEqualTo(8);
+    assertThat(level.getQuantityCommitted()).isEqualTo(0);
+  }
+
+  @Test
+  void syncPaymentFromStripe_expiredSession_cancelsOrderAndReleasesInventory() throws Exception {
+    UUID userId = createUserId();
+    Order order = orderService.createFromCart(userId, List.of(cartItem(variant.id(), 2, new BigDecimal("50.00"))));
+    orderService.setStripeSession(order.getId(), "cs_sync_expired");
+
+    Session session = mock(Session.class);
+    when(session.getStatus()).thenReturn("expired");
+    when(stripeGateway.retrieveSession("cs_sync_expired")).thenReturn(session);
+
+    orderService.syncPaymentFromStripe(order.getId());
+
+    Order updated = orderService.getById(order.getId());
+    assertThat(updated.getStatus()).isEqualTo(OrderStatus.CANCELLED);
+
+    InventoryLevel level = levelRepo.findByInventoryItemIdAndLocationId(
+        inventoryItemRepo.findByVariantId(variant.id()).orElseThrow().getId(),
+        location.getId()).orElseThrow();
+    assertThat(level.getQuantityCommitted()).isEqualTo(0);
+  }
+
+  @Test
+  void syncPaymentFromStripe_openSession_leavesOrderUnchanged() throws Exception {
+    UUID userId = createUserId();
+    Order order = orderService.createFromCart(userId, List.of(cartItem(variant.id(), 1, new BigDecimal("50.00"))));
+    orderService.setStripeSession(order.getId(), "cs_sync_open");
+
+    Session session = mock(Session.class);
+    when(session.getStatus()).thenReturn("open");
+    when(stripeGateway.retrieveSession("cs_sync_open")).thenReturn(session);
+
+    orderService.syncPaymentFromStripe(order.getId());
+
+    assertThat(orderService.getById(order.getId()).getStatus()).isEqualTo(OrderStatus.PENDING_PAYMENT);
+  }
+
+  @Test
+  void syncPaymentFromStripe_alreadyPaid_throwsConflict() throws Exception {
+    UUID userId = createUserId();
+    Order order = orderService.createFromCart(userId, List.of(cartItem(variant.id(), 1, new BigDecimal("50.00"))));
+    orderService.setStripeSession(order.getId(), "cs_already_paid");
+    orderService.confirmPayment("cs_already_paid", "pi_already_paid");
+
+    assertThatThrownBy(() -> orderService.syncPaymentFromStripe(order.getId()))
+        .isInstanceOf(ConflictException.class);
+  }
+
+  @Test
+  void syncPaymentFromStripe_noStripeSession_throwsConflict() {
+    UUID userId = createUserId();
+    Order order = orderService.createFromCart(userId, List.of(cartItem(variant.id(), 1, new BigDecimal("50.00"))));
+
+    assertThatThrownBy(() -> orderService.syncPaymentFromStripe(order.getId()))
+        .isInstanceOf(ConflictException.class);
+  }
+
+  @Test
+  void syncPaymentFromStripe_stripeError_throwsPaymentException() throws Exception {
+    UUID userId = createUserId();
+    Order order = orderService.createFromCart(userId, List.of(cartItem(variant.id(), 1, new BigDecimal("50.00"))));
+    orderService.setStripeSession(order.getId(), "cs_stripe_error");
+
+    when(stripeGateway.retrieveSession("cs_stripe_error")).thenThrow(mock(StripeException.class));
+
+    assertThatThrownBy(() -> orderService.syncPaymentFromStripe(order.getId()))
+        .isInstanceOf(PaymentException.class);
   }
 }
