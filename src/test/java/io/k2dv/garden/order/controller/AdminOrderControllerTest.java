@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -38,6 +39,11 @@ class AdminOrderControllerTest {
 
   private OrderResponse stubOrder(UUID id) {
     return new OrderResponse(id, UUID.randomUUID(), null, OrderStatus.PENDING_PAYMENT,
+        new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null, null, null, null);
+  }
+
+  private OrderResponse paidOrder(UUID id) {
+    return new OrderResponse(id, UUID.randomUUID(), null, OrderStatus.PAID,
         new BigDecimal("99.98"), "usd", "cs_test_123", null, null, null, null, null, null, null, null, List.of(), null, null, null, null);
   }
 
@@ -97,6 +103,37 @@ class AdminOrderControllerTest {
         .when(orderService).cancelAndReturn(any());
 
     mvc.perform(put("/api/v1/admin/orders/{id}/cancel", UUID.randomUUID()))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.error").value("ORDER_NOT_FOUND"));
+  }
+
+  @Test
+  void syncPayment_returns200WithUpdatedStatus() throws Exception {
+    UUID id = UUID.randomUUID();
+    when(orderService.syncPaymentFromStripe(id)).thenReturn(paidOrder(id));
+
+    mvc.perform(post("/api/v1/admin/orders/{id}/sync-payment", id))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.id").value(id.toString()))
+        .andExpect(jsonPath("$.data.status").value("PAID"));
+  }
+
+  @Test
+  void syncPayment_alreadyPaid_returns409() throws Exception {
+    when(orderService.syncPaymentFromStripe(any()))
+        .thenThrow(new ConflictException("INVALID_ORDER_STATUS", "Order must be PENDING_PAYMENT to sync"));
+
+    mvc.perform(post("/api/v1/admin/orders/{id}/sync-payment", UUID.randomUUID()))
+        .andExpect(status().isConflict())
+        .andExpect(jsonPath("$.error").value("INVALID_ORDER_STATUS"));
+  }
+
+  @Test
+  void syncPayment_notFound_returns404() throws Exception {
+    when(orderService.syncPaymentFromStripe(any()))
+        .thenThrow(new NotFoundException("ORDER_NOT_FOUND", "Not found"));
+
+    mvc.perform(post("/api/v1/admin/orders/{id}/sync-payment", UUID.randomUUID()))
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.error").value("ORDER_NOT_FOUND"));
   }
