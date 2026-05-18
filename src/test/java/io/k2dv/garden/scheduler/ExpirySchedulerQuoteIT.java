@@ -110,7 +110,7 @@ class ExpirySchedulerQuoteIT extends AbstractIntegrationTest {
         assertThat(quoteRepo.findById(paid.getId()).orElseThrow().getStatus()).isEqualTo(QuoteStatus.PAID);
         assertThat(quoteRepo.findById(cancelled.getId()).orElseThrow().getStatus()).isEqualTo(QuoteStatus.CANCELLED);
         assertThat(quoteRepo.findById(rejected.getId()).orElseThrow().getStatus()).isEqualTo(QuoteStatus.REJECTED);
-        assertThat(quoteRepo.findById(approval.getId()).orElseThrow().getStatus()).isEqualTo(QuoteStatus.PENDING_APPROVAL);
+        assertThat(quoteRepo.findById(approval.getId()).orElseThrow().getStatus()).isEqualTo(QuoteStatus.EXPIRED);
     }
 
     @Test

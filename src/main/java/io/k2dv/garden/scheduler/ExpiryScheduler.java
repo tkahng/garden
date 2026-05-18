@@ -30,9 +30,11 @@ public class ExpiryScheduler {
     @Transactional
     public void doExpireQuotes() {
         try {
-            int count = quoteRepo.expireByStatus(QuoteStatus.SENT, QuoteStatus.EXPIRED, Instant.now());
-            if (count > 0) {
-                log.info("Expired {} quote(s)", count);
+            int sentCount = quoteRepo.expireByStatus(QuoteStatus.SENT, QuoteStatus.EXPIRED, Instant.now());
+            int pendingCount = quoteRepo.expireByStatus(QuoteStatus.PENDING_APPROVAL, QuoteStatus.EXPIRED, Instant.now());
+            int total = sentCount + pendingCount;
+            if (total > 0) {
+                log.info("Expired {} quote(s)", total);
             }
         } catch (Exception e) {
             log.error("Failed to expire quotes", e);

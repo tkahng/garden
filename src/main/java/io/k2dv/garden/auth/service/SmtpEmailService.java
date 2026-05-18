@@ -55,13 +55,17 @@ public class SmtpEmailService implements EmailService {
     @Override
     public void sendQuoteSubmitted(String to, UUID quoteId) {
         try {
-            var msg = new SimpleMailMessage();
-            msg.setTo(to);
-            msg.setSubject("Your quote request has been received");
-            msg.setText("Thank you for submitting your quote request (ID: " + quoteId + "). "
-                + "Our team will review it and get back to you shortly.");
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("storeFrontUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-submitted", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Your quote request has been received");
+            helper.setText(html, true);
             mailSender.send(msg);
-        } catch (MailException e) {
+        } catch (MessagingException | MailException e) {
             log.error("Failed to send quote-submitted email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
         }
     }
@@ -69,14 +73,73 @@ public class SmtpEmailService implements EmailService {
     @Override
     public void sendQuoteNewRequest(String to, UUID quoteId) {
         try {
-            var msg = new SimpleMailMessage();
-            msg.setTo(to);
-            msg.setSubject("New quote request received — #" + quoteId);
-            msg.setText("A new quote request has been submitted (ID: " + quoteId + "). "
-                + "Log in to the admin portal to review and assign it.");
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("adminUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-new-request", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("New quote request received — #" + quoteId);
+            helper.setText(html, true);
             mailSender.send(msg);
-        } catch (MailException e) {
+        } catch (MessagingException | MailException e) {
             log.error("Failed to send quote-new-request email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendQuoteAccepted(String to, UUID quoteId, UUID orderId) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("orderId", orderId);
+            ctx.setVariable("storeFrontUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-accepted", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Your quote has been accepted — Order created");
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send quote-accepted email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendQuotePendingApproval(String to, UUID quoteId) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("storeFrontUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-pending-approval", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Action required: Quote approval needed — #" + quoteId);
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send quote-pending-approval email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendQuoteApproved(String to, UUID quoteId) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("storeFrontUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-approved", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Your quote has been approved — #" + quoteId);
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send quote-approved email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
         }
     }
 
