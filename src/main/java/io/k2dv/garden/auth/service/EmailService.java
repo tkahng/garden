@@ -10,6 +10,12 @@ public interface EmailService {
     void sendQuoteSubmitted(String to, UUID quoteId);
     void sendQuoteNewRequest(String to, UUID quoteId);
     void sendQuotePdf(String to, UUID quoteId, byte[] pdfBytes);
+    void sendQuoteAccepted(String to, UUID quoteId, UUID orderId);
+    void sendQuotePendingApproval(String to, UUID quoteId);
+    void sendQuoteApproved(String to, UUID quoteId);
+    void sendQuoteRejectedByUser(String to, UUID quoteId);
+    void sendQuoteApprovalRejected(String to, UUID quoteId);
+    void sendQuoteExpired(String to, UUID quoteId);
     void sendCompanyInvitation(String to, String companyName, String inviterName, String token);
     void sendOrderConfirmation(String to, String orderRef, BigDecimal total, String currency, List<String> itemLines, String storeFrontUrl);
     void sendShippingNotification(String to, String orderRef, String trackingNumber, String trackingCompany, String trackingUrl, String storeFrontUrl);

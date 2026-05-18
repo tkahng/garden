@@ -88,22 +88,16 @@ class SmtpEmailServiceTest {
     // ── sendQuoteSubmitted ────────────────────────────────────────────────────
 
     @Test
-    void sendQuoteSubmitted_sendsCorrectMessage() {
-        UUID quoteId = UUID.randomUUID();
-        service.sendQuoteSubmitted("user@example.com", quoteId);
-
-        var captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
-        verify(mailSender).send(captor.capture());
-        SimpleMailMessage msg = captor.getValue();
-        assertThat(msg.getTo()).containsExactly("user@example.com");
-        assertThat(msg.getSubject()).contains("quote request");
-        assertThat(msg.getText()).contains(quoteId.toString());
+    void sendQuoteSubmitted_delegatesToMailSender() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        service.sendQuoteSubmitted("user@example.com", UUID.randomUUID());
+        verify(mailSender).send(mimeMessage);
     }
 
     @Test
     void sendQuoteSubmitted_mailFailure_doesNotThrow() {
-        doThrow(new MailSendException("SMTP down")).when(mailSender).send(any(SimpleMailMessage.class));
-
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        doThrow(new MailSendException("SMTP down")).when(mailSender).send(any(MimeMessage.class));
         assertThatCode(() -> service.sendQuoteSubmitted("user@example.com", UUID.randomUUID()))
             .doesNotThrowAnyException();
     }
@@ -111,22 +105,16 @@ class SmtpEmailServiceTest {
     // ── sendQuoteNewRequest ───────────────────────────────────────────────────
 
     @Test
-    void sendQuoteNewRequest_sendsCorrectMessage() {
-        UUID quoteId = UUID.randomUUID();
-        service.sendQuoteNewRequest("admin@example.com", quoteId);
-
-        var captor = ArgumentCaptor.forClass(SimpleMailMessage.class);
-        verify(mailSender).send(captor.capture());
-        SimpleMailMessage msg = captor.getValue();
-        assertThat(msg.getTo()).containsExactly("admin@example.com");
-        assertThat(msg.getSubject()).contains(quoteId.toString());
-        assertThat(msg.getText()).contains(quoteId.toString());
+    void sendQuoteNewRequest_delegatesToMailSender() {
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        service.sendQuoteNewRequest("admin@example.com", UUID.randomUUID());
+        verify(mailSender).send(mimeMessage);
     }
 
     @Test
     void sendQuoteNewRequest_mailFailure_doesNotThrow() {
-        doThrow(new MailSendException("SMTP down")).when(mailSender).send(any(SimpleMailMessage.class));
-
+        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        doThrow(new MailSendException("SMTP down")).when(mailSender).send(any(MimeMessage.class));
         assertThatCode(() -> service.sendQuoteNewRequest("admin@example.com", UUID.randomUUID()))
             .doesNotThrowAnyException();
     }

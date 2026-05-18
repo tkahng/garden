@@ -174,6 +174,16 @@ public class QuoteService {
         if (!quote.getUserId().equals(userId)) {
             throw new ForbiddenException("NOT_YOUR_QUOTE", "This quote does not belong to you");
         }
+        return fetchPdfBytes(quote);
+    }
+
+    public byte[] downloadPdfAdmin(UUID quoteId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        return fetchPdfBytes(quote);
+    }
+
+    private byte[] fetchPdfBytes(QuoteRequest quote) {
         if (quote.getPdfBlobId() == null) {
             throw new NotFoundException("PDF_NOT_AVAILABLE", "Quote PDF has not been generated yet");
         }
@@ -215,6 +225,10 @@ public class QuoteService {
             if (total.compareTo(limit) > 0) {
                 quote.setStatus(QuoteStatus.PENDING_APPROVAL);
                 quoteRepo.save(quote);
+                membershipRepo.findByCompanyId(quote.getCompanyId()).stream()
+                    .filter(m -> m.getRole() == CompanyRole.OWNER || m.getRole() == CompanyRole.MANAGER)
+                    .forEach(m -> userRepo.findById(m.getUserId()).ifPresent(
+                        manager -> emailService.sendQuotePendingApproval(manager.getEmail(), quote.getId())));
                 return new QuoteAcceptResponse(null, null, true, null);
             }
         }
@@ -240,7 +254,10 @@ public class QuoteService {
         quote.setApprovedAt(Instant.now());
 
         List<QuoteItem> items = itemRepo.findByQuoteRequestId(quoteId);
-        return finalizeAcceptance(quote, items);
+        QuoteAcceptResponse response = finalizeAcceptance(quote, items);
+        userRepo.findById(quote.getUserId()).ifPresent(
+            user -> emailService.sendQuoteApproved(user.getEmail(), quote.getId()));
+        return response;
     }
 
     // Reject approval: company OWNER rejects a PENDING_APPROVAL quote
@@ -257,7 +274,10 @@ public class QuoteService {
                 "Only a company owner or manager can reject spend");
         }
         quote.setStatus(QuoteStatus.REJECTED);
-        return toResponse(quoteRepo.save(quote));
+        QuoteRequestResponse response = toResponse(quoteRepo.save(quote));
+        userRepo.findById(quote.getUserId()).ifPresent(
+            user -> emailService.sendQuoteApprovalRejected(user.getEmail(), quote.getId()));
+        return response;
     }
 
     private QuoteAcceptResponse finalizeAcceptance(QuoteRequest quote, List<QuoteItem> items) {
@@ -265,6 +285,8 @@ public class QuoteService {
         quote.setOrderId(order.getId());
         quote.setStatus(QuoteStatus.ACCEPTED);
         quoteRepo.save(quote);
+        userRepo.findById(quote.getUserId()).ifPresent(
+            user -> emailService.sendQuoteAccepted(user.getEmail(), quote.getId(), order.getId()));
 
         // Net terms path: if the company has a credit account, issue an invoice instead of Stripe
         return creditAccountService.findByCompanyId(quote.getCompanyId())
@@ -300,7 +322,12 @@ public class QuoteService {
                 "Quote must be in SENT status to reject");
         }
         quote.setStatus(QuoteStatus.REJECTED);
-        return toResponse(quoteRepo.save(quote));
+        QuoteRequestResponse response = toResponse(quoteRepo.save(quote));
+        String adminEmail = appProperties.getAdminNotificationEmail();
+        if (adminEmail != null && !adminEmail.isBlank()) {
+            emailService.sendQuoteRejectedByUser(adminEmail, quote.getId());
+        }
+        return response;
     }
 
     // --- Admin operations ---
