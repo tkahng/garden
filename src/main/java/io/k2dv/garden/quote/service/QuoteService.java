@@ -484,8 +484,11 @@ public class QuoteService {
     private QuoteRequestResponse toResponse(QuoteRequest q) {
         List<QuoteItem> items = itemRepo.findByQuoteRequestId(q.getId());
         List<QuoteItemResponse> itemResponses = items.stream().map(this::toItemResponse).toList();
+        String companyName = companyRepo.findById(q.getCompanyId())
+            .map(c -> c.getName())
+            .orElse(null);
         return new QuoteRequestResponse(
-            q.getId(), q.getUserId(), q.getCompanyId(), q.getAssignedStaffId(),
+            q.getId(), q.getUserId(), q.getCompanyId(), companyName, q.getAssignedStaffId(),
             q.getStatus(),
             q.getDeliveryAddressLine1(), q.getDeliveryAddressLine2(),
             q.getDeliveryCity(), q.getDeliveryState(),

@@ -41,7 +41,7 @@ class AdminQuoteControllerTest {
     QuoteService quoteService;
 
     private QuoteRequestResponse stubQuote(UUID id, QuoteStatus status) {
-        return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null,
+        return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null, null,
             status, "123 Main", null, "City", null, "12345", "US",
             null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
     }

@@ -45,7 +45,7 @@ class QuoteCartControllerTest {
 
     private QuoteCartResponse cartWithItem(UUID itemId, UUID variantId) {
         return new QuoteCartResponse(UUID.randomUUID(), QuoteCartStatus.ACTIVE,
-            List.of(new QuoteCartItemResponse(itemId, variantId, 1, null, Instant.now())),
+            List.of(new QuoteCartItemResponse(itemId, variantId, 1, null, null, null, Instant.now())),
             Instant.now());
     }
 
