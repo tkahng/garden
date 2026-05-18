@@ -1,8 +1,11 @@
 package io.k2dv.garden.scheduler;
 
+import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.repository.InvoiceRepository;
+import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
+import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import net.javacrumbs.shedlock.spring.annotation.SchedulerLock;
@@ -11,6 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 @Component
 @RequiredArgsConstructor
@@ -19,6 +24,8 @@ public class ExpiryScheduler {
 
     private final QuoteRequestRepository quoteRepo;
     private final InvoiceRepository invoiceRepo;
+    private final UserRepository userRepo;
+    private final EmailService emailService;
 
     @Scheduled(cron = "0 */15 * * * *")
     @SchedulerLock(name = "expireQuotes", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
@@ -30,11 +37,20 @@ public class ExpiryScheduler {
     @Transactional
     public void doExpireQuotes() {
         try {
-            int sentCount = quoteRepo.expireByStatus(QuoteStatus.SENT, QuoteStatus.EXPIRED, Instant.now());
-            int pendingCount = quoteRepo.expireByStatus(QuoteStatus.PENDING_APPROVAL, QuoteStatus.EXPIRED, Instant.now());
-            int total = sentCount + pendingCount;
-            if (total > 0) {
-                log.info("Expired {} quote(s)", total);
+            Instant now = Instant.now();
+            List<QuoteRequest> toExpire = new ArrayList<>();
+            toExpire.addAll(quoteRepo.findExpiredByStatus(QuoteStatus.SENT, now));
+            toExpire.addAll(quoteRepo.findExpiredByStatus(QuoteStatus.PENDING_APPROVAL, now));
+
+            for (QuoteRequest q : toExpire) {
+                q.setStatus(QuoteStatus.EXPIRED);
+                quoteRepo.save(q);
+                userRepo.findById(q.getUserId()).ifPresent(
+                    user -> emailService.sendQuoteExpired(user.getEmail(), q.getId()));
+            }
+
+            if (!toExpire.isEmpty()) {
+                log.info("Expired {} quote(s)", toExpire.size());
             }
         } catch (Exception e) {
             log.error("Failed to expire quotes", e);

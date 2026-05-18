@@ -10,6 +10,8 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -96,5 +98,15 @@ public class AdminQuoteController {
     @HasPermission("quote:write")
     public ResponseEntity<ApiResponse<QuoteRequestResponse>> cancel(@PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.of(quoteService.cancel(id)));
+    }
+
+    @GetMapping("/{id}/pdf")
+    @HasPermission("quote:read")
+    public ResponseEntity<byte[]> downloadPdf(@PathVariable UUID id) {
+        byte[] pdf = quoteService.downloadPdfAdmin(id);
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"quote-" + id + ".pdf\"")
+            .body(pdf);
     }
 }

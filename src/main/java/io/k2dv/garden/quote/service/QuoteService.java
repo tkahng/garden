@@ -174,6 +174,16 @@ public class QuoteService {
         if (!quote.getUserId().equals(userId)) {
             throw new ForbiddenException("NOT_YOUR_QUOTE", "This quote does not belong to you");
         }
+        return fetchPdfBytes(quote);
+    }
+
+    public byte[] downloadPdfAdmin(UUID quoteId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        return fetchPdfBytes(quote);
+    }
+
+    private byte[] fetchPdfBytes(QuoteRequest quote) {
         if (quote.getPdfBlobId() == null) {
             throw new NotFoundException("PDF_NOT_AVAILABLE", "Quote PDF has not been generated yet");
         }
@@ -264,7 +274,10 @@ public class QuoteService {
                 "Only a company owner or manager can reject spend");
         }
         quote.setStatus(QuoteStatus.REJECTED);
-        return toResponse(quoteRepo.save(quote));
+        QuoteRequestResponse response = toResponse(quoteRepo.save(quote));
+        userRepo.findById(quote.getUserId()).ifPresent(
+            user -> emailService.sendQuoteApprovalRejected(user.getEmail(), quote.getId()));
+        return response;
     }
 
     private QuoteAcceptResponse finalizeAcceptance(QuoteRequest quote, List<QuoteItem> items) {
@@ -309,7 +322,12 @@ public class QuoteService {
                 "Quote must be in SENT status to reject");
         }
         quote.setStatus(QuoteStatus.REJECTED);
-        return toResponse(quoteRepo.save(quote));
+        QuoteRequestResponse response = toResponse(quoteRepo.save(quote));
+        String adminEmail = appProperties.getAdminNotificationEmail();
+        if (adminEmail != null && !adminEmail.isBlank()) {
+            emailService.sendQuoteRejectedByUser(adminEmail, quote.getId());
+        }
+        return response;
     }
 
     // --- Admin operations ---

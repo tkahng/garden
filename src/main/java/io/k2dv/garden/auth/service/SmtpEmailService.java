@@ -144,6 +144,60 @@ public class SmtpEmailService implements EmailService {
     }
 
     @Override
+    public void sendQuoteRejectedByUser(String to, UUID quoteId) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("adminUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-rejected-by-user", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Quote declined by customer — #" + quoteId);
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send quote-rejected-by-user email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendQuoteApprovalRejected(String to, UUID quoteId) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("storeFrontUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-approval-rejected", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Quote approval not granted — #" + quoteId);
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send quote-approval-rejected email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void sendQuoteExpired(String to, UUID quoteId) {
+        try {
+            Context ctx = new Context();
+            ctx.setVariable("quoteId", quoteId);
+            ctx.setVariable("storeFrontUrl", props.getFrontendUrl());
+            String html = templateEngine.process("email/quote-expired", ctx);
+            MimeMessage msg = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(msg, false, "UTF-8");
+            helper.setTo(to);
+            helper.setSubject("Your quote has expired — #" + quoteId);
+            helper.setText(html, true);
+            mailSender.send(msg);
+        } catch (MessagingException | MailException e) {
+            log.error("Failed to send quote-expired email to {} for quote {}: {}", to, quoteId, e.getMessage(), e);
+        }
+    }
+
+    @Override
     public void sendCompanyInvitation(String to, String companyName, String inviterName, String token) {
         try {
             var msg = new SimpleMailMessage();
