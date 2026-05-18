@@ -40,7 +40,7 @@ class QuoteControllerTest {
     QuoteService quoteService;
 
     private QuoteRequestResponse stubQuote(UUID id) {
-        return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null,
+        return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null, null,
             QuoteStatus.PENDING, "123 Main St", null, "City", null, "12345", "US",
             null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
     }
@@ -114,7 +114,7 @@ class QuoteControllerTest {
     void rejectQuote_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse rejected = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
-            null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
+            null, null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
             null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
         when(quoteService.reject(any(), any())).thenReturn(rejected);
 
@@ -127,7 +127,7 @@ class QuoteControllerTest {
     void cancelQuote_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse cancelled = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
-            null, QuoteStatus.CANCELLED, "123 Main", null, "City", null, "12345", "US",
+            null, null, QuoteStatus.CANCELLED, "123 Main", null, "City", null, "12345", "US",
             null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
         when(quoteService.cancelForUser(any(), any())).thenReturn(cancelled);
 
@@ -234,7 +234,7 @@ class QuoteControllerTest {
     void rejectApproval_returns200() throws Exception {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse rejected = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
-            null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
+            null, null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
             null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
         when(quoteService.rejectSpend(any(), any())).thenReturn(rejected);
 

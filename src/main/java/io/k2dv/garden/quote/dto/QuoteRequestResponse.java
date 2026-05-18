@@ -10,6 +10,7 @@ public record QuoteRequestResponse(
     UUID id,
     UUID userId,
     UUID companyId,
+    String companyName,
     UUID assignedStaffId,
     QuoteStatus status,
     String deliveryAddressLine1,

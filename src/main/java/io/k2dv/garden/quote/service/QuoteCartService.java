@@ -1,7 +1,11 @@
 package io.k2dv.garden.quote.service;
 
+import io.k2dv.garden.cart.dto.CartItemProductInfo;
+import io.k2dv.garden.product.model.Product;
 import io.k2dv.garden.product.model.ProductVariant;
+import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.product.repository.ProductVariantRepository;
+import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.quote.dto.*;
 import io.k2dv.garden.quote.model.QuoteCart;
 import io.k2dv.garden.quote.model.QuoteCartItem;
@@ -14,8 +18,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -24,6 +32,8 @@ public class QuoteCartService {
     private final QuoteCartRepository cartRepo;
     private final QuoteCartItemRepository itemRepo;
     private final ProductVariantRepository variantRepo;
+    private final ProductRepository productRepo;
+    private final ProductImageResolver imageResolver;
 
     @Transactional
     public QuoteCartResponse getOrCreateActiveCart(UUID userId) {
@@ -117,9 +127,35 @@ public class QuoteCartService {
 
     private QuoteCartResponse toResponse(QuoteCart cart) {
         List<QuoteCartItem> items = itemRepo.findByQuoteCartId(cart.getId());
-        List<QuoteCartItemResponse> itemResponses = items.stream()
-            .map(i -> new QuoteCartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getNote(), i.getCreatedAt()))
-            .toList();
+
+        Set<UUID> variantIds = items.stream().map(QuoteCartItem::getVariantId).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+            .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
+        Set<UUID> productIds = variantsById.values().stream()
+            .map(ProductVariant::getProductId).collect(Collectors.toSet());
+        Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, p -> p));
+
+        Map<UUID, String> resolvedImageUrls = imageResolver.resolveByProductId(productsById.values());
+
+        List<QuoteCartItemResponse> itemResponses = items.stream().map(i -> {
+            ProductVariant variant = variantsById.get(i.getVariantId());
+            CartItemProductInfo productInfo = null;
+            if (variant != null) {
+                Product product = productsById.get(variant.getProductId());
+                if (product != null) {
+                    productInfo = new CartItemProductInfo(
+                        product.getId(),
+                        product.getTitle(),
+                        variant.getTitle(),
+                        resolvedImageUrls.get(product.getId()));
+                }
+            }
+            BigDecimal estimatedPrice = variant != null ? variant.getPrice() : null;
+            return new QuoteCartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getNote(), productInfo, estimatedPrice, i.getCreatedAt());
+        }).toList();
+
         return new QuoteCartResponse(cart.getId(), cart.getStatus(), itemResponses, cart.getCreatedAt());
     }
 }
