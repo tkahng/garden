@@ -2,6 +2,7 @@ package io.k2dv.garden.admin.user.controller;
 
 import io.k2dv.garden.admin.user.dto.AdminUserResponse;
 import io.k2dv.garden.admin.user.service.AdminUserService;
+import io.k2dv.garden.auth.service.ImpersonationService;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.shared.dto.PageMeta;
 import io.k2dv.garden.shared.dto.PagedResult;
@@ -29,6 +30,7 @@ class AdminUserControllerTest {
 
     @Autowired MockMvc mvc;
     @MockitoBean AdminUserService adminUserService;
+    @MockitoBean ImpersonationService impersonationService;
 
     @Test
     void listUsers_returns200WithPage() throws Exception {

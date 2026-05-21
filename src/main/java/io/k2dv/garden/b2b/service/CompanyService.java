@@ -370,6 +370,7 @@ public class CompanyService {
             user != null ? user.getLastName() : null,
             m.getRole(),
             m.getSpendingLimit(),
+            m.getDepartmentId(),
             m.getCreatedAt()
         );
     }

@@ -9,6 +9,8 @@ import io.k2dv.garden.b2b.model.CreditAccount;
 import io.k2dv.garden.b2b.model.Invoice;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
+import io.k2dv.garden.b2b.dto.QuoteApprovalPendencyResponse;
+import io.k2dv.garden.b2b.service.CompanyApprovalRuleService;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.b2b.service.CreditAccountService;
 import io.k2dv.garden.b2b.service.InvoiceService;
@@ -58,6 +60,7 @@ public class QuoteService {
     private final CompanyRepository companyRepo;
     private final CompanyMembershipRepository membershipRepo;
     private final CompanyService companyService;
+    private final CompanyApprovalRuleService approvalRuleService;
     private final CreditAccountService creditAccountService;
     private final InvoiceService invoiceService;
     private final PriceListService priceListService;
@@ -216,27 +219,81 @@ public class QuoteService {
 
         List<QuoteItem> items = itemRepo.findByQuoteRequestId(quoteId);
 
+        BigDecimal total = items.stream()
+            .filter(i -> i.getUnitPrice() != null)
+            .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
+            .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+        // Check company-level approval rules (multi-level)
+        boolean rulesTriggered = approvalRuleService.evaluateAndCreatePendencies(
+            quoteId, quote.getCompanyId(), total);
+
+        // Also check user-level spending limit (legacy gate)
         BigDecimal limit = companyService.getSpendingLimit(quote.getCompanyId(), userId);
-        if (limit != null) {
-            BigDecimal total = items.stream()
-                .filter(i -> i.getUnitPrice() != null)
-                .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
-                .reduce(BigDecimal.ZERO, BigDecimal::add);
-            if (total.compareTo(limit) > 0) {
-                quote.setStatus(QuoteStatus.PENDING_APPROVAL);
-                quoteRepo.save(quote);
-                membershipRepo.findByCompanyId(quote.getCompanyId()).stream()
-                    .filter(m -> m.getRole() == CompanyRole.OWNER || m.getRole() == CompanyRole.MANAGER)
-                    .forEach(m -> userRepo.findById(m.getUserId()).ifPresent(
-                        manager -> emailService.sendQuotePendingApproval(manager.getEmail(), quote.getId())));
-                return new QuoteAcceptResponse(null, null, true, null);
-            }
+        boolean limitTriggered = limit != null && total.compareTo(limit) > 0;
+
+        if (rulesTriggered || limitTriggered) {
+            quote.setStatus(QuoteStatus.PENDING_APPROVAL);
+            quoteRepo.save(quote);
+            membershipRepo.findByCompanyId(quote.getCompanyId()).stream()
+                .filter(m -> m.getRole() == CompanyRole.OWNER || m.getRole() == CompanyRole.MANAGER)
+                .forEach(m -> userRepo.findById(m.getUserId()).ifPresent(
+                    manager -> emailService.sendQuotePendingApproval(manager.getEmail(), quote.getId())));
+            return new QuoteAcceptResponse(null, null, true, null);
         }
 
         return finalizeAcceptance(quote, items);
     }
 
-    // Approve: company OWNER approves a PENDING_APPROVAL quote
+    // Approve a specific rule pendency (rule-based multi-level approval)
+    @Transactional
+    public QuoteAcceptResponse approvePendency(UUID quoteId, UUID approverId, UUID ruleId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (quote.getStatus() != QuoteStatus.PENDING_APPROVAL) {
+            throw new ConflictException("INVALID_QUOTE_STATUS",
+                "Quote must be in PENDING_APPROVAL status");
+        }
+        boolean allResolved = approvalRuleService.resolvePendency(quoteId, approverId, ruleId, "APPROVED", null);
+        if (allResolved) {
+            quote.setApproverId(approverId);
+            quote.setApprovedAt(Instant.now());
+            List<QuoteItem> items = itemRepo.findByQuoteRequestId(quoteId);
+            QuoteAcceptResponse response = finalizeAcceptance(quote, items);
+            userRepo.findById(quote.getUserId()).ifPresent(
+                user -> emailService.sendQuoteApproved(user.getEmail(), quote.getId()));
+            return response;
+        }
+        // Still waiting for other pendencies
+        return new QuoteAcceptResponse(null, null, true, null);
+    }
+
+    // Reject a specific rule pendency
+    @Transactional
+    public QuoteRequestResponse rejectPendency(UUID quoteId, UUID approverId, UUID ruleId, String reason) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        approvalRuleService.resolvePendency(quoteId, approverId, ruleId, "REJECTED", reason);
+        quote.setStatus(QuoteStatus.REJECTED);
+        if (reason != null && !reason.isBlank()) quote.setRejectionReason(reason);
+        QuoteRequestResponse response = toResponse(quoteRepo.save(quote));
+        userRepo.findById(quote.getUserId()).ifPresent(
+            user -> emailService.sendQuoteApprovalRejected(user.getEmail(), quote.getId()));
+        return response;
+    }
+
+    @Transactional(readOnly = true)
+    public List<QuoteApprovalPendencyResponse> listPendencies(UUID quoteId, UUID userId) {
+        QuoteRequest quote = quoteRepo.findById(quoteId)
+            .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (!quote.getUserId().equals(userId)
+            && !companyService.isOwnerOrManager(quote.getCompanyId(), userId)) {
+            throw new ForbiddenException("ACCESS_DENIED", "Not authorized to view this quote");
+        }
+        return approvalRuleService.getPendencies(quoteId);
+    }
+
+    // Approve: company OWNER/MANAGER approves a PENDING_APPROVAL quote (legacy + fallback)
     @Transactional
     public QuoteAcceptResponse approveSpend(UUID quoteId, UUID approverId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)

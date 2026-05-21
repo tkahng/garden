@@ -100,6 +100,31 @@ public class QuoteController {
         return ResponseEntity.ok(ApiResponse.of(quoteService.rejectSpend(id, user.getId(), reason)));
     }
 
+    @GetMapping("/{id}/pendencies")
+    public ResponseEntity<ApiResponse<java.util.List<io.k2dv.garden.b2b.dto.QuoteApprovalPendencyResponse>>> getPendencies(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(quoteService.listPendencies(id, user.getId())));
+    }
+
+    @PostMapping("/{id}/pendencies/{ruleId}/approve")
+    public ResponseEntity<ApiResponse<QuoteAcceptResponse>> approvePendency(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID ruleId) {
+        return ResponseEntity.ok(ApiResponse.of(quoteService.approvePendency(id, user.getId(), ruleId)));
+    }
+
+    @PostMapping("/{id}/pendencies/{ruleId}/reject")
+    public ResponseEntity<ApiResponse<QuoteRequestResponse>> rejectPendency(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @PathVariable UUID ruleId,
+        @RequestBody(required = false) RejectQuoteRequest body) {
+        String reason = body != null ? body.reason() : null;
+        return ResponseEntity.ok(ApiResponse.of(quoteService.rejectPendency(id, user.getId(), ruleId, reason)));
+    }
+
     @GetMapping("/{id}/pdf")
     public ResponseEntity<byte[]> downloadPdf(
         @CurrentUser User user,

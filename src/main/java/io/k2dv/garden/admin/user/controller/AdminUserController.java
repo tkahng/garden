@@ -7,7 +7,11 @@ import io.k2dv.garden.admin.user.dto.UpdateTagsRequest;
 import io.k2dv.garden.admin.user.dto.UpdateUserRequest;
 import io.k2dv.garden.admin.user.dto.UserFilter;
 import io.k2dv.garden.admin.user.service.AdminUserService;
+import io.k2dv.garden.auth.dto.ImpersonateResponse;
+import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.auth.security.HasPermission;
+import io.k2dv.garden.user.model.User;
+import io.k2dv.garden.auth.service.ImpersonationService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.BulkIdsRequest;
 import io.k2dv.garden.shared.dto.MetadataRequest;
@@ -31,6 +35,7 @@ import java.util.UUID;
 public class AdminUserController {
 
     private final AdminUserService adminUserService;
+    private final ImpersonationService impersonationService;
 
     @GetMapping
     @HasPermission("user:read")
@@ -137,5 +142,13 @@ public class AdminUserController {
     public ResponseEntity<Void> bulkReactivate(@Valid @RequestBody BulkIdsRequest req) {
         adminUserService.bulkReactivate(req.ids());
         return ResponseEntity.noContent().build();
+    }
+
+    @PostMapping("/{id}/impersonate")
+    @HasPermission("staff:manage")
+    public ResponseEntity<ApiResponse<ImpersonateResponse>> impersonate(
+        @CurrentUser User admin,
+        @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(impersonationService.impersonate(id, admin.getId())));
     }
 }
