@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.dto.RegisterRequest;
 import io.k2dv.garden.auth.service.AuthService;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
+import io.k2dv.garden.cart.dto.BulkAddToCartResponse;
 import io.k2dv.garden.cart.dto.CartResponse;
 import io.k2dv.garden.cart.dto.UpdateCartItemRequest;
 import io.k2dv.garden.cart.model.CartStatus;
@@ -27,6 +28,7 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import org.springframework.mock.web.MockMultipartFile;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -215,5 +217,61 @@ class CartServiceIT extends AbstractIntegrationTest {
 
     assertThatThrownBy(() -> cartService.addItem(userId, new AddCartItemRequest(variant.id(), 1)))
         .isInstanceOf(ValidationException.class);
+  }
+
+  private AdminVariantResponse createActiveVariantWithSku(BigDecimal price, String sku) {
+    AdminProductResponse product = productService.create(
+        new CreateProductRequest("CSV Import Product", null, null, null, null, List.of(), null, null));
+    productService.changeStatus(product.id(), new ProductStatusRequest(ProductStatus.ACTIVE));
+    return variantService.create(product.id(),
+        new CreateVariantRequest(price, null, sku, null, null, null, List.of()));
+  }
+
+  @Test
+  void addItemsFromCsv_addsKnownSkus_andMarksMissingAsNotFound() {
+    UUID userId = createUserId();
+    AdminVariantResponse variant = createActiveVariantWithSku(new BigDecimal("9.99"), "CSV-SKU-001");
+
+    String csv = "sku,quantity\nCSV-SKU-001,3\nNONEXISTENT-SKU,2\n";
+    MockMultipartFile file = new MockMultipartFile("file", "order.csv", "text/csv", csv.getBytes());
+
+    BulkAddToCartResponse result = cartService.addItemsFromCsv(userId, file);
+
+    assertThat(result.results()).hasSize(2);
+    BulkAddToCartResponse.LineResult added = result.results().stream()
+        .filter(r -> r.status() == BulkAddToCartResponse.Status.ADDED).findFirst().orElseThrow();
+    assertThat(added.sku()).isEqualTo("CSV-SKU-001");
+    assertThat(added.quantity()).isEqualTo(3);
+    assertThat(added.variantId()).isEqualTo(variant.id());
+
+    BulkAddToCartResponse.LineResult notFound = result.results().stream()
+        .filter(r -> r.status() == BulkAddToCartResponse.Status.NOT_FOUND).findFirst().orElseThrow();
+    assertThat(notFound.sku()).isEqualTo("NONEXISTENT-SKU");
+
+    assertThat(result.cart().items()).anyMatch(i -> i.variantId().equals(variant.id()) && i.quantity() == 3);
+  }
+
+  @Test
+  void addItemsFromCsv_skipsHeaderAndBlankLines() {
+    UUID userId = createUserId();
+    AdminVariantResponse variant = createActiveVariantWithSku(new BigDecimal("5.00"), "CSV-SKU-002");
+
+    String csv = "sku,quantity\n\nCSV-SKU-002,1\n\n";
+    MockMultipartFile file = new MockMultipartFile("file", "order.csv", "text/csv", csv.getBytes());
+
+    BulkAddToCartResponse result = cartService.addItemsFromCsv(userId, file);
+
+    assertThat(result.results()).hasSize(1);
+    assertThat(result.results().get(0).status()).isEqualTo(BulkAddToCartResponse.Status.ADDED);
+  }
+
+  @Test
+  void addItemsFromCsv_emptyFile_returnsEmptyResults() {
+    UUID userId = createUserId();
+    MockMultipartFile file = new MockMultipartFile("file", "empty.csv", "text/csv", "sku,quantity\n".getBytes());
+
+    BulkAddToCartResponse result = cartService.addItemsFromCsv(userId, file);
+
+    assertThat(result.results()).isEmpty();
   }
 }

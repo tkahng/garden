@@ -3,6 +3,7 @@ package io.k2dv.garden.cart.service;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.service.PriceListService;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
+import io.k2dv.garden.cart.dto.BulkAddToCartResponse;
 import io.k2dv.garden.cart.dto.CartItemProductInfo;
 import io.k2dv.garden.cart.dto.CartItemResponse;
 import io.k2dv.garden.cart.dto.CartResponse;
@@ -28,13 +29,18 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -379,5 +385,48 @@ public class CartService {
         }).toList();
 
         return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());
+    }
+
+    @Transactional
+    public BulkAddToCartResponse addItemsFromCsv(UUID userId, MultipartFile file) {
+        // Ensure an active cart exists before processing rows
+        getOrCreateActiveCart(userId);
+        List<BulkAddToCartResponse.LineResult> results = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
+            String line;
+            boolean first = true;
+            while ((line = reader.readLine()) != null) {
+                line = line.trim();
+                if (line.isBlank()) continue;
+                // skip header row
+                if (first) { first = false; if (line.toLowerCase().startsWith("sku")) continue; }
+                String[] parts = line.split(",", -1);
+                if (parts.length < 2) continue;
+                String sku = parts[0].trim();
+                int qty;
+                try { qty = Integer.parseInt(parts[1].trim()); } catch (NumberFormatException e) { continue; }
+                if (sku.isBlank() || qty < 1) continue;
+
+                var variant = variantRepo.findBySkuIgnoreCaseAndDeletedAtIsNull(sku);
+                if (variant.isEmpty()) {
+                    results.add(new BulkAddToCartResponse.LineResult(sku, qty,
+                        BulkAddToCartResponse.Status.NOT_FOUND, null, null, "SKU not found"));
+                    continue;
+                }
+                try {
+                    addItem(userId, new AddCartItemRequest(variant.get().getId(), qty));
+                    var product = productRepo.findByIdAndDeletedAtIsNull(variant.get().getProductId()).orElse(null);
+                    results.add(new BulkAddToCartResponse.LineResult(sku, qty,
+                        BulkAddToCartResponse.Status.ADDED, variant.get().getId(),
+                        product != null ? product.getTitle() : null, null));
+                } catch (Exception e) {
+                    results.add(new BulkAddToCartResponse.LineResult(sku, qty,
+                        BulkAddToCartResponse.Status.ERROR, variant.get().getId(), null, e.getMessage()));
+                }
+            }
+        } catch (IOException e) {
+            throw new ValidationException("CSV_READ_ERROR", "Failed to read CSV file: " + e.getMessage());
+        }
+        return new BulkAddToCartResponse(getOrCreateActiveCart(userId), results);
     }
 }

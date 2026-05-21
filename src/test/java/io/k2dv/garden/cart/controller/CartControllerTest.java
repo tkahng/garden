@@ -2,6 +2,7 @@ package io.k2dv.garden.cart.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
+import io.k2dv.garden.cart.dto.BulkAddToCartResponse;
 import io.k2dv.garden.cart.dto.CartItemProductInfo;
 import io.k2dv.garden.cart.dto.CartItemResponse;
 import io.k2dv.garden.cart.dto.CartResponse;
@@ -28,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import org.springframework.mock.web.MockMultipartFile;
 
 @WebMvcTest(controllers = CartController.class)
 @Import({TestSecurityConfig.class, GlobalExceptionHandler.class, TestCurrentUserConfig.class})
@@ -114,5 +116,46 @@ class CartControllerTest {
     void deleteCart_returns204() throws Exception {
         mvc.perform(delete("/api/v1/cart"))
             .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void importCsv_returns200WithResults() throws Exception {
+        UUID cartId = UUID.randomUUID();
+        UUID variantId = UUID.randomUUID();
+        List<BulkAddToCartResponse.LineResult> results = List.of(
+            new BulkAddToCartResponse.LineResult("SKU-001", 5,
+                BulkAddToCartResponse.Status.ADDED, variantId, "Widget", null),
+            new BulkAddToCartResponse.LineResult("UNKNOWN", 2,
+                BulkAddToCartResponse.Status.NOT_FOUND, null, null, "SKU not found")
+        );
+        when(cartService.addItemsFromCsv(any(), any()))
+            .thenReturn(new BulkAddToCartResponse(stubCart(cartId), results));
+
+        MockMultipartFile csv = new MockMultipartFile(
+            "file", "order.csv", "text/csv",
+            "sku,quantity\nSKU-001,5\nUNKNOWN,2\n".getBytes());
+
+        mvc.perform(multipart("/api/v1/cart/import-csv").file(csv))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.cart.id").value(cartId.toString()))
+            .andExpect(jsonPath("$.data.results").isArray())
+            .andExpect(jsonPath("$.data.results[0].sku").value("SKU-001"))
+            .andExpect(jsonPath("$.data.results[0].status").value("ADDED"))
+            .andExpect(jsonPath("$.data.results[1].sku").value("UNKNOWN"))
+            .andExpect(jsonPath("$.data.results[1].status").value("NOT_FOUND"));
+    }
+
+    @Test
+    void importCsv_emptyFile_returns200WithEmptyResults() throws Exception {
+        UUID cartId = UUID.randomUUID();
+        when(cartService.addItemsFromCsv(any(), any()))
+            .thenReturn(new BulkAddToCartResponse(stubCart(cartId), List.of()));
+
+        MockMultipartFile csv = new MockMultipartFile(
+            "file", "empty.csv", "text/csv", "sku,quantity\n".getBytes());
+
+        mvc.perform(multipart("/api/v1/cart/import-csv").file(csv))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.data.results").isEmpty());
     }
 }
