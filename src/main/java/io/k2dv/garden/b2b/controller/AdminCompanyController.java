@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.security.HasPermission;
 import io.k2dv.garden.b2b.dto.AddCatalogProductRequest;
 import io.k2dv.garden.b2b.dto.AdminUpdateCompanyRequest;
 import io.k2dv.garden.b2b.dto.CompanyResponse;
+import io.k2dv.garden.b2b.dto.CompanySpendingSummaryResponse;
 import io.k2dv.garden.b2b.service.CompanyService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.shared.dto.MetadataRequest;
@@ -78,5 +79,12 @@ public class AdminCompanyController {
             @PathVariable UUID productId) {
         companyService.removeFromCatalog(id, productId);
         return ResponseEntity.status(NO_CONTENT).build();
+    }
+
+    @GetMapping("/{id}/spending-summary")
+    @HasPermission("company:read")
+    public ResponseEntity<ApiResponse<CompanySpendingSummaryResponse>> spendingSummary(
+            @PathVariable UUID id) {
+        return ResponseEntity.ok(ApiResponse.of(companyService.getSpendingSummary(id)));
     }
 }

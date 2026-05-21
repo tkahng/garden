@@ -30,4 +30,9 @@ public interface InvoiceRepository extends JpaRepository<Invoice, UUID>, JpaSpec
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Invoice i SET i.status = 'OVERDUE' WHERE i.status IN ('ISSUED', 'PARTIAL') AND i.dueAt < :now")
     int markOverduePastDue(@Param("now") Instant now);
+
+    long countByCompanyIdAndStatus(UUID companyId, InvoiceStatus status);
+
+    @Query("SELECT COALESCE(SUM(i.totalAmount), 0) FROM Invoice i WHERE i.companyId = :companyId AND i.status = :status")
+    BigDecimal sumTotalByCompanyIdAndStatus(@Param("companyId") UUID companyId, @Param("status") InvoiceStatus status);
 }

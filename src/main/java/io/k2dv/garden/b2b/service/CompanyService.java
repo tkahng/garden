@@ -6,9 +6,13 @@ import io.k2dv.garden.b2b.model.Company;
 import io.k2dv.garden.b2b.model.CompanyMembership;
 import io.k2dv.garden.b2b.model.CompanyRole;
 import io.k2dv.garden.b2b.model.CompanyProductCatalog;
+import io.k2dv.garden.b2b.model.InvoiceStatus;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.CompanyProductCatalogRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
+import io.k2dv.garden.b2b.repository.InvoiceRepository;
+import io.k2dv.garden.order.model.OrderStatus;
+import io.k2dv.garden.order.repository.OrderRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
@@ -20,8 +24,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.RoundingMode;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -33,6 +40,8 @@ public class CompanyService {
     private final UserRepository userRepo;
     private final CompanyProductCatalogRepository catalogRepo;
     private final ProductRepository productRepo;
+    private final OrderRepository orderRepo;
+    private final InvoiceRepository invoiceRepo;
 
     @Transactional
     public CompanyResponse create(UUID requestorId, CreateCompanyRequest req) {
@@ -294,6 +303,62 @@ public class CompanyService {
         if (!companyRepo.existsById(companyId)) {
             throw new NotFoundException("COMPANY_NOT_FOUND", "Company not found");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public CompanySpendingSummaryResponse getSpendingSummary(UUID companyId) {
+        if (!companyRepo.existsById(companyId)) {
+            throw new NotFoundException("COMPANY_NOT_FOUND", "Company not found");
+        }
+        Collection<OrderStatus> paidStatuses = Set.of(
+            OrderStatus.PAID, OrderStatus.PARTIALLY_FULFILLED,
+            OrderStatus.FULFILLED, OrderStatus.INVOICED
+        );
+        long totalOrders = orderRepo.countByCompanyIdAndStatusIn(companyId, paidStatuses);
+        BigDecimal totalSpend = orderRepo.sumSpendByCompanyId(companyId, paidStatuses);
+
+        // Invoice aging
+        long pendingCount = invoiceRepo.countByCompanyIdAndStatus(companyId, InvoiceStatus.ISSUED);
+        BigDecimal pendingAmount = invoiceRepo.sumTotalByCompanyIdAndStatus(companyId, InvoiceStatus.ISSUED);
+        long overdueCount = invoiceRepo.countByCompanyIdAndStatus(companyId, InvoiceStatus.OVERDUE);
+        BigDecimal overdueAmount = invoiceRepo.sumTotalByCompanyIdAndStatus(companyId, InvoiceStatus.OVERDUE);
+        long paidCount = invoiceRepo.countByCompanyIdAndStatus(companyId, InvoiceStatus.PAID);
+        BigDecimal paidAmount = invoiceRepo.sumTotalByCompanyIdAndStatus(companyId, InvoiceStatus.PAID);
+
+        // Member spending
+        List<CompanySpendingSummaryResponse.MemberSpend> memberSpending = membershipRepo
+            .findByCompanyId(companyId)
+            .stream()
+            .filter(m -> m.getSpendingLimit() != null)
+            .map(m -> {
+                User user = userRepo.findById(m.getUserId()).orElse(null);
+                BigDecimal spend = orderRepo.sumSpendByUserId(m.getUserId(), paidStatuses);
+                int utilization = m.getSpendingLimit().compareTo(BigDecimal.ZERO) > 0
+                    ? spend.multiply(BigDecimal.valueOf(100))
+                        .divide(m.getSpendingLimit(), 0, RoundingMode.HALF_UP)
+                        .min(BigDecimal.valueOf(100))
+                        .intValue()
+                    : 0;
+                return new CompanySpendingSummaryResponse.MemberSpend(
+                    m.getUserId(),
+                    user != null ? user.getEmail() : null,
+                    spend,
+                    m.getSpendingLimit(),
+                    utilization
+                );
+            })
+            .toList();
+
+        return new CompanySpendingSummaryResponse(
+            totalOrders,
+            totalSpend,
+            new CompanySpendingSummaryResponse.InvoiceSummary(
+                pendingCount, pendingAmount,
+                overdueCount, overdueAmount,
+                paidCount, paidAmount
+            ),
+            memberSpending
+        );
     }
 
     private CompanyMemberResponse toMemberResponse(CompanyMembership m, User user) {

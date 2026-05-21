@@ -42,6 +42,12 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
     @Query("SELECT COALESCE(SUM(o.totalAmount), 0) FROM Order o WHERE o.userId = :userId AND o.status IN :statuses")
     BigDecimal sumSpendByUserId(@Param("userId") UUID userId, @Param("statuses") Collection<OrderStatus> statuses);
 
+    @Query("SELECT COALESCE(SUM(o.totalAmount), 0) FROM Order o WHERE o.companyId = :companyId AND o.status IN :statuses")
+    BigDecimal sumSpendByCompanyId(@Param("companyId") UUID companyId, @Param("statuses") Collection<OrderStatus> statuses);
+
+    @Query("SELECT COUNT(o) FROM Order o WHERE o.companyId = :companyId AND o.status IN :statuses")
+    long countByCompanyIdAndStatusIn(@Param("companyId") UUID companyId, @Param("statuses") Collection<OrderStatus> statuses);
+
     @Query(value = """
         SELECT
             TO_CHAR(DATE_TRUNC('day', o.created_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS date,
