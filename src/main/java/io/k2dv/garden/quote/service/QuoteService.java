@@ -262,7 +262,7 @@ public class QuoteService {
 
     // Reject approval: company OWNER rejects a PENDING_APPROVAL quote
     @Transactional
-    public QuoteRequestResponse rejectSpend(UUID quoteId, UUID approverId) {
+    public QuoteRequestResponse rejectSpend(UUID quoteId, UUID approverId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
         if (quote.getStatus() != QuoteStatus.PENDING_APPROVAL) {
@@ -274,6 +274,7 @@ public class QuoteService {
                 "Only a company owner or manager can reject spend");
         }
         quote.setStatus(QuoteStatus.REJECTED);
+        if (reason != null && !reason.isBlank()) quote.setRejectionReason(reason);
         QuoteRequestResponse response = toResponse(quoteRepo.save(quote));
         userRepo.findById(quote.getUserId()).ifPresent(
             user -> emailService.sendQuoteApprovalRejected(user.getEmail(), quote.getId()));
@@ -311,7 +312,7 @@ public class QuoteService {
     }
 
     @Transactional
-    public QuoteRequestResponse reject(UUID quoteId, UUID userId) {
+    public QuoteRequestResponse reject(UUID quoteId, UUID userId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
         if (!quote.getUserId().equals(userId)) {
@@ -322,6 +323,7 @@ public class QuoteService {
                 "Quote must be in SENT status to reject");
         }
         quote.setStatus(QuoteStatus.REJECTED);
+        if (reason != null && !reason.isBlank()) quote.setRejectionReason(reason);
         QuoteRequestResponse response = toResponse(quoteRepo.save(quote));
         String adminEmail = appProperties.getAdminNotificationEmail();
         if (adminEmail != null && !adminEmail.isBlank()) {
@@ -452,7 +454,7 @@ public class QuoteService {
     }
 
     @Transactional
-    public QuoteRequestResponse cancel(UUID quoteId) {
+    public QuoteRequestResponse cancel(UUID quoteId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
         if (quote.getStatus() == QuoteStatus.ACCEPTED || quote.getStatus() == QuoteStatus.PAID
@@ -462,11 +464,12 @@ public class QuoteService {
                 "Cannot cancel quote in status: " + quote.getStatus());
         }
         quote.setStatus(QuoteStatus.CANCELLED);
+        if (reason != null && !reason.isBlank()) quote.setRejectionReason(reason);
         return toResponse(quoteRepo.save(quote));
     }
 
     @Transactional
-    public QuoteRequestResponse cancelForUser(UUID quoteId, UUID userId) {
+    public QuoteRequestResponse cancelForUser(UUID quoteId, UUID userId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
         if (!quote.getUserId().equals(userId)) {
@@ -479,6 +482,7 @@ public class QuoteService {
                 "Cannot cancel quote in status: " + quote.getStatus());
         }
         quote.setStatus(QuoteStatus.CANCELLED);
+        if (reason != null && !reason.isBlank()) quote.setRejectionReason(reason);
         return toResponse(quoteRepo.save(quote));
     }
 
@@ -521,6 +525,7 @@ public class QuoteService {
             q.getDeliveryCity(), q.getDeliveryState(),
             q.getDeliveryPostalCode(), q.getDeliveryCountry(),
             q.getShippingRequirements(), q.getCustomerNotes(), q.getStaffNotes(),
+            q.getRejectionReason(),
             q.getExpiresAt(), q.getPdfBlobId(), q.getOrderId(),
             q.getApproverId(), q.getApprovedAt(),
             itemResponses, q.getCreatedAt(), q.getUpdatedAt()

@@ -96,8 +96,11 @@ public class AdminQuoteController {
 
     @PostMapping("/{id}/cancel")
     @HasPermission("quote:write")
-    public ResponseEntity<ApiResponse<QuoteRequestResponse>> cancel(@PathVariable UUID id) {
-        return ResponseEntity.ok(ApiResponse.of(quoteService.cancel(id)));
+    public ResponseEntity<ApiResponse<QuoteRequestResponse>> cancel(
+        @PathVariable UUID id,
+        @RequestBody(required = false) RejectQuoteRequest body) {
+        String reason = body != null ? body.reason() : null;
+        return ResponseEntity.ok(ApiResponse.of(quoteService.cancel(id, reason)));
     }
 
     @GetMapping("/{id}/pdf")

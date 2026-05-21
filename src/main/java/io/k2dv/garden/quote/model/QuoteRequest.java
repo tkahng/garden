@@ -54,6 +54,9 @@ public class QuoteRequest extends BaseEntity {
     @Column(name = "staff_notes")
     private String staffNotes;
 
+    @Column(name = "rejection_reason")
+    private String rejectionReason;
+
     @Column(name = "expires_at")
     private Instant expiresAt;
 

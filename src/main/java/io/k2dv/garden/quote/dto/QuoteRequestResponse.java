@@ -22,6 +22,7 @@ public record QuoteRequestResponse(
     String shippingRequirements,
     String customerNotes,
     String staffNotes,
+    String rejectionReason,
     Instant expiresAt,
     UUID pdfBlobId,
     UUID orderId,
