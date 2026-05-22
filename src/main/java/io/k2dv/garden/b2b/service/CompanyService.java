@@ -224,6 +224,11 @@ public class CompanyService {
     }
 
     @Transactional(readOnly = true)
+    public boolean isMember(UUID companyId, UUID userId) {
+        return membershipRepo.existsByCompanyIdAndUserId(companyId, userId);
+    }
+
+    @Transactional(readOnly = true)
     public boolean isOwnerOrManager(UUID companyId, UUID userId) {
         return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
             .map(m -> m.getRole() == CompanyRole.OWNER || m.getRole() == CompanyRole.MANAGER)
@@ -325,14 +330,26 @@ public class CompanyService {
         long paidCount = invoiceRepo.countByCompanyIdAndStatus(companyId, InvoiceStatus.PAID);
         BigDecimal paidAmount = invoiceRepo.sumTotalByCompanyIdAndStatus(companyId, InvoiceStatus.PAID);
 
-        // Member spending
-        List<CompanySpendingSummaryResponse.MemberSpend> memberSpending = membershipRepo
+        // Member spending — bulk-load users and spend totals to avoid N+1 queries
+        List<CompanyMembership> membersWithLimit = membershipRepo
             .findByCompanyId(companyId)
             .stream()
             .filter(m -> m.getSpendingLimit() != null)
+            .toList();
+
+        List<UUID> memberIds = membersWithLimit.stream().map(CompanyMembership::getUserId).toList();
+        Map<UUID, User> usersById = memberIds.isEmpty() ? Map.of()
+            : userRepo.findAllById(memberIds).stream().collect(java.util.stream.Collectors.toMap(User::getId, u -> u));
+        Map<UUID, BigDecimal> spendByUser = memberIds.isEmpty() ? Map.of()
+            : orderRepo.sumSpendByUserIds(memberIds, paidStatuses).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    io.k2dv.garden.order.repository.UserSpendProjection::getUserId,
+                    io.k2dv.garden.order.repository.UserSpendProjection::getTotalSpend));
+
+        List<CompanySpendingSummaryResponse.MemberSpend> memberSpending = membersWithLimit.stream()
             .map(m -> {
-                User user = userRepo.findById(m.getUserId()).orElse(null);
-                BigDecimal spend = orderRepo.sumSpendByUserId(m.getUserId(), paidStatuses);
+                User user = usersById.get(m.getUserId());
+                BigDecimal spend = spendByUser.getOrDefault(m.getUserId(), BigDecimal.ZERO);
                 int utilization = m.getSpendingLimit().compareTo(BigDecimal.ZERO) > 0
                     ? spend.multiply(BigDecimal.valueOf(100))
                         .divide(m.getSpendingLimit(), 0, RoundingMode.HALF_UP)

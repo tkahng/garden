@@ -224,9 +224,9 @@ public class QuoteService {
             .map(i -> i.getUnitPrice().multiply(BigDecimal.valueOf(i.getQuantity())))
             .reduce(BigDecimal.ZERO, BigDecimal::add);
 
-        // Check company-level approval rules (multi-level)
-        boolean rulesTriggered = approvalRuleService.evaluateAndCreatePendencies(
-            quoteId, quote.getCompanyId(), total);
+        // Check company-level approval rules (multi-level); skip for non-B2B quotes
+        boolean rulesTriggered = quote.getCompanyId() != null
+            && approvalRuleService.evaluateAndCreatePendencies(quoteId, quote.getCompanyId(), total);
 
         // Also check user-level spending limit (legacy gate)
         BigDecimal limit = companyService.getSpendingLimit(quote.getCompanyId(), userId);
@@ -273,6 +273,10 @@ public class QuoteService {
     public QuoteRequestResponse rejectPendency(UUID quoteId, UUID approverId, UUID ruleId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
+        if (quote.getStatus() != QuoteStatus.PENDING_APPROVAL) {
+            throw new ConflictException("INVALID_QUOTE_STATUS",
+                "Quote must be in PENDING_APPROVAL status to reject a pendency (current: " + quote.getStatus() + ")");
+        }
         approvalRuleService.resolvePendency(quoteId, approverId, ruleId, "REJECTED", reason);
         quote.setStatus(QuoteStatus.REJECTED);
         if (reason != null && !reason.isBlank()) quote.setRejectionReason(reason);
@@ -293,7 +297,8 @@ public class QuoteService {
         return approvalRuleService.getPendencies(quoteId);
     }
 
-    // Approve: company OWNER/MANAGER approves a PENDING_APPROVAL quote (legacy + fallback)
+    // Approve: company OWNER/MANAGER approves a PENDING_APPROVAL quote (legacy spend-limit path).
+    // Only valid when there are no unresolved rule-based pendencies.
     @Transactional
     public QuoteAcceptResponse approveSpend(UUID quoteId, UUID approverId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -305,6 +310,12 @@ public class QuoteService {
         if (!companyService.isOwnerOrManager(quote.getCompanyId(), approverId)) {
             throw new ForbiddenException("INSUFFICIENT_COMPANY_ROLE",
                 "Only a company owner or manager can approve spend");
+        }
+        // Block if multi-level rule pendencies still exist — those must be resolved individually
+        boolean hasUnresolvedPendencies = !approvalRuleService.getUnresolvedPendencies(quoteId).isEmpty();
+        if (hasUnresolvedPendencies) {
+            throw new ConflictException("PENDING_RULE_APPROVALS",
+                "This quote has unresolved rule-based approval steps. Use the pendency approval endpoints instead.");
         }
 
         quote.setApproverId(approverId);

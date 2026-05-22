@@ -387,19 +387,28 @@ public class CartService {
         return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());
     }
 
+    private static final int CSV_MAX_ROWS = 500;
+
     @Transactional
     public BulkAddToCartResponse addItemsFromCsv(UUID userId, MultipartFile file) {
-        // Ensure an active cart exists before processing rows
+        if (file.isEmpty()) {
+            throw new ValidationException("CSV_EMPTY", "Uploaded file is empty");
+        }
+        // Ensure a cart exists before processing rows
         getOrCreateActiveCart(userId);
         List<BulkAddToCartResponse.LineResult> results = new ArrayList<>();
+        int rowCount = 0;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(file.getInputStream()))) {
             String line;
             boolean first = true;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
                 if (line.isBlank()) continue;
-                // skip header row
                 if (first) { first = false; if (line.toLowerCase().startsWith("sku")) continue; }
+                if (++rowCount > CSV_MAX_ROWS) {
+                    throw new ValidationException("CSV_TOO_LARGE",
+                        "CSV exceeds the maximum of " + CSV_MAX_ROWS + " data rows");
+                }
                 String[] parts = line.split(",", -1);
                 if (parts.length < 2) continue;
                 String sku = parts[0].trim();
@@ -427,6 +436,7 @@ public class CartService {
         } catch (IOException e) {
             throw new ValidationException("CSV_READ_ERROR", "Failed to read CSV file: " + e.getMessage());
         }
+        // Fetch the cart again to include all items added during CSV processing
         return new BulkAddToCartResponse(getOrCreateActiveCart(userId), results);
     }
 }

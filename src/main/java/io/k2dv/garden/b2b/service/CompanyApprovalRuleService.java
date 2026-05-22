@@ -9,6 +9,7 @@ import io.k2dv.garden.b2b.model.QuoteApprovalPendency;
 import io.k2dv.garden.b2b.repository.CompanyApprovalRuleRepository;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.QuoteApprovalPendencyRepository;
+import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import lombok.RequiredArgsConstructor;
@@ -18,7 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -64,6 +68,12 @@ public class CompanyApprovalRuleService {
         if (!rule.getCompanyId().equals(companyId)) {
             throw new ForbiddenException("WRONG_COMPANY", "Rule does not belong to this company");
         }
+        // Reject if live quotes have unresolved pendencies for this rule
+        boolean hasLivePendencies = pendencyRepo.existsByRuleIdAndActionIsNull(ruleId);
+        if (hasLivePendencies) {
+            throw new ConflictException("RULE_HAS_LIVE_PENDENCIES",
+                "Cannot delete an approval rule that has unresolved pending approvals. Deactivate it instead.");
+        }
         ruleRepo.delete(rule);
     }
 
@@ -99,8 +109,12 @@ public class CompanyApprovalRuleService {
 
     @Transactional(readOnly = true)
     public List<QuoteApprovalPendencyResponse> getPendencies(UUID quoteId) {
-        return pendencyRepo.findByQuoteId(quoteId).stream().map(p -> {
-            CompanyApprovalRule rule = ruleRepo.findById(p.getRuleId()).orElse(null);
+        List<QuoteApprovalPendency> pendencies = pendencyRepo.findByQuoteId(quoteId);
+        Set<UUID> ruleIds = pendencies.stream().map(QuoteApprovalPendency::getRuleId).collect(Collectors.toSet());
+        Map<UUID, CompanyApprovalRule> rulesById = ruleRepo.findAllById(ruleIds).stream()
+            .collect(Collectors.toMap(CompanyApprovalRule::getId, r -> r));
+        return pendencies.stream().map(p -> {
+            CompanyApprovalRule rule = rulesById.get(p.getRuleId());
             return new QuoteApprovalPendencyResponse(
                 p.getId(), p.getRuleId(),
                 rule != null ? rule.getName() : null,
@@ -134,6 +148,11 @@ public class CompanyApprovalRuleService {
         QuoteApprovalPendency pendency = pendencyRepo.findByQuoteIdAndRuleId(quoteId, ruleId)
             .orElseThrow(() -> new NotFoundException("PENDENCY_NOT_FOUND", "Approval pendency not found"));
 
+        if (pendency.getAction() != null) {
+            throw new ConflictException("PENDENCY_ALREADY_RESOLVED",
+                "This approval step has already been " + pendency.getAction().toLowerCase());
+        }
+
         pendency.setAction(action);
         pendency.setResolvedBy(approverId);
         pendency.setResolvedAt(Instant.now());
@@ -145,6 +164,11 @@ public class CompanyApprovalRuleService {
         boolean anyRejected = allPendencies.stream().anyMatch(p -> "REJECTED".equals(p.getAction()));
         if (anyRejected) return false;
         return allPendencies.stream().allMatch(p -> "APPROVED".equals(p.getAction()));
+    }
+
+    @Transactional(readOnly = true)
+    public List<QuoteApprovalPendency> getUnresolvedPendencies(UUID quoteId) {
+        return pendencyRepo.findByQuoteIdAndActionIsNull(quoteId);
     }
 
     @Transactional(readOnly = true)

@@ -11,4 +11,5 @@ public interface QuoteApprovalPendencyRepository extends JpaRepository<QuoteAppr
     List<QuoteApprovalPendency> findByQuoteId(UUID quoteId);
     List<QuoteApprovalPendency> findByQuoteIdAndActionIsNull(UUID quoteId);
     Optional<QuoteApprovalPendency> findByQuoteIdAndRuleId(UUID quoteId, UUID ruleId);
+    boolean existsByRuleIdAndActionIsNull(UUID ruleId);
 }

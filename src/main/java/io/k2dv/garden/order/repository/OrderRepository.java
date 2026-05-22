@@ -16,6 +16,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Map;
 
 public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
 
@@ -44,6 +45,9 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
 
     @Query("SELECT COALESCE(SUM(o.totalAmount), 0) FROM Order o WHERE o.companyId = :companyId AND o.status IN :statuses")
     BigDecimal sumSpendByCompanyId(@Param("companyId") UUID companyId, @Param("statuses") Collection<OrderStatus> statuses);
+
+    @Query("SELECT o.userId AS userId, COALESCE(SUM(o.totalAmount), 0) AS totalSpend FROM Order o WHERE o.userId IN :userIds AND o.status IN :statuses GROUP BY o.userId")
+    List<UserSpendProjection> sumSpendByUserIds(@Param("userIds") Collection<UUID> userIds, @Param("statuses") Collection<OrderStatus> statuses);
 
     @Query("SELECT COUNT(o) FROM Order o WHERE o.companyId = :companyId AND o.status IN :statuses")
     long countByCompanyIdAndStatusIn(@Param("companyId") UUID companyId, @Param("statuses") Collection<OrderStatus> statuses);

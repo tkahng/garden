@@ -3,6 +3,7 @@ package io.k2dv.garden.config;
 import jakarta.servlet.FilterChain;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.env.MockEnvironment;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
@@ -14,9 +15,21 @@ class ApiRateLimitFilterTest {
 
     private ApiRateLimitFilter filter;
 
+    // No trusted proxies configured → only loopback (127.0.0.1) is trusted
+    private static ApiRateLimitFilter filterWithNoProxies() {
+        return new ApiRateLimitFilter(new MockEnvironment());
+    }
+
+    // Filter that trusts the given proxy IP (e.g. a load-balancer address in tests)
+    private static ApiRateLimitFilter filterWithTrustedProxy(String proxyIp) {
+        MockEnvironment env = new MockEnvironment();
+        env.setProperty("app.rate-limit.trusted-proxies[0]", proxyIp);
+        return new ApiRateLimitFilter(env);
+    }
+
     @BeforeEach
     void setUp() {
-        filter = new ApiRateLimitFilter();
+        filter = filterWithNoProxies();
     }
 
     @Test
@@ -99,9 +112,10 @@ class ApiRateLimitFilterTest {
     }
 
     @Test
-    void respectsXForwardedForHeader() throws Exception {
+    void xForwardedForIgnoredFromUntrustedRemoteAddr() throws Exception {
+        // Remote addr 10.0.0.99 is not in the trusted-proxy list — XFF should be ignored
         MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/products");
-        req.addHeader("X-Forwarded-For", "203.0.113.1, 10.0.0.99");
+        req.addHeader("X-Forwarded-For", "1.2.3.4");
         req.setRemoteAddr("10.0.0.99");
         MockHttpServletResponse resp = new MockHttpServletResponse();
         FilterChain chain = mock(FilterChain.class);
@@ -109,5 +123,23 @@ class ApiRateLimitFilterTest {
         filter.doFilter(req, resp, chain);
 
         verify(chain).doFilter(req, resp);
+        assertThat(resp.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void xForwardedForTrustedFromConfiguredProxy() throws Exception {
+        // Configure 10.0.0.99 as a trusted proxy — XFF from it should be respected
+        ApiRateLimitFilter proxyFilter = filterWithTrustedProxy("10.0.0.99");
+
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", "/api/v1/products");
+        req.addHeader("X-Forwarded-For", "203.0.113.1, 10.0.0.99");
+        req.setRemoteAddr("10.0.0.99");
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        proxyFilter.doFilter(req, resp, chain);
+
+        verify(chain).doFilter(req, resp);
+        assertThat(resp.getStatus()).isEqualTo(200);
     }
 }

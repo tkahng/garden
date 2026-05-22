@@ -2,6 +2,8 @@ package io.k2dv.garden.config;
 
 import io.k2dv.garden.auth.handler.OAuth2SuccessHandler;
 import io.k2dv.garden.auth.security.CustomJwtAuthenticationConverter;
+import io.k2dv.garden.auth.security.ImpersonationTokenValidationFilter;
+import io.k2dv.garden.auth.service.ImpersonationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,6 +15,7 @@ import org.springframework.security.config.annotation.web.configuration.EnableWe
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -33,6 +36,12 @@ public class SecurityConfig {
     private final AppProperties props;
     private final CustomJwtAuthenticationConverter jwtAuthConverter;
     private final OAuth2SuccessHandler oauth2SuccessHandler;
+    private final ImpersonationService impersonationService;
+
+    @Bean
+    ImpersonationTokenValidationFilter impersonationTokenValidationFilter() {
+        return new ImpersonationTokenValidationFilter(impersonationService);
+    }
 
     // Chain 1: handles the OAuth2 login flow — needs sessions to preserve state parameter
     @Bean
@@ -81,6 +90,7 @@ public class SecurityConfig {
             .oauth2ResourceServer(oauth2 -> oauth2
                 .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthConverter))
             )
+            .addFilterAfter(impersonationTokenValidationFilter(), BearerTokenAuthenticationFilter.class)
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             )

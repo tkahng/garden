@@ -13,7 +13,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -55,14 +57,39 @@ public class DepartmentService {
     @Transactional
     public DepartmentResponse rename(UUID deptId, UUID companyId, DepartmentRequest req) {
         Department dept = requireOwned(deptId, companyId);
+
+        // Check name uniqueness (same rule as create)
+        if (!dept.getName().equals(req.name()) && deptRepo.existsByCompanyIdAndName(companyId, req.name())) {
+            throw new ConflictException("DEPARTMENT_NAME_TAKEN", "A department with this name already exists");
+        }
+
         dept.setName(req.name());
         if (req.parentId() != null) {
+            if (req.parentId().equals(deptId)) {
+                throw new ConflictException("DEPARTMENT_CYCLE", "A department cannot be its own parent");
+            }
             deptRepo.findById(req.parentId())
                 .filter(p -> p.getCompanyId().equals(companyId))
                 .orElseThrow(() -> new NotFoundException("PARENT_NOT_FOUND", "Parent department not found"));
+            // Guard against cycles by walking ancestors of the proposed parent
+            if (isDescendant(deptId, req.parentId())) {
+                throw new ConflictException("DEPARTMENT_CYCLE",
+                    "Setting this parent would create a cycle in the department tree");
+            }
             dept.setParentId(req.parentId());
         }
         return toResponse(deptRepo.save(dept), List.of());
+    }
+
+    /** Returns true if {@code candidateAncestorId} is a descendant of {@code rootId}. */
+    private boolean isDescendant(UUID rootId, UUID candidateAncestorId) {
+        Set<UUID> visited = new HashSet<>();
+        UUID current = candidateAncestorId;
+        while (current != null && visited.add(current)) {
+            if (current.equals(rootId)) return true;
+            current = deptRepo.findById(current).map(Department::getParentId).orElse(null);
+        }
+        return false;
     }
 
     @Transactional
