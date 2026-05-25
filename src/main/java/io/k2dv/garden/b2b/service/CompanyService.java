@@ -6,9 +6,13 @@ import io.k2dv.garden.b2b.model.Company;
 import io.k2dv.garden.b2b.model.CompanyMembership;
 import io.k2dv.garden.b2b.model.CompanyRole;
 import io.k2dv.garden.b2b.model.CompanyProductCatalog;
+import io.k2dv.garden.b2b.model.InvoiceStatus;
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.CompanyProductCatalogRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
+import io.k2dv.garden.b2b.repository.InvoiceRepository;
+import io.k2dv.garden.order.model.OrderStatus;
+import io.k2dv.garden.order.repository.OrderRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
@@ -20,8 +24,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.math.RoundingMode;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -33,6 +40,8 @@ public class CompanyService {
     private final UserRepository userRepo;
     private final CompanyProductCatalogRepository catalogRepo;
     private final ProductRepository productRepo;
+    private final OrderRepository orderRepo;
+    private final InvoiceRepository invoiceRepo;
 
     @Transactional
     public CompanyResponse create(UUID requestorId, CreateCompanyRequest req) {
@@ -215,6 +224,11 @@ public class CompanyService {
     }
 
     @Transactional(readOnly = true)
+    public boolean isMember(UUID companyId, UUID userId) {
+        return membershipRepo.existsByCompanyIdAndUserId(companyId, userId);
+    }
+
+    @Transactional(readOnly = true)
     public boolean isOwnerOrManager(UUID companyId, UUID userId) {
         return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
             .map(m -> m.getRole() == CompanyRole.OWNER || m.getRole() == CompanyRole.MANAGER)
@@ -296,6 +310,74 @@ public class CompanyService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public CompanySpendingSummaryResponse getSpendingSummary(UUID companyId) {
+        if (!companyRepo.existsById(companyId)) {
+            throw new NotFoundException("COMPANY_NOT_FOUND", "Company not found");
+        }
+        Collection<OrderStatus> paidStatuses = Set.of(
+            OrderStatus.PAID, OrderStatus.PARTIALLY_FULFILLED,
+            OrderStatus.FULFILLED, OrderStatus.INVOICED
+        );
+        long totalOrders = orderRepo.countByCompanyIdAndStatusIn(companyId, paidStatuses);
+        BigDecimal totalSpend = orderRepo.sumSpendByCompanyId(companyId, paidStatuses);
+
+        // Invoice aging
+        long pendingCount = invoiceRepo.countByCompanyIdAndStatus(companyId, InvoiceStatus.ISSUED);
+        BigDecimal pendingAmount = invoiceRepo.sumTotalByCompanyIdAndStatus(companyId, InvoiceStatus.ISSUED);
+        long overdueCount = invoiceRepo.countByCompanyIdAndStatus(companyId, InvoiceStatus.OVERDUE);
+        BigDecimal overdueAmount = invoiceRepo.sumTotalByCompanyIdAndStatus(companyId, InvoiceStatus.OVERDUE);
+        long paidCount = invoiceRepo.countByCompanyIdAndStatus(companyId, InvoiceStatus.PAID);
+        BigDecimal paidAmount = invoiceRepo.sumTotalByCompanyIdAndStatus(companyId, InvoiceStatus.PAID);
+
+        // Member spending — bulk-load users and spend totals to avoid N+1 queries
+        List<CompanyMembership> membersWithLimit = membershipRepo
+            .findByCompanyId(companyId)
+            .stream()
+            .filter(m -> m.getSpendingLimit() != null)
+            .toList();
+
+        List<UUID> memberIds = membersWithLimit.stream().map(CompanyMembership::getUserId).toList();
+        Map<UUID, User> usersById = memberIds.isEmpty() ? Map.of()
+            : userRepo.findAllById(memberIds).stream().collect(java.util.stream.Collectors.toMap(User::getId, u -> u));
+        Map<UUID, BigDecimal> spendByUser = memberIds.isEmpty() ? Map.of()
+            : orderRepo.sumSpendByUserIds(memberIds, paidStatuses).stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    io.k2dv.garden.order.repository.UserSpendProjection::getUserId,
+                    io.k2dv.garden.order.repository.UserSpendProjection::getTotalSpend));
+
+        List<CompanySpendingSummaryResponse.MemberSpend> memberSpending = membersWithLimit.stream()
+            .map(m -> {
+                User user = usersById.get(m.getUserId());
+                BigDecimal spend = spendByUser.getOrDefault(m.getUserId(), BigDecimal.ZERO);
+                int utilization = m.getSpendingLimit().compareTo(BigDecimal.ZERO) > 0
+                    ? spend.multiply(BigDecimal.valueOf(100))
+                        .divide(m.getSpendingLimit(), 0, RoundingMode.HALF_UP)
+                        .min(BigDecimal.valueOf(100))
+                        .intValue()
+                    : 0;
+                return new CompanySpendingSummaryResponse.MemberSpend(
+                    m.getUserId(),
+                    user != null ? user.getEmail() : null,
+                    spend,
+                    m.getSpendingLimit(),
+                    utilization
+                );
+            })
+            .toList();
+
+        return new CompanySpendingSummaryResponse(
+            totalOrders,
+            totalSpend,
+            new CompanySpendingSummaryResponse.InvoiceSummary(
+                pendingCount, pendingAmount,
+                overdueCount, overdueAmount,
+                paidCount, paidAmount
+            ),
+            memberSpending
+        );
+    }
+
     private CompanyMemberResponse toMemberResponse(CompanyMembership m, User user) {
         return new CompanyMemberResponse(
             m.getId(),
@@ -305,6 +387,7 @@ public class CompanyService {
             user != null ? user.getLastName() : null,
             m.getRole(),
             m.getSpendingLimit(),
+            m.getDepartmentId(),
             m.getCreatedAt()
         );
     }

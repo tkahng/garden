@@ -163,30 +163,49 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         QuoteRequestResponse sent = sendQuote(quote.id());
         assertThat(sent.status()).isEqualTo(QuoteStatus.SENT);
 
-        QuoteRequestResponse rejected = quoteService.reject(quote.id(), userId);
+        QuoteRequestResponse rejected = quoteService.reject(quote.id(), userId, null);
         assertThat(rejected.status()).isEqualTo(QuoteStatus.REJECTED);
     }
 
     @Test
     void reject_notInSentStatus_throwsConflict() {
         QuoteRequestResponse quote = submitQuote();
-        assertThatThrownBy(() -> quoteService.reject(quote.id(), userId))
+        assertThatThrownBy(() -> quoteService.reject(quote.id(), userId, null))
             .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void reject_withReason_persistsRejectionReason() {
+        QuoteRequestResponse quote = submitQuote();
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("150.00")));
+        sendQuote(quote.id());
+
+        QuoteRequestResponse rejected = quoteService.reject(quote.id(), userId, "Price too high");
+        assertThat(rejected.rejectionReason()).isEqualTo("Price too high");
+        assertThat(rejected.status()).isEqualTo(QuoteStatus.REJECTED);
     }
 
     @Test
     void cancel_fromPending_succeeds() {
         QuoteRequestResponse quote = submitQuote();
-        QuoteRequestResponse cancelled = quoteService.cancel(quote.id());
+        QuoteRequestResponse cancelled = quoteService.cancel(quote.id(), null);
         assertThat(cancelled.status()).isEqualTo(QuoteStatus.CANCELLED);
     }
 
     @Test
     void cancel_alreadyCancelled_throwsConflict() {
         QuoteRequestResponse quote = submitQuote();
-        quoteService.cancel(quote.id());
-        assertThatThrownBy(() -> quoteService.cancel(quote.id()))
+        quoteService.cancel(quote.id(), null);
+        assertThatThrownBy(() -> quoteService.cancel(quote.id(), null))
             .isInstanceOf(ConflictException.class);
+    }
+
+    @Test
+    void cancel_withReason_persistsRejectionReason() {
+        QuoteRequestResponse quote = submitQuote();
+        QuoteRequestResponse cancelled = quoteService.cancel(quote.id(), "Out of stock");
+        assertThat(cancelled.rejectionReason()).isEqualTo("Out of stock");
     }
 
     @Test
@@ -259,22 +278,22 @@ class QuoteServiceIT extends AbstractIntegrationTest {
     @Test
     void cancelForUser_fromPending_succeeds() {
         QuoteRequestResponse quote = submitQuote();
-        QuoteRequestResponse cancelled = quoteService.cancelForUser(quote.id(), userId);
+        QuoteRequestResponse cancelled = quoteService.cancelForUser(quote.id(), userId, null);
         assertThat(cancelled.status()).isEqualTo(QuoteStatus.CANCELLED);
     }
 
     @Test
     void cancelForUser_wrongUser_throwsForbidden() {
         QuoteRequestResponse quote = submitQuote();
-        assertThatThrownBy(() -> quoteService.cancelForUser(quote.id(), UUID.randomUUID()))
+        assertThatThrownBy(() -> quoteService.cancelForUser(quote.id(), UUID.randomUUID(), null))
             .isInstanceOf(io.k2dv.garden.shared.exception.ForbiddenException.class);
     }
 
     @Test
     void cancelForUser_alreadyCancelled_throwsConflict() {
         QuoteRequestResponse quote = submitQuote();
-        quoteService.cancelForUser(quote.id(), userId);
-        assertThatThrownBy(() -> quoteService.cancelForUser(quote.id(), userId))
+        quoteService.cancelForUser(quote.id(), userId, null);
+        assertThatThrownBy(() -> quoteService.cancelForUser(quote.id(), userId, null))
             .isInstanceOf(ConflictException.class);
     }
 
@@ -476,7 +495,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         sendQuote(quote.id());
         quoteService.accept(quote.id(), memberId);
 
-        QuoteRequestResponse rejected = quoteService.rejectSpend(quote.id(), userId);
+        QuoteRequestResponse rejected = quoteService.rejectSpend(quote.id(), userId, null);
 
         assertThat(rejected.status()).isEqualTo(QuoteStatus.REJECTED);
     }
@@ -491,9 +510,24 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         sendQuote(quote.id());
         quoteService.accept(quote.id(), memberId);
 
-        assertThatThrownBy(() -> quoteService.rejectSpend(quote.id(), memberId))
+        assertThatThrownBy(() -> quoteService.rejectSpend(quote.id(), memberId, null))
             .isInstanceOf(ForbiddenException.class)
             .extracting("errorCode").isEqualTo("INSUFFICIENT_COMPANY_ROLE");
+    }
+
+    @Test
+    void rejectSpend_withReason_persistsRejectionReason() {
+        UUID memberId = createMemberWithLimit(new BigDecimal("100.00"));
+
+        QuoteRequestResponse quote = submitQuoteAs(memberId);
+        quoteService.updateItem(quote.id(), quote.items().get(0).id(),
+            new UpdateQuoteItemRequest(2, new BigDecimal("500.00")));
+        sendQuote(quote.id());
+        quoteService.accept(quote.id(), memberId);
+
+        QuoteRequestResponse rejected = quoteService.rejectSpend(quote.id(), userId, "Budget exceeded");
+        assertThat(rejected.rejectionReason()).isEqualTo("Budget exceeded");
+        assertThat(rejected.status()).isEqualTo(QuoteStatus.REJECTED);
     }
 
     // --- Net terms path ---
@@ -613,7 +647,7 @@ class QuoteServiceIT extends AbstractIntegrationTest {
         sendQuote(quote.id());
         quoteService.accept(quote.id(), buyerId);
 
-        QuoteRequestResponse rejected = quoteService.rejectSpend(quote.id(), managerId);
+        QuoteRequestResponse rejected = quoteService.rejectSpend(quote.id(), managerId, null);
         assertThat(rejected.status()).isEqualTo(QuoteStatus.REJECTED);
     }
 

@@ -14,5 +14,6 @@ public record CompanyMemberResponse(
     String lastName,
     CompanyRole role,
     BigDecimal spendingLimit,
+    UUID departmentId,
     Instant joinedAt
 ) {}

@@ -55,4 +55,17 @@ public class JwtService {
 
         return encoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();
     }
+
+    public String mintImpersonationToken(User user, java.util.UUID adminUserId, java.time.Instant expiresAt) {
+        JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).build();
+        JwtClaimsSet claims = JwtClaimsSet.builder()
+            .subject(user.getId().toString())
+            .issuedAt(Instant.now())
+            .expiresAt(expiresAt)
+            .claim("email", user.getEmail())
+            .claim("permissions", java.util.List.of())
+            .claim("impersonatedBy", adminUserId.toString())
+            .build();
+        return encoder.encode(JwtEncoderParameters.from(header, claims)).getTokenValue();
+    }
 }

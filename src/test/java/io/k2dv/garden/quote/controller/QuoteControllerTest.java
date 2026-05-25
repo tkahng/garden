@@ -42,7 +42,7 @@ class QuoteControllerTest {
     private QuoteRequestResponse stubQuote(UUID id) {
         return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null, null,
             QuoteStatus.PENDING, "123 Main St", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
     }
 
     @Test
@@ -115,8 +115,8 @@ class QuoteControllerTest {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse rejected = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
             null, null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
-        when(quoteService.reject(any(), any())).thenReturn(rejected);
+            null, null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+        when(quoteService.reject(any(), any(), any())).thenReturn(rejected);
 
         mvc.perform(post("/api/v1/quotes/{id}/reject", id))
             .andExpect(status().isOk())
@@ -128,8 +128,8 @@ class QuoteControllerTest {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse cancelled = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
             null, null, QuoteStatus.CANCELLED, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
-        when(quoteService.cancelForUser(any(), any())).thenReturn(cancelled);
+            null, null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+        when(quoteService.cancelForUser(any(), any(), any())).thenReturn(cancelled);
 
         mvc.perform(post("/api/v1/quotes/{id}/cancel", id))
             .andExpect(status().isOk())
@@ -138,7 +138,7 @@ class QuoteControllerTest {
 
     @Test
     void cancelQuote_alreadyAccepted_returns409() throws Exception {
-        when(quoteService.cancelForUser(any(), any()))
+        when(quoteService.cancelForUser(any(), any(), any()))
             .thenThrow(new ConflictException("INVALID_QUOTE_STATUS", "Cannot cancel accepted quote"));
 
         mvc.perform(post("/api/v1/quotes/{id}/cancel", UUID.randomUUID()))
@@ -148,7 +148,7 @@ class QuoteControllerTest {
 
     @Test
     void cancelQuote_wrongOwner_returns403() throws Exception {
-        when(quoteService.cancelForUser(any(), any()))
+        when(quoteService.cancelForUser(any(), any(), any()))
             .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("NOT_YOUR_QUOTE", "Not yours"));
 
         mvc.perform(post("/api/v1/quotes/{id}/cancel", UUID.randomUUID()))
@@ -235,8 +235,8 @@ class QuoteControllerTest {
         UUID id = UUID.randomUUID();
         QuoteRequestResponse rejected = new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(),
             null, null, QuoteStatus.REJECTED, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
-        when(quoteService.rejectSpend(any(), any())).thenReturn(rejected);
+            null, null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+        when(quoteService.rejectSpend(any(), any(), any())).thenReturn(rejected);
 
         mvc.perform(post("/api/v1/quotes/{id}/reject-approval", id))
             .andExpect(status().isOk())
@@ -245,7 +245,7 @@ class QuoteControllerTest {
 
     @Test
     void rejectApproval_notOwner_returns403() throws Exception {
-        when(quoteService.rejectSpend(any(), any()))
+        when(quoteService.rejectSpend(any(), any(), any()))
             .thenThrow(new io.k2dv.garden.shared.exception.ForbiddenException("INSUFFICIENT_COMPANY_ROLE", "Only a company owner can reject spend"));
 
         mvc.perform(post("/api/v1/quotes/{id}/reject-approval", UUID.randomUUID()))

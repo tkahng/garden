@@ -60,7 +60,7 @@ class CompanyControllerTest {
 
     private CompanyMemberResponse stubMember(UUID userId) {
         return new CompanyMemberResponse(UUID.randomUUID(), userId, "user@example.com",
-            "Test", "User", CompanyRole.MEMBER, null, Instant.now());
+            "Test", "User", CompanyRole.MEMBER, null, null, Instant.now());
     }
 
     @Test

@@ -3,6 +3,7 @@ package io.k2dv.garden.cart.controller;
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
+import io.k2dv.garden.cart.dto.BulkAddToCartResponse;
 import io.k2dv.garden.cart.dto.CartResponse;
 import io.k2dv.garden.cart.dto.SetCartCompanyRequest;
 import io.k2dv.garden.cart.dto.UpdateCartItemRequest;
@@ -12,8 +13,10 @@ import io.k2dv.garden.user.model.User;
 import jakarta.validation.Valid;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.UUID;
 
@@ -69,5 +72,12 @@ public class CartController {
   @DeleteMapping("/company")
   public ResponseEntity<ApiResponse<CartResponse>> clearCompany(@CurrentUser User user) {
     return ResponseEntity.ok(ApiResponse.of(cartService.clearCompanyContext(user.getId())));
+  }
+
+  @PostMapping(value = "/import-csv", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+  public ResponseEntity<ApiResponse<BulkAddToCartResponse>> importCsv(
+      @CurrentUser User user,
+      @RequestParam("file") MultipartFile file) {
+    return ResponseEntity.ok(ApiResponse.of(cartService.addItemsFromCsv(user.getId(), file)));
   }
 }

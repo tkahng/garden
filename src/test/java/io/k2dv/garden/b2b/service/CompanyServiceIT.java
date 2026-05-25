@@ -266,4 +266,43 @@ class CompanyServiceIT extends AbstractIntegrationTest {
             new UpdateMemberRoleRequest(CompanyRole.MEMBER)))
             .isInstanceOf(ForbiddenException.class);
     }
+
+    @Test
+    void getSpendingSummary_noOrdersNoInvoices_returnsZeroes() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Summary Co", null, null, null, null, null, null, null, null));
+
+        CompanySpendingSummaryResponse summary = companyService.getSpendingSummary(company.id());
+
+        assertThat(summary.totalOrders()).isZero();
+        assertThat(summary.totalSpend()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(summary.invoiceSummary().pendingCount()).isZero();
+        assertThat(summary.invoiceSummary().overdueCount()).isZero();
+        assertThat(summary.invoiceSummary().paidCount()).isZero();
+        assertThat(summary.memberSpending()).isEmpty();
+    }
+
+    @Test
+    void getSpendingSummary_withMemberLimit_includesMemberSpending() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Spend Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId,
+            new AddMemberRequest(memberEmail, new BigDecimal("1000.00")));
+
+        CompanySpendingSummaryResponse summary = companyService.getSpendingSummary(company.id());
+
+        assertThat(summary.memberSpending()).hasSize(1);
+        CompanySpendingSummaryResponse.MemberSpend spend = summary.memberSpending().get(0);
+        assertThat(spend.userId()).isEqualTo(memberUserId);
+        assertThat(spend.spendingLimit()).isEqualByComparingTo(new BigDecimal("1000.00"));
+        assertThat(spend.totalSpend()).isEqualByComparingTo(BigDecimal.ZERO);
+        assertThat(spend.utilizationPercent()).isZero();
+    }
+
+    @Test
+    void getSpendingSummary_unknownCompany_throwsNotFound() {
+        assertThatThrownBy(() -> companyService.getSpendingSummary(UUID.randomUUID()))
+            .isInstanceOf(io.k2dv.garden.shared.exception.NotFoundException.class);
+    }
 }

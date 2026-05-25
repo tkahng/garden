@@ -43,7 +43,7 @@ class AdminQuoteControllerTest {
     private QuoteRequestResponse stubQuote(UUID id, QuoteStatus status) {
         return new QuoteRequestResponse(id, UUID.randomUUID(), UUID.randomUUID(), null, null,
             status, "123 Main", null, "City", null, "12345", "US",
-            null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
+            null, null, null, null, null, null, null, null, null, List.of(), Instant.now(), Instant.now());
     }
 
     private QuoteItemResponse stubItem(UUID id) {
@@ -170,7 +170,7 @@ class AdminQuoteControllerTest {
     @Test
     void cancelQuote_returns200() throws Exception {
         UUID id = UUID.randomUUID();
-        when(quoteService.cancel(any())).thenReturn(stubQuote(id, QuoteStatus.CANCELLED));
+        when(quoteService.cancel(any(), any())).thenReturn(stubQuote(id, QuoteStatus.CANCELLED));
 
         mvc.perform(post("/api/v1/admin/quotes/{id}/cancel", id))
             .andExpect(status().isOk())
@@ -179,7 +179,7 @@ class AdminQuoteControllerTest {
 
     @Test
     void cancelQuote_alreadyAccepted_returns409() throws Exception {
-        when(quoteService.cancel(any()))
+        when(quoteService.cancel(any(), any()))
             .thenThrow(new ConflictException("INVALID_QUOTE_STATUS", "Cannot cancel"));
 
         mvc.perform(post("/api/v1/admin/quotes/{id}/cancel", UUID.randomUUID()))

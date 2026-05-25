@@ -14,6 +14,10 @@ import java.util.UUID;
 @Setter
 public class QuoteRequest extends BaseEntity {
 
+    @Version
+    @Column(name = "lock_version", nullable = false)
+    private int lockVersion = 0;
+
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
@@ -53,6 +57,9 @@ public class QuoteRequest extends BaseEntity {
 
     @Column(name = "staff_notes")
     private String staffNotes;
+
+    @Column(name = "rejection_reason")
+    private String rejectionReason;
 
     @Column(name = "expires_at")
     private Instant expiresAt;

@@ -1,0 +1,5 @@
+ALTER TABLE checkout.orders
+    ADD COLUMN IF NOT EXISTS lock_version INTEGER NOT NULL DEFAULT 0;
+
+ALTER TABLE quote.quote_requests
+    ADD COLUMN IF NOT EXISTS lock_version INTEGER NOT NULL DEFAULT 0;

@@ -26,4 +26,7 @@ public class CompanyMembership extends BaseEntity {
 
     @Column(name = "spending_limit", precision = 19, scale = 4)
     private BigDecimal spendingLimit;
+
+    @Column(name = "department_id")
+    private UUID departmentId;
 }
