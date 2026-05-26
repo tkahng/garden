@@ -237,7 +237,7 @@ class DevDataSeederIT extends AbstractIntegrationTest {
             WHERE c.name = 'Green Thumb Nurseries LLC'
             ORDER BY qr.status
             """, String.class);
-        assertThat(statuses).containsExactlyInAnyOrder("ACCEPTED", "CANCELLED", "PENDING", "SENT");
+        assertThat(statuses).containsExactlyInAnyOrder("ACCEPTED", "CANCELLED", "EXPIRED", "PENDING", "REJECTED", "SENT");
     }
 
     @Test
@@ -362,14 +362,14 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_productReviewsExist() {
         Long count = jdbc.queryForObject(
             "SELECT COUNT(*) FROM catalog.product_reviews WHERE status = 'PUBLISHED'", Long.class);
-        assertThat(count).isEqualTo(6L);
+        assertThat(count).isEqualTo(8L);
     }
 
     @Test
     void seeder_verifiedPurchaseReviewsPresent() {
         Long count = jdbc.queryForObject(
             "SELECT COUNT(*) FROM catalog.product_reviews WHERE verified_purchase = true", Long.class);
-        assertThat(count).isEqualTo(5L);
+        assertThat(count).isEqualTo(6L);
     }
 
     // ─── Wishlist ─────────────────────────────────────────────────────────────
@@ -586,7 +586,7 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_returnRequestStatusesPresent() {
         var statuses = jdbc.queryForList(
             "SELECT DISTINCT status FROM checkout.return_requests ORDER BY status", String.class);
-        assertThat(statuses).containsExactlyInAnyOrder("PENDING", "COMPLETED");
+        assertThat(statuses).containsExactlyInAnyOrder("PENDING", "COMPLETED", "APPROVED", "REJECTED");
     }
 
     @Test
