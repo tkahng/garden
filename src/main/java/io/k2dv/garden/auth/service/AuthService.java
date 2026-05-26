@@ -19,13 +19,25 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
 public class AuthService {
+
+    private static final Duration PASSWORD_RESET_RATE_LIMIT = Duration.ofMinutes(1);
+
+    /**
+     * Tracks the last password-reset request time per email address.
+     * Guards against enumeration-style abuse. Each entry is a lightweight
+     * Instant; the map is bounded by the number of distinct email addresses
+     * seen (tolerable for a typical deployment).
+     */
+    private final ConcurrentHashMap<String, Instant> passwordResetLastRequest = new ConcurrentHashMap<>();
 
     private final UserRepository userRepo;
     private final IdentityRepository identityRepo;
@@ -129,6 +141,15 @@ public class AuthService {
 
     @Transactional
     public void requestPasswordReset(String email) {
+        // Rate-limit: one request per email per minute.
+        // Always returns 204 regardless — prevents user enumeration.
+        Instant now = Instant.now();
+        Instant last = passwordResetLastRequest.get(email);
+        if (last != null && now.isBefore(last.plus(PASSWORD_RESET_RATE_LIMIT))) {
+            return;
+        }
+        passwordResetLastRequest.put(email, now);
+
         userRepo.findByEmail(email).ifPresent(user -> {
             String token = tokenService.createToken(
                 user.getId(), TokenType.PASSWORD_RESET,
