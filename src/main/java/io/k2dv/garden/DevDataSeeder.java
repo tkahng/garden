@@ -46,9 +46,12 @@ public class DevDataSeeder implements ApplicationRunner {
         }
         log.info("DevDataSeeder: seeding dev data...");
         seedPage();
+        // Quote-only products are seeded first so they receive older created_at timestamps.
+        // The storefront home page queries the four newest products; seeding priced products
+        // last ensures they appear there rather than the null-price quote-only items.
+        List<UUID> quoteOnlyProductIds = seedQuoteOnlyProducts();
         List<UUID> productIds = seedProducts();
         List<UUID> variantProductIds = seedVariantProducts();
-        List<UUID> quoteOnlyProductIds = seedQuoteOnlyProducts();
         List<UUID> collectionIds = seedCollections();
         seedCollectionProducts(collectionIds, productIds, variantProductIds, quoteOnlyProductIds);
         seedImages();

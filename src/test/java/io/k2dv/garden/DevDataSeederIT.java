@@ -102,6 +102,26 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void seeder_frontPageFeaturedProductsAllHavePrices() {
+        // The storefront home page fetches the 4 newest products (ORDER BY created_at DESC LIMIT 4).
+        // Quote-only products have null prices and must not appear in that set.
+        Long nullPriceCount = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM (
+                SELECT pv.price
+                FROM catalog.products p
+                JOIN catalog.product_variants pv ON pv.product_id = p.id
+                WHERE p.status = 'ACTIVE'
+                ORDER BY p.created_at DESC
+                LIMIT 4
+            ) newest
+            WHERE newest.price IS NULL
+            """, Long.class);
+        assertThat(nullPriceCount)
+            .as("none of the 4 newest products shown on the home page should have a null price")
+            .isEqualTo(0L);
+    }
+
+    @Test
     void seeder_allProductsHaveFeaturedImage() {
         Long withoutImage = jdbc.queryForObject(
             "SELECT COUNT(*) FROM catalog.products WHERE featured_image_id IS NULL", Long.class);
