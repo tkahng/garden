@@ -2,7 +2,6 @@ package io.k2dv.garden.auth.handler;
 
 import io.k2dv.garden.auth.model.Identity;
 import io.k2dv.garden.auth.model.IdentityProvider;
-import io.k2dv.garden.auth.model.TokenType;
 import io.k2dv.garden.auth.repository.IdentityRepository;
 import io.k2dv.garden.auth.service.JwtService;
 import io.k2dv.garden.auth.service.TokenService;
@@ -53,8 +52,8 @@ public class OAuth2SuccessHandler extends SimpleUrlAuthenticationSuccessHandler 
 
         List<String> permissions = iamService.loadPermissionsForUser(user.getId());
         String accessToken = jwtService.mintAccessToken(user, permissions);
-        String refreshToken = tokenService.createToken(
-            user.getId(), TokenType.REFRESH_TOKEN, props.getJwt().getRefreshTokenTtl());
+        String refreshToken = tokenService.createRefreshToken(
+            user.getId(), props.getAuth().getRefreshTokenExpiry());
 
         String redirect = props.getFrontendUrl() + "/auth/callback"
             + "#accessToken=" + accessToken

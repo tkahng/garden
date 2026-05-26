@@ -99,22 +99,22 @@ public class AuthService {
 
     @Transactional
     public AuthTokenResponse refresh(RefreshRequest req) {
-        UUID userId = tokenService.validateAndConsume(req.refreshToken(), TokenType.REFRESH_TOKEN);
-        User user = userRepo.findById(userId)
+        TokenService.RotatedRefreshToken rotated =
+            tokenService.rotateRefreshToken(req.refreshToken(), props.getAuth().getRefreshTokenExpiry());
+        User user = userRepo.findById(rotated.userId())
             .orElseThrow(() -> new UnauthorizedException("USER_NOT_FOUND", "User not found"));
         if (user.getStatus() == UserStatus.SUSPENDED) {
             throw new ForbiddenException("ACCOUNT_SUSPENDED", "Your account has been suspended");
         }
-        return mintTokenPair(user);
+        List<String> permissions = iamService.loadPermissionsForUser(user.getId());
+        String accessToken = jwtService.mintAccessToken(user, permissions);
+        return new AuthTokenResponse(accessToken, rotated.newRawToken());
     }
 
     @Transactional
     public void logout(String rawRefreshToken) {
-        try {
-            tokenService.validateAndConsume(rawRefreshToken, TokenType.REFRESH_TOKEN);
-        } catch (UnauthorizedException ignored) {
-            // Idempotent — already consumed or expired
-        }
+        // Revoke the rotating refresh token; no-op if already revoked or not found
+        tokenService.revokeRefreshToken(rawRefreshToken);
     }
 
     @Transactional
@@ -186,8 +186,8 @@ public class AuthService {
     private AuthTokenResponse mintTokenPair(User user) {
         List<String> permissions = iamService.loadPermissionsForUser(user.getId());
         String accessToken = jwtService.mintAccessToken(user, permissions);
-        String refreshToken = tokenService.createToken(
-            user.getId(), TokenType.REFRESH_TOKEN, props.getJwt().getRefreshTokenTtl());
+        String refreshToken = tokenService.createRefreshToken(
+            user.getId(), props.getAuth().getRefreshTokenExpiry());
         return new AuthTokenResponse(accessToken, refreshToken);
     }
 

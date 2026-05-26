@@ -42,12 +42,26 @@ public class AppProperties {
 
         private Duration accessTokenTtl = Duration.ofMinutes(15);
 
+        /** Legacy single-use token TTL (used for the Token table). */
         private Duration refreshTokenTtl = Duration.ofDays(30);
 
         private Duration emailVerificationTtl = Duration.ofHours(24);
 
         private Duration passwordResetTtl = Duration.ofHours(24);
     }
+
+    @Getter
+    @Setter
+    public static class Auth {
+        /**
+         * How long a rotating refresh token remains valid.
+         * Each rotation resets the expiry clock from the issue time of the new token.
+         */
+        private Duration refreshTokenExpiry = Duration.ofDays(7);
+    }
+
+    @Valid
+    private Auth auth = new Auth();
 
     @Getter
     @Setter
