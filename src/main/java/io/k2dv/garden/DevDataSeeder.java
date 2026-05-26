@@ -2328,7 +2328,7 @@ public class DevDataSeeder implements ApplicationRunner {
         UUID canVariantId       = firstVariantOf(productIds.get(5));
         UUID sunflowerVariantId = firstVariantOf(productIds.get(2));
         UUID lavenderVariantId  = firstVariantOf(productIds.get(1));
-        UUID glovesVariantId    = firstVariantOf(variantProductIds.get(0));
+        UUID glovesVariantId    = variantIdBySku("SKU-G-M-GRN");
         UUID terracottaVariantId = firstVariantOf(productIds.get(6));
 
         UUID welcome10Id = jdbc.queryForObject(
