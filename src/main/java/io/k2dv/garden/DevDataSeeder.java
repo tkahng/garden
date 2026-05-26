@@ -968,9 +968,9 @@ public class DevDataSeeder implements ApplicationRunner {
         BigDecimal order1Total = new BigDecimal("16.97");
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+              (id, user_id, status, stripe_session_id,
                total_amount, currency, shipping_address, created_at, updated_at)
-            VALUES (?, ?, 'PAID', 'cs_test_seed_001', 'pi_test_seed_001',
+            VALUES (?, ?, 'PAID', 'cs_test_seed_001',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order1Id, customerUserId, order1Total, shippingAddr,
                 Timestamp.from(Instant.now().minus(10, ChronoUnit.DAYS)),
@@ -985,9 +985,9 @@ public class DevDataSeeder implements ApplicationRunner {
         BigDecimal order2Total = new BigDecimal("37.98");
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+              (id, user_id, status, stripe_session_id,
                total_amount, currency, shipping_address, created_at, updated_at)
-            VALUES (?, ?, 'PAID', 'cs_test_seed_002', 'pi_test_seed_002',
+            VALUES (?, ?, 'PAID', 'cs_test_seed_002',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order2Id, customerUserId, order2Total, shippingAddr,
                 Timestamp.from(Instant.now().minus(5, ChronoUnit.DAYS)),
@@ -1002,9 +1002,9 @@ public class DevDataSeeder implements ApplicationRunner {
         BigDecimal order3Total = new BigDecimal("33.49");
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+              (id, user_id, status, stripe_session_id,
                total_amount, currency, shipping_address, created_at, updated_at)
-            VALUES (?, ?, 'FULFILLED', 'cs_test_seed_003', 'pi_test_seed_003',
+            VALUES (?, ?, 'FULFILLED', 'cs_test_seed_003',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order3Id, customerUserId, order3Total, shippingAddr,
                 Timestamp.from(Instant.now().minus(20, ChronoUnit.DAYS)),
@@ -1068,9 +1068,9 @@ public class DevDataSeeder implements ApplicationRunner {
         BigDecimal order6Total = new BigDecimal("13.47");
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+              (id, user_id, status, stripe_session_id,
                total_amount, currency, shipping_address, created_at, updated_at)
-            VALUES (?, ?, 'REFUNDED', 'cs_test_seed_006', 'pi_test_seed_006',
+            VALUES (?, ?, 'REFUNDED', 'cs_test_seed_006',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order6Id, customerUserId, order6Total, shippingAddr,
                 Timestamp.from(Instant.now().minus(7, ChronoUnit.DAYS)),
@@ -2339,10 +2339,10 @@ public class DevDataSeeder implements ApplicationRunner {
         UUID aliceOrder1Id = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+              (id, user_id, status, stripe_session_id,
                total_amount, currency, shipping_address, discount_id, discount_amount,
                created_at, updated_at)
-            VALUES (?, ?, 'PAID', 'cs_test_seed_alice_001', 'pi_test_seed_alice_001',
+            VALUES (?, ?, 'PAID', 'cs_test_seed_alice_001',
                     40.03, 'usd', ?::jsonb, ?, 4.45, ?, ?)
             """, aliceOrder1Id, aliceId, aliceAddr, welcome10Id,
                 Timestamp.from(Instant.now().minus(8, ChronoUnit.DAYS)),
@@ -2360,9 +2360,9 @@ public class DevDataSeeder implements ApplicationRunner {
         UUID aliceOrder2Id = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+              (id, user_id, status, stripe_session_id,
                total_amount, currency, shipping_address, created_at, updated_at)
-            VALUES (?, ?, 'PARTIALLY_FULFILLED', 'cs_test_seed_alice_002', 'pi_test_seed_alice_002',
+            VALUES (?, ?, 'PARTIALLY_FULFILLED', 'cs_test_seed_alice_002',
                     17.97, 'usd', ?::jsonb, ?, ?)
             """, aliceOrder2Id, aliceId, aliceAddr,
                 Timestamp.from(Instant.now().minus(4, ChronoUnit.DAYS)),
@@ -2389,9 +2389,9 @@ public class DevDataSeeder implements ApplicationRunner {
         UUID bobOrder1Id = UUID.randomUUID();
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+              (id, user_id, status, stripe_session_id,
                total_amount, currency, shipping_address, created_at, updated_at)
-            VALUES (?, ?, 'PAID', 'cs_test_seed_bob_001', 'pi_test_seed_bob_001',
+            VALUES (?, ?, 'PAID', 'cs_test_seed_bob_001',
                     24.98, 'usd', ?::jsonb, ?, ?)
             """, bobOrder1Id, bobId, bobAddr,
                 Timestamp.from(Instant.now().minus(12, ChronoUnit.DAYS)),

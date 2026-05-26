@@ -296,6 +296,20 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void seeder_noPaidOrderHasStripePaymentIntentId() {
+        // adminRefundOrder() calls Stripe.createRefund() when stripe_payment_intent_id is set.
+        // Seeded PAID orders must never carry a fake payment intent — the demo environment
+        // has no valid Stripe credentials and would get a live API error on any refund attempt.
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.orders
+            WHERE stripe_payment_intent_id IS NOT NULL
+            """, Long.class);
+        assertThat(count)
+            .as("No seeded order should have a stripe_payment_intent_id — fake IDs trigger live Stripe API calls")
+            .isEqualTo(0L);
+    }
+
+    @Test
     void seeder_fulfilledOrderHasFulfillmentRecord() {
         Long count = jdbc.queryForObject("""
             SELECT COUNT(*) FROM checkout.fulfillments f
