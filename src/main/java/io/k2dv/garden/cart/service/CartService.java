@@ -276,6 +276,8 @@ public class CartService {
                 c.setUserId(userId);
                 return cartRepo.save(c);
             });
+        // Both the delete and the subsequent saveAll run inside this @Transactional
+        // method, so if saveAll throws, the delete is rolled back automatically.
         cartItemRepo.deleteAll(cartItemRepo.findByCartId(cart.getId()));
 
         // Batch-fetch variants and products to avoid per-item queries
