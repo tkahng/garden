@@ -1032,13 +1032,16 @@ public class DevDataSeeder implements ApplicationRunner {
             """, UUID.randomUUID(), fulfillmentId, item3bId);
 
         // Order 4: PENDING_PAYMENT — lavender x2
+        // stripe_session_id intentionally NULL: represents a customer who started checkout
+        // but never reached the Stripe payment page. Leaving it NULL keeps the payment
+        // reconciliation scheduler from polling Stripe every 10 minutes with a fake ID.
         UUID order4Id = UUID.randomUUID();
         BigDecimal order4Total = new BigDecimal("17.98");
         jdbc.update("""
             INSERT INTO checkout.orders
-              (id, user_id, status, stripe_session_id,
+              (id, user_id, status,
                total_amount, currency, shipping_address, created_at, updated_at)
-            VALUES (?, ?, 'PENDING_PAYMENT', 'cs_test_seed_004',
+            VALUES (?, ?, 'PENDING_PAYMENT',
                     ?, 'usd', ?::jsonb, ?, ?)
             """, order4Id, customerUserId, order4Total, shippingAddr,
                 Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),

@@ -283,6 +283,19 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     }
 
     @Test
+    void seeder_pendingPaymentOrderHasNoStripeSessionId() {
+        // Orders without a stripe_session_id are excluded from the payment reconciliation
+        // scheduler, preventing it from making live Stripe API calls with fake IDs in local dev.
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.orders
+            WHERE status = 'PENDING_PAYMENT' AND stripe_session_id IS NOT NULL
+            """, Long.class);
+        assertThat(count)
+            .as("PENDING_PAYMENT orders should not have a stripe_session_id set in seed data")
+            .isEqualTo(0L);
+    }
+
+    @Test
     void seeder_fulfilledOrderHasFulfillmentRecord() {
         Long count = jdbc.queryForObject("""
             SELECT COUNT(*) FROM checkout.fulfillments f
