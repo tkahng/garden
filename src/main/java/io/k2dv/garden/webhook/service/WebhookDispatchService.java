@@ -115,8 +115,8 @@ public class WebhookDispatchService {
             log.warn("Webhook dispatch network error for delivery {}: {}", delivery.getId(), e.getMessage());
             delivery.setResponseBody(e.getMessage());
             scheduleRetryOrFail(delivery);
-        } catch (RuntimeException e) {
-            // Programming errors (NPE, serialization bugs, etc.) should not be silently retried
+        } catch (Exception e) {
+            // Covers checked exceptions from sign() (crypto) and unexpected runtime errors
             log.error("Webhook dispatch unexpected error for delivery {}; not retrying", delivery.getId(), e);
             delivery.setResponseBody(e.getMessage());
             delivery.setStatus(WebhookDeliveryStatus.FAILED);
