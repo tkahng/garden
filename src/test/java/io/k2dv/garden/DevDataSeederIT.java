@@ -55,9 +55,9 @@ class DevDataSeederIT extends AbstractIntegrationTest {
 
     @Test
     void seeder_populatesExpectedRowCounts() {
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(14L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(24L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(4L);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collection_products", Long.class)).isEqualTo(14L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collection_products", Long.class)).isEqualTo(22L);
         assertThat(jdbc.queryForObject(
             "SELECT COUNT(*) FROM content.pages WHERE handle = 'home'", Long.class)).isEqualTo(1L);
     }
@@ -65,19 +65,23 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     @Test
     void seeder_isIdempotent() throws Exception {
         seeder.run(null); // second run — should not insert duplicates
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(14L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.products", Long.class)).isEqualTo(24L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM catalog.collections", Long.class)).isEqualTo(4L);
-        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM checkout.return_requests", Long.class)).isEqualTo(2L);
+        assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM checkout.return_requests", Long.class)).isEqualTo(4L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM checkout.order_templates", Long.class)).isEqualTo(2L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM marketing.newsletter_subscribers", Long.class)).isEqualTo(5L);
         assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM checkout.gift_card_transactions", Long.class)).isEqualTo(3L);
     }
 
     @Test
-    void seeder_allProductsAreActive() {
-        Long draft = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM catalog.products WHERE status != 'ACTIVE'", Long.class);
-        assertThat(draft).isEqualTo(0L);
+    void seeder_hasDraftAndArchivedProducts() {
+        Long draftCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.products WHERE status = 'DRAFT'", Long.class);
+        assertThat(draftCount).as("exactly 1 DRAFT product").isEqualTo(1L);
+
+        Long archivedCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.products WHERE status = 'ARCHIVED'", Long.class);
+        assertThat(archivedCount).as("exactly 1 ARCHIVED product").isEqualTo(1L);
     }
 
     @Test
@@ -103,21 +107,24 @@ class DevDataSeederIT extends AbstractIntegrationTest {
 
     @Test
     void seeder_frontPageFeaturedProductsAllHavePrices() {
-        // The storefront home page fetches the 4 newest products (ORDER BY created_at DESC LIMIT 4).
+        // The storefront home page fetches the 4 newest ACTIVE products (ORDER BY created_at DESC LIMIT 4).
         // Quote-only products have null prices and must not appear in that set.
+        // The subquery selects the 4 newest products first, then joins variants — avoiding the
+        // ambiguity of LIMIT applied to a (product × variant) cartesian product.
         Long nullPriceCount = jdbc.queryForObject("""
-            SELECT COUNT(*) FROM (
-                SELECT pv.price
+            SELECT COUNT(*)
+            FROM (
+                SELECT p.id
                 FROM catalog.products p
-                JOIN catalog.product_variants pv ON pv.product_id = p.id
                 WHERE p.status = 'ACTIVE'
                 ORDER BY p.created_at DESC
                 LIMIT 4
             ) newest
-            WHERE newest.price IS NULL
+            JOIN catalog.product_variants pv ON pv.product_id = newest.id
+            WHERE pv.price IS NULL
             """, Long.class);
         assertThat(nullPriceCount)
-            .as("none of the 4 newest products shown on the home page should have a null price")
+            .as("none of the 4 newest active products shown on the home page should have a null price")
             .isEqualTo(0L);
     }
 
@@ -132,11 +139,11 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_imageCountsAreCorrect() {
         Long blobCount = jdbc.queryForObject(
             "SELECT COUNT(*) FROM storage.blob_objects", Long.class);
-        assertThat(blobCount).isEqualTo(35L); // 31 product images + 4 collection images
+        assertThat(blobCount).isEqualTo(51L); // 47 product images + 4 collection images
 
         Long imageCount = jdbc.queryForObject(
             "SELECT COUNT(*) FROM catalog.product_images", Long.class);
-        assertThat(imageCount).isEqualTo(31L);
+        assertThat(imageCount).isEqualTo(47L);
     }
 
     @Test
@@ -270,7 +277,9 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_allOrderStatusesPresent() {
         var statuses = jdbc.queryForList(
             "SELECT DISTINCT status FROM checkout.orders ORDER BY status", String.class);
-        assertThat(statuses).contains("PAID", "FULFILLED", "PENDING_PAYMENT", "CANCELLED", "REFUNDED", "INVOICED", "PENDING_APPROVAL");
+        assertThat(statuses).contains(
+            "PAID", "FULFILLED", "PARTIALLY_FULFILLED", "PENDING_PAYMENT",
+            "CANCELLED", "REFUNDED", "INVOICED", "PENDING_APPROVAL");
     }
 
     @Test
@@ -367,7 +376,8 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_allTestUsersExist() {
         for (String email : java.util.List.of(
                 "customer@garden.local", "staff@garden.local", "manager@garden.local",
-                "b2b-manager@garden.local", "b2b-member@garden.local")) {
+                "b2b-manager@garden.local", "b2b-member@garden.local",
+                "alice@garden.local", "bob@garden.local")) {
             Long count = jdbc.queryForObject(
                 "SELECT COUNT(*) FROM auth.users WHERE email = ?", Long.class, email);
             assertThat(count).as("user %s should exist", email).isEqualTo(1L);
@@ -389,9 +399,9 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     @Test
     void seeder_inventoryLevelsPopulated() {
         Long count = jdbc.queryForObject(
-            "SELECT COUNT(*) FROM inventory.inventory_levels WHERE quantity_on_hand = 50", Long.class);
-        // 8 simple products + 8 gloves variants + 9 ceramic planter variants = 25 stockable variants
-        assertThat(count).isGreaterThanOrEqualTo(25L);
+            "SELECT COUNT(*) FROM inventory.inventory_levels WHERE quantity_on_hand >= 0", Long.class);
+        // 8 simple + 8 gloves variants + 9 ceramic planter variants + 8 extended active products = 33+
+        assertThat(count).isGreaterThanOrEqualTo(33L);
     }
 
     @Test
@@ -427,7 +437,7 @@ class DevDataSeederIT extends AbstractIntegrationTest {
         var codes = jdbc.queryForList(
             "SELECT UPPER(code) FROM checkout.discounts WHERE code IS NOT NULL ORDER BY UPPER(code)",
             String.class);
-        assertThat(codes).contains("SAVE5", "SUMMER25", "WELCOME10");
+        assertThat(codes).contains("FREESHIP50", "SAVE5", "SUMMER25", "WELCOME10");
     }
 
     // ─── Gift card transactions ───────────────────────────────────────────────
@@ -639,6 +649,230 @@ class DevDataSeederIT extends AbstractIntegrationTest {
     void seeder_newsletterHasOneUnsubscribed() {
         Long count = jdbc.queryForObject(
             "SELECT COUNT(*) FROM marketing.newsletter_subscribers WHERE unsubscribed_at IS NOT NULL",
+            Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Extended products ────────────────────────────────────────────────────
+
+    @Test
+    void seeder_activeProductsExceedPageSize() {
+        Long activeCount = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.products WHERE status = 'ACTIVE'", Long.class);
+        assertThat(activeCount)
+            .as("active product count should exceed the default page size of 20 to exercise pagination")
+            .isGreaterThan(20L);
+    }
+
+    @Test
+    void seeder_draftProductHasNoCollectionAssignment() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM catalog.collection_products cp
+            JOIN catalog.products p ON p.id = cp.product_id
+            WHERE p.status = 'DRAFT'
+            """, Long.class);
+        assertThat(count).as("DRAFT products should not appear in any collection").isEqualTo(0L);
+    }
+
+    @Test
+    void seeder_archivedProductHasNoCollectionAssignment() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM catalog.collection_products cp
+            JOIN catalog.products p ON p.id = cp.product_id
+            WHERE p.status = 'ARCHIVED'
+            """, Long.class);
+        assertThat(count).as("ARCHIVED products should not appear in any collection").isEqualTo(0L);
+    }
+
+    // ─── Inventory variety ────────────────────────────────────────────────────
+
+    @Test
+    void seeder_hasOutOfStockItem() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM inventory.inventory_levels WHERE quantity_on_hand = 0",
+            Long.class);
+        assertThat(count).as("at least one out-of-stock item should be present").isGreaterThanOrEqualTo(1L);
+    }
+
+    @Test
+    void seeder_hasLowStockItem() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM inventory.inventory_levels WHERE quantity_on_hand BETWEEN 1 AND 5",
+            Long.class);
+        assertThat(count).as("at least one low-stock item should be present").isGreaterThanOrEqualTo(1L);
+    }
+
+    // ─── Inventory transactions ───────────────────────────────────────────────
+
+    @Test
+    void seeder_inventoryTransactionsExist() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM inventory.inventory_transactions", Long.class);
+        assertThat(count).as("inventory transaction history should not be empty").isGreaterThan(0L);
+    }
+
+    @Test
+    void seeder_inventoryTransactionReasonsVaried() {
+        var reasons = jdbc.queryForList(
+            "SELECT DISTINCT reason FROM inventory.inventory_transactions ORDER BY reason",
+            String.class);
+        assertThat(reasons).contains("RECEIVED", "SOLD", "DAMAGED", "ADJUSTED");
+    }
+
+    // ─── Additional customers ─────────────────────────────────────────────────
+
+    @Test
+    void seeder_additionalCustomersExist() {
+        for (String email : java.util.List.of("alice@garden.local", "bob@garden.local")) {
+            Long count = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM auth.users WHERE email = ?", Long.class, email);
+            assertThat(count).as("user %s should exist", email).isEqualTo(1L);
+        }
+    }
+
+    @Test
+    void seeder_ordersHaveMultipleCustomers() {
+        Long distinctCustomers = jdbc.queryForObject(
+            "SELECT COUNT(DISTINCT user_id) FROM checkout.orders", Long.class);
+        assertThat(distinctCustomers)
+            .as("orders should span at least 3 distinct customers")
+            .isGreaterThanOrEqualTo(3L);
+    }
+
+    // ─── Discounted order ─────────────────────────────────────────────────────
+
+    @Test
+    void seeder_discountedOrderExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.orders WHERE discount_id IS NOT NULL AND discount_amount > 0",
+            Long.class);
+        assertThat(count).as("at least one order should have a discount applied").isGreaterThanOrEqualTo(1L);
+    }
+
+    @Test
+    void seeder_discountUsedCountIncremented() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.discounts WHERE used_count > 0", Long.class);
+        assertThat(count).as("at least one discount should have a non-zero used_count").isGreaterThanOrEqualTo(1L);
+    }
+
+    // ─── PARTIALLY_FULFILLED order ────────────────────────────────────────────
+
+    @Test
+    void seeder_partiallyFulfilledOrderExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.orders WHERE status = 'PARTIALLY_FULFILLED'", Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    @Test
+    void seeder_partialFulfillmentHasShippedStatus() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM checkout.fulfillments f
+            JOIN checkout.orders o ON o.id = f.order_id
+            WHERE o.status = 'PARTIALLY_FULFILLED' AND f.status = 'SHIPPED'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Return request status coverage ──────────────────────────────────────
+
+    @Test
+    void seeder_allReturnRequestStatusesPresent() {
+        var statuses = jdbc.queryForList(
+            "SELECT DISTINCT status FROM checkout.return_requests ORDER BY status", String.class);
+        assertThat(statuses).containsExactlyInAnyOrder("PENDING", "COMPLETED", "APPROVED", "REJECTED");
+    }
+
+    @Test
+    void seeder_approvedReturnHasExchangeResolution() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.return_requests WHERE status = 'APPROVED' AND resolution = 'EXCHANGE'",
+            Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Additional quote statuses ────────────────────────────────────────────
+
+    @Test
+    void seeder_allQuoteStatusesPresent() {
+        var statuses = jdbc.queryForList("""
+            SELECT DISTINCT qr.status FROM quote.quote_requests qr
+            JOIN b2b.companies c ON c.id = qr.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            ORDER BY qr.status
+            """, String.class);
+        assertThat(statuses).containsExactlyInAnyOrder(
+            "ACCEPTED", "CANCELLED", "EXPIRED", "PENDING", "REJECTED", "SENT");
+    }
+
+    // ─── Company approval rules ───────────────────────────────────────────────
+
+    @Test
+    void seeder_companyApprovalRuleExists() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_approval_rules r
+            JOIN b2b.companies c ON c.id = r.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+              AND r.threshold_amount = 500.00 AND r.required_role = 'MANAGER'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Departments ──────────────────────────────────────────────────────────
+
+    @Test
+    void seeder_companyHasTwoDepartments() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.departments d
+            JOIN b2b.companies c ON c.id = d.company_id
+            WHERE c.name = 'Green Thumb Nurseries LLC'
+            """, Long.class);
+        assertThat(count).isEqualTo(2L);
+    }
+
+    @Test
+    void seeder_b2bManagerAssignedToDepartment() {
+        Long count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM b2b.company_memberships m
+            JOIN b2b.departments d ON d.id = m.department_id
+            JOIN auth.users u ON u.id = m.user_id
+            WHERE u.email = 'b2b-manager@garden.local' AND d.name = 'Procurement'
+            """, Long.class);
+        assertThat(count).isEqualTo(1L);
+    }
+
+    // ─── Review variety ───────────────────────────────────────────────────────
+
+    @Test
+    void seeder_reviewsHaveLowRatings() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.product_reviews WHERE rating <= 2", Long.class);
+        assertThat(count).as("at least two reviews should have 1- or 2-star ratings").isGreaterThanOrEqualTo(2L);
+    }
+
+    @Test
+    void seeder_hiddenReviewExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM catalog.product_reviews WHERE status = 'HIDDEN'", Long.class);
+        assertThat(count).as("at least one HIDDEN review should exist for moderation testing").isGreaterThanOrEqualTo(1L);
+    }
+
+    @Test
+    void seeder_reviewsHaveMultipleReviewers() {
+        Long distinctReviewers = jdbc.queryForObject(
+            "SELECT COUNT(DISTINCT user_id) FROM catalog.product_reviews", Long.class);
+        assertThat(distinctReviewers)
+            .as("reviews should come from at least 3 distinct users")
+            .isGreaterThanOrEqualTo(3L);
+    }
+
+    // ─── Discount variety ─────────────────────────────────────────────────────
+
+    @Test
+    void seeder_freeShippingDiscountExists() {
+        Long count = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM checkout.discounts WHERE type = 'FREE_SHIPPING' AND is_active = true",
             Long.class);
         assertThat(count).isEqualTo(1L);
     }

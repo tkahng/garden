@@ -73,6 +73,21 @@ public class DevDataSeeder implements ApplicationRunner {
         seedNotificationPreferences(customerUserId);
         seedOrderTemplates(customerUserId, productIds, variantProductIds);
         seedNewsletterSubscribers();
+        // ── Extended variety ───────────────────────────────────────────────────
+        List<UUID> extendedProductIds = seedExtendedProducts();
+        assignExtendedProductsToCollections(collectionIds, extendedProductIds);
+        seedExtendedImages(extendedProductIds);
+        seedExtendedInventory(extendedProductIds);
+        List<UUID> additionalCustomerIds = seedAdditionalCustomers();
+        UUID aliceId = additionalCustomerIds.get(0);
+        UUID bobId   = additionalCustomerIds.get(1);
+        seedAdditionalOrders(aliceId, bobId, productIds, variantProductIds);
+        seedAdditionalReturnRequests(aliceId, bobId);
+        seedAdditionalQuotes();
+        seedCompanyApprovalRules();
+        seedDepartments();
+        seedInventoryTransactions(productIds, variantProductIds);
+        seedAdditionalReviews(aliceId, bobId, productIds, variantProductIds);
         log.info("DevDataSeeder: done.");
     }
 
@@ -1129,7 +1144,16 @@ public class DevDataSeeder implements ApplicationRunner {
             ON CONFLICT DO NOTHING
             """, UUID.randomUUID());
 
-        log.info("DevDataSeeder: seeded discount codes (WELCOME10, SAVE5, SUMMER25) + 1 automatic discount");
+        // FREESHIP50 — free shipping on orders >= $50
+        jdbc.update("""
+            INSERT INTO checkout.discounts
+              (id, code, type, value, min_order_amount, max_uses, starts_at, is_active)
+            VALUES (?, 'FREESHIP50', 'FREE_SHIPPING', 0.00, 50.00, 300,
+                    clock_timestamp(), true)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID());
+
+        log.info("DevDataSeeder: seeded discount codes (WELCOME10, SAVE5, SUMMER25, FREESHIP50) + 1 automatic discount");
     }
 
     // -------------------------------------------------------------------------
@@ -1879,6 +1903,764 @@ public class DevDataSeeder implements ApplicationRunner {
     // -------------------------------------------------------------------------
     // Pending-approval B2B order
     // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // Extended products (pagination + DRAFT/ARCHIVED status coverage)
+    // -------------------------------------------------------------------------
+
+    private List<UUID> seedExtendedProducts() {
+        record ProductSeed(String title, String handle, String vendor, String type,
+                           String sku, BigDecimal price, String status, String description) {}
+
+        var products = List.of(
+            new ProductSeed("Seed Starting Mix", "seed-starting-mix", "Soil Co",
+                "Soil & Amendments", "SKU-009", new BigDecimal("12.99"), "ACTIVE",
+                """
+                ## Seed Starting Mix
+
+                A fine-textured, soilless blend designed for germinating seeds and rooting cuttings.
+                Lightweight and free-draining, with added perlite and vermiculite to keep the root
+                zone aerated and to prevent damping-off fungus.
+
+                ### Highlights
+                - **pH:** 5.5–6.5 (slightly acidic — ideal for most vegetable seedlings)
+                - **Mix:** coco coir, perlite, vermiculite, wetting agent
+                - **Weight:** 5 L bag (approx. 1.5 kg)
+                - **Suitable for:** trays, plug cells, and propagation pots up to 4 inches
+
+                ### Usage
+                Fill seed trays to within ½ inch of the rim. Pre-moisten before sowing.
+                Do not compress — seeds need contact, not pressure.
+                """),
+            new ProductSeed("Raised Bed Soil Mix", "raised-bed-soil-mix", "Soil Co",
+                "Soil & Amendments", "SKU-010", new BigDecimal("24.99"), "ACTIVE",
+                """
+                ## Raised Bed Soil Mix
+
+                Premium blended growing medium for raised beds and large containers.
+                Combines screened topsoil, aged compost, and coarse perlite in a 40:40:20 ratio —
+                the classic "Mel's mix" balance that supports deep root development and excellent drainage.
+
+                ### Highlights
+                - **Bag size:** 20 L
+                - **Nutrients:** balanced N-P-K from compost; feeds plants for the first 6–8 weeks
+                - **Drainage:** perlite content prevents compaction even after repeated watering
+                - **Suitable for:** all vegetables, fruits, and cut flowers in raised beds or large planters
+
+                ### Tip
+                Top-dress with 2–3 cm of fresh compost each spring to replenish nutrients.
+                """),
+            new ProductSeed("Garden Kneeling Pad", "garden-kneeling-pad", "Tools Co",
+                "Tools", "SKU-011", new BigDecimal("16.99"), "ACTIVE",
+                """
+                ## Garden Kneeling Pad
+
+                High-density EVA foam pad, 1.5 inches thick and moisture-resistant.
+                Cushions knees and wrists through hours of planting, weeding, and harvesting.
+                The contoured non-slip base grips the ground on slopes and in damp conditions.
+
+                ### Specifications
+                - **Dimensions:** 18 × 11 × 1.5 inches
+                - **Material:** closed-cell EVA foam (waterproof, easy to rinse clean)
+                - **Colours:** garden green / charcoal grey
+                - **Weight:** 280 g
+
+                ### Best For
+                - Row planting and transplanting
+                - Container potting on patios
+                - Bulb planting in autumn
+                """),
+            new ProductSeed("Plant Labels (Pack of 50)", "plant-labels", "Tools Co",
+                "Tools", "SKU-012", new BigDecimal("4.99"), "ACTIVE",
+                """
+                ## Plant Labels — Pack of 50
+
+                Reusable white plastic labels with a smooth writing surface that works with pencil,
+                permanent marker, or plant label pen. Write it, wipe it off, and reuse season after
+                season without the label degrading.
+
+                ### Specifications
+                - **Dimensions:** 15 cm × 2 cm
+                - **Material:** UV-stabilised polypropylene (won't yellow or crack)
+                - **Pack:** 50 labels
+
+                ### Best For
+                - Seed trays and propagation cells
+                - Pot identification in the greenhouse
+                - Perennial bed markers
+                """),
+            new ProductSeed("Drip Irrigation Starter Kit", "drip-irrigation-starter-kit",
+                "Irrigation Co", "Irrigation", "SKU-013", new BigDecimal("39.99"), "ACTIVE",
+                """
+                ## Drip Irrigation Starter Kit
+
+                A complete entry-level drip system for one raised bed or a cluster of large containers.
+                Delivers water directly to the root zone — conserves up to 50% more water than overhead
+                watering, and keeps foliage dry to reduce disease risk.
+
+                ### Kit Contents
+                - 10 m × 16 mm main distribution hose
+                - 10 × adjustable drip emitters (0.5–8 L/h)
+                - 10 × 3 mm micro-tube adapters
+                - 5 × ground stakes
+                - 1 × hose-tap connector with filter
+                - Assembly guide
+
+                ### Compatible With
+                - Standard ½-inch garden taps
+                - Gravity-fed water butts (min. 1 m head pressure)
+                - Most automatic timer units (not included)
+                """),
+            new ProductSeed("Adjustable Hose Nozzle", "adjustable-hose-nozzle",
+                "Irrigation Co", "Irrigation", "SKU-014", new BigDecimal("14.99"), "ACTIVE",
+                """
+                ## Adjustable Hose Nozzle
+
+                Eight-pattern brass nozzle — twist the front collar to switch between fine mist,
+                flat spray, jet, cone, centre, full, shower, and soaker settings.
+                Comfortable rubber grip and thumb-control flow valve.
+
+                ### Specifications
+                - **Body:** zinc alloy with rubber over-mould
+                - **Connection:** standard ½-inch hose fitting
+                - **Patterns:** 8 (mist, flat, jet, cone, centre, full, shower, soaker)
+                - **Max pressure:** 8 bar
+
+                ### Best For
+                - Watering seedlings (mist setting)
+                - Washing down tools and pots (jet)
+                - General garden watering (shower/flat)
+                """),
+            new ProductSeed("Neem Oil Concentrate", "neem-oil-concentrate",
+                "Garden Co", "Pest Control", "SKU-015", new BigDecimal("11.99"), "ACTIVE",
+                """
+                ## Neem Oil Concentrate
+
+                Cold-pressed neem oil for organic pest and disease control across the whole garden.
+                Effective against aphids, spider mites, whitefly, powdery mildew, and black spot.
+                Safe for beneficial insects when applied correctly (evening spray, avoid open flowers).
+
+                ### Directions
+                Dilute 2 ml per litre of water with a few drops of dish soap as an emulsifier.
+                Apply as a thorough foliar spray in the evening. Repeat every 7–14 days or after rain.
+
+                ### Highlights
+                - **Concentration:** 100% cold-pressed (3000 ppm azadirachtin)
+                - **Bottle:** 250 ml — makes up to 125 L of spray solution
+                - **Certified:** OMRI-listed for organic use
+                - **Safe on:** vegetables, fruit, ornamentals, and houseplants
+                """),
+            new ProductSeed("Organic Tomato Fertiliser", "organic-tomato-fertiliser",
+                "Garden Co", "Fertilisers", "SKU-016", new BigDecimal("16.99"), "ACTIVE",
+                """
+                ## Organic Tomato Fertiliser (1 kg)
+
+                High-potassium slow-release granules for tomatoes, peppers, aubergines, and other
+                fruiting crops. The potassium-forward formula encourages flower set, fruit development,
+                and deep colour — without the leafy overgrowth that high-nitrogen feeds produce.
+
+                ### Analysis (NPK)
+                - **N** 4 — **P** 3 — **K** 8
+
+                ### Usage
+                Apply 50 g per plant at transplanting, then top-dress every 4 weeks.
+                Water in after application.
+
+                ### Highlights
+                - **Certified organic** — safe for edible crops
+                - **Slow release** — feeds for 6–8 weeks per application
+                - **1 kg bag** — sufficient for 20 plants per season
+                """),
+            new ProductSeed("Bamboo Grow Stakes (Pack of 20)", "bamboo-grow-stakes",
+                "Tools Co", "Tools", "SKU-017", new BigDecimal("6.99"), "DRAFT",
+                """
+                ## Bamboo Grow Stakes — Pack of 20
+
+                Natural bamboo stakes for supporting climbing and tall plants — runner beans,
+                sweet peas, dahlias, and tomatoes. Renewable, biodegradable, and stronger per
+                weight than many synthetic alternatives.
+
+                ### Specifications
+                - **Length:** 120 cm (4 ft)
+                - **Diameter:** 10–12 mm
+                - **Pack:** 20 stakes
+                - **Finish:** natural cane — untreated
+
+                > **Note:** This product listing is currently under review and not yet live on the storefront.
+                """),
+            new ProductSeed("Copper Watering Can 5L", "copper-watering-can-5l",
+                "Tools Co", "Tools", "SKU-018", new BigDecimal("49.99"), "ARCHIVED",
+                """
+                ## Copper Watering Can 5L
+
+                Solid copper 5-litre watering can with a long-reach spout and detachable brass rose.
+                Develops a natural verdigris patina over time.
+
+                > **Archived.** This model has been discontinued and replaced by our updated
+                stainless-steel range. Stock is no longer available.
+                """)
+        );
+
+        return products.stream().map(p -> {
+            UUID productId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO catalog.products (id, title, handle, vendor, product_type, description, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (handle) DO NOTHING
+                """, productId, p.title(), p.handle(), p.vendor(), p.type(), p.description(), p.status());
+
+            productId = jdbc.queryForObject(
+                "SELECT id FROM catalog.products WHERE handle = ?", UUID.class, p.handle());
+
+            UUID variantId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO catalog.product_variants
+                  (id, product_id, title, sku, price, fulfillment_type, inventory_policy, lead_time_days)
+                VALUES (?, ?, 'Default', ?, ?, 'IN_STOCK', 'DENY', 0)
+                ON CONFLICT (sku) DO NOTHING
+                """, variantId, productId, p.sku(), p.price());
+
+            // Inventory item (only for ACTIVE products — DRAFT/ARCHIVED skipped later)
+            variantId = jdbc.queryForObject(
+                "SELECT id FROM catalog.product_variants WHERE sku = ?", UUID.class, p.sku());
+            Long itemCount = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inventory.inventory_items WHERE variant_id = ?", Long.class, variantId);
+            if (itemCount == 0) {
+                jdbc.update("""
+                    INSERT INTO inventory.inventory_items (id, variant_id, requires_shipping)
+                    VALUES (?, ?, true)
+                    """, UUID.randomUUID(), variantId);
+            }
+
+            return productId;
+        }).toList();
+    }
+
+    private void assignExtendedProductsToCollections(List<UUID> collectionIds, List<UUID> extendedIds) {
+        // extendedIds[0..7] = ACTIVE products (indices match the list in seedExtendedProducts)
+        // [0] seed-starting-mix, [1] raised-bed-soil-mix, [7] organic-tomato-fertiliser → Seeds & Bulbs
+        // [2] kneeling-pad, [3] plant-labels, [4] drip-irrigation, [5] hose-nozzle, [6] neem-oil → Tools
+        // [8] bamboo-grow-stakes (DRAFT), [9] copper-watering-can (ARCHIVED) — not assigned
+
+        int startPos = jdbc.queryForObject(
+            "SELECT COALESCE(MAX(position), 0) FROM catalog.collection_products WHERE collection_id = ?",
+            Integer.class, collectionIds.get(0));
+        for (UUID pid : List.of(extendedIds.get(0), extendedIds.get(1), extendedIds.get(7))) {
+            startPos++;
+            jdbc.update("""
+                INSERT INTO catalog.collection_products (id, collection_id, product_id, position)
+                VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING
+                """, UUID.randomUUID(), collectionIds.get(0), pid, startPos);
+        }
+
+        startPos = jdbc.queryForObject(
+            "SELECT COALESCE(MAX(position), 0) FROM catalog.collection_products WHERE collection_id = ?",
+            Integer.class, collectionIds.get(1));
+        for (UUID pid : List.of(
+                extendedIds.get(2), extendedIds.get(3), extendedIds.get(4),
+                extendedIds.get(5), extendedIds.get(6))) {
+            startPos++;
+            jdbc.update("""
+                INSERT INTO catalog.collection_products (id, collection_id, product_id, position)
+                VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING
+                """, UUID.randomUUID(), collectionIds.get(1), pid, startPos);
+        }
+    }
+
+    private void seedExtendedImages(List<UUID> extendedProductIds) {
+        Map<String, List<String>> imagesByHandle = new LinkedHashMap<>();
+        imagesByHandle.put("seed-starting-mix",          List.of("Seed starting mix bag", "Seed tray filled with starting mix"));
+        imagesByHandle.put("raised-bed-soil-mix",         List.of("Raised bed soil mix bag", "Raised bed filled with soil mix"));
+        imagesByHandle.put("garden-kneeling-pad",         List.of("Garden kneeling pad in green", "Kneeling pad in use in garden"));
+        imagesByHandle.put("plant-labels",                List.of("Pack of 50 white plant labels"));
+        imagesByHandle.put("drip-irrigation-starter-kit", List.of("Drip irrigation kit components", "Drip emitter close-up"));
+        imagesByHandle.put("adjustable-hose-nozzle",      List.of("Eight-pattern hose nozzle"));
+        imagesByHandle.put("neem-oil-concentrate",        List.of("Neem oil concentrate bottle", "Foliar spray application"));
+        imagesByHandle.put("organic-tomato-fertiliser",   List.of("Organic tomato fertiliser bag", "Fertiliser granules close-up"));
+        imagesByHandle.put("bamboo-grow-stakes",          List.of("Bundle of bamboo grow stakes"));
+        imagesByHandle.put("copper-watering-can-5l",      List.of("Copper watering can 5L"));
+
+        HttpClient http = HttpClient.newBuilder()
+            .followRedirects(HttpClient.Redirect.ALWAYS)
+            .build();
+
+        for (var entry : imagesByHandle.entrySet()) {
+            String handle = entry.getKey();
+            List<String> altTexts = entry.getValue();
+
+            UUID productId = jdbc.queryForObject(
+                "SELECT id FROM catalog.products WHERE handle = ?", UUID.class, handle);
+
+            Long existingImages = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM catalog.product_images WHERE product_id = ?", Long.class, productId);
+            if (existingImages > 0) continue;
+
+            UUID featuredImageId = null;
+            for (int i = 0; i < altTexts.size(); i++) {
+                String filename = handle + "-" + (i + 1) + ".jpg";
+                String objectKey = "products/" + filename;
+                String picsumUrl = "https://picsum.photos/seed/" + handle + "-" + (i + 1) + "/800/600";
+
+                byte[] imageBytes = downloadImage(http, picsumUrl, handle, i);
+                storageService.store(objectKey, "image/jpeg",
+                    new ByteArrayInputStream(imageBytes), imageBytes.length);
+
+                UUID blobId = UUID.randomUUID();
+                jdbc.update("""
+                    INSERT INTO storage.blob_objects (id, key, filename, content_type, size, alt, width, height)
+                    VALUES (?, ?, ?, 'image/jpeg', ?, ?, 800, 600)
+                    """, blobId, objectKey, filename, imageBytes.length, altTexts.get(i));
+
+                UUID imageId = UUID.randomUUID();
+                jdbc.update("""
+                    INSERT INTO catalog.product_images (id, product_id, blob_id, alt_text, position)
+                    VALUES (?, ?, ?, ?, ?)
+                    """, imageId, productId, blobId, altTexts.get(i), i + 1);
+
+                if (i == 0) featuredImageId = imageId;
+            }
+
+            jdbc.update("UPDATE catalog.products SET featured_image_id = ? WHERE id = ?",
+                featuredImageId, productId);
+        }
+        log.info("DevDataSeeder: seeded images for extended products");
+    }
+
+    private void seedExtendedInventory(List<UUID> extendedProductIds) {
+        UUID locationId = jdbc.queryForObject(
+            "SELECT id FROM inventory.locations WHERE name = 'Main Warehouse'", UUID.class);
+
+        // Handles and their target stock levels (null = skip inventory — DRAFT/ARCHIVED)
+        record StockSeed(String sku, Integer qty) {}
+        var stocks = List.of(
+            new StockSeed("SKU-009", 50),   // seed-starting-mix
+            new StockSeed("SKU-010", 50),   // raised-bed-soil-mix
+            new StockSeed("SKU-011", 50),   // kneeling-pad
+            new StockSeed("SKU-012", 50),   // plant-labels
+            new StockSeed("SKU-013", 50),   // drip-irrigation-starter-kit
+            new StockSeed("SKU-014", 0),    // adjustable-hose-nozzle — out of stock
+            new StockSeed("SKU-015", 3),    // neem-oil-concentrate — low stock
+            new StockSeed("SKU-016", 50)    // organic-tomato-fertiliser
+            // SKU-017 (DRAFT) and SKU-018 (ARCHIVED) intentionally excluded
+        );
+
+        for (var s : stocks) {
+            UUID itemId = jdbc.queryForObject("""
+                SELECT ii.id FROM inventory.inventory_items ii
+                JOIN catalog.product_variants pv ON pv.id = ii.variant_id
+                WHERE pv.sku = ?
+                """, UUID.class, s.sku());
+
+            Long existing = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM inventory.inventory_levels WHERE inventory_item_id = ? AND location_id = ?",
+                Long.class, itemId, locationId);
+            if (existing == 0) {
+                jdbc.update("""
+                    INSERT INTO inventory.inventory_levels
+                      (id, inventory_item_id, location_id, quantity_on_hand, quantity_committed)
+                    VALUES (?, ?, ?, ?, 0)
+                    """, UUID.randomUUID(), itemId, locationId, s.qty());
+            }
+        }
+
+        log.info("DevDataSeeder: seeded extended inventory (including out-of-stock and low-stock items)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Additional customers
+    // -------------------------------------------------------------------------
+
+    private List<UUID> seedAdditionalCustomers() {
+        record CustomerSeed(String email, String firstName, String lastName) {}
+        var customers = List.of(
+            new CustomerSeed("alice@garden.local", "Alice", "Buyer"),
+            new CustomerSeed("bob@garden.local",   "Bob",   "Shopper")
+        );
+
+        String hash = passwordEncoder.encode("password");
+        List<UUID> ids = new ArrayList<>();
+
+        for (var c : customers) {
+            UUID userId = UUID.randomUUID();
+            jdbc.update("""
+                INSERT INTO auth.users (id, email, first_name, last_name, status, email_verified_at)
+                VALUES (?, ?, ?, ?, 'ACTIVE', clock_timestamp())
+                ON CONFLICT (email) DO NOTHING
+                """, userId, c.email(), c.firstName(), c.lastName());
+            userId = jdbc.queryForObject(
+                "SELECT id FROM auth.users WHERE email = ?", UUID.class, c.email());
+            jdbc.update("""
+                INSERT INTO auth.identities (id, user_id, provider, account_id, password_hash)
+                VALUES (?, ?, 'CREDENTIALS', ?, ?)
+                ON CONFLICT (provider, account_id) DO NOTHING
+                """, UUID.randomUUID(), userId, userId.toString(), hash);
+            jdbc.update("""
+                INSERT INTO auth.user_roles (user_id, role_id)
+                SELECT ?, r.id FROM auth.roles r WHERE r.name = 'CUSTOMER'
+                ON CONFLICT DO NOTHING
+                """, userId);
+            ids.add(userId);
+        }
+
+        log.info("DevDataSeeder: seeded additional customers (alice, bob) with password='password'");
+        return ids;
+    }
+
+    // -------------------------------------------------------------------------
+    // Additional orders (discounted order, PARTIALLY_FULFILLED)
+    // -------------------------------------------------------------------------
+
+    private void seedAdditionalOrders(UUID aliceId, UUID bobId,
+                                       List<UUID> productIds, List<UUID> variantProductIds) {
+        String aliceAddr = """
+            {"firstName":"Alice","lastName":"Buyer","address1":"42 Fern Lane",
+             "city":"Seattle","province":"WA","zip":"98101","country":"US"}
+            """.strip();
+        String bobAddr = """
+            {"firstName":"Bob","lastName":"Shopper","address1":"7 Oak Street",
+             "city":"Denver","province":"CO","zip":"80201","country":"US"}
+            """.strip();
+
+        UUID trowelVariantId    = firstVariantOf(productIds.get(3));
+        UUID canVariantId       = firstVariantOf(productIds.get(5));
+        UUID sunflowerVariantId = firstVariantOf(productIds.get(2));
+        UUID lavenderVariantId  = firstVariantOf(productIds.get(1));
+        UUID glovesVariantId    = firstVariantOf(variantProductIds.get(0));
+        UUID terracottaVariantId = firstVariantOf(productIds.get(6));
+
+        UUID welcome10Id = jdbc.queryForObject(
+            "SELECT id FROM checkout.discounts WHERE UPPER(code) = 'WELCOME10'", UUID.class);
+
+        // Alice order 1: PAID with WELCOME10 discount applied
+        // trowel x2 ($25.98) + watering-can x1 ($18.50) = $44.48 → -10% ($4.45) → $40.03
+        UUID aliceOrder1Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+               total_amount, currency, shipping_address, discount_id, discount_amount,
+               created_at, updated_at)
+            VALUES (?, ?, 'PAID', 'cs_test_seed_alice_001', 'pi_test_seed_alice_001',
+                    40.03, 'usd', ?::jsonb, ?, 4.45, ?, ?)
+            """, aliceOrder1Id, aliceId, aliceAddr, welcome10Id,
+                Timestamp.from(Instant.now().minus(8, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(8, ChronoUnit.DAYS)));
+        insertOrderItem(aliceOrder1Id, trowelVariantId, 2, new BigDecimal("12.99"));
+        insertOrderItem(aliceOrder1Id, canVariantId,    1, new BigDecimal("18.50"));
+        insertOrderEvent(aliceOrder1Id, "ORDER_PLACED",     "Order placed");
+        insertOrderEvent(aliceOrder1Id, "PAYMENT_RECEIVED", "Payment received via Stripe");
+
+        // Increment used_count on WELCOME10
+        jdbc.update("UPDATE checkout.discounts SET used_count = used_count + 1 WHERE id = ?",
+            welcome10Id);
+
+        // Alice order 2: PARTIALLY_FULFILLED — sunflower x2 + lavender x1, first sunflower shipped
+        UUID aliceOrder2Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+               total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'PARTIALLY_FULFILLED', 'cs_test_seed_alice_002', 'pi_test_seed_alice_002',
+                    17.97, 'usd', ?::jsonb, ?, ?)
+            """, aliceOrder2Id, aliceId, aliceAddr,
+                Timestamp.from(Instant.now().minus(4, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(3, ChronoUnit.DAYS)));
+        UUID aliceSunflowerItemId = insertOrderItem(aliceOrder2Id, sunflowerVariantId, 2, new BigDecimal("4.49"));
+        insertOrderItem(aliceOrder2Id, lavenderVariantId, 1, new BigDecimal("8.99"));
+        insertOrderEvent(aliceOrder2Id, "ORDER_PLACED",     "Order placed");
+        insertOrderEvent(aliceOrder2Id, "PAYMENT_RECEIVED", "Payment received via Stripe");
+        insertOrderEvent(aliceOrder2Id, "FULFILLMENT_CREATED", "Partial shipment — sunflower seeds dispatched");
+
+        UUID partialFulfillmentId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.fulfillments
+              (id, order_id, status, tracking_number, tracking_company, tracking_url)
+            VALUES (?, ?, 'SHIPPED', 'UPSTRK9900001', 'UPS',
+                    'https://www.ups.com/track?tracknum=UPSTRK9900001')
+            """, partialFulfillmentId, aliceOrder2Id);
+        jdbc.update("""
+            INSERT INTO checkout.fulfillment_items (id, fulfillment_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 1)
+            """, UUID.randomUUID(), partialFulfillmentId, aliceSunflowerItemId);
+
+        // Bob order 1: PAID — gloves (M/Forest Green) x1 + terracotta pot x1
+        UUID bobOrder1Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.orders
+              (id, user_id, status, stripe_session_id, stripe_payment_intent_id,
+               total_amount, currency, shipping_address, created_at, updated_at)
+            VALUES (?, ?, 'PAID', 'cs_test_seed_bob_001', 'pi_test_seed_bob_001',
+                    24.98, 'usd', ?::jsonb, ?, ?)
+            """, bobOrder1Id, bobId, bobAddr,
+                Timestamp.from(Instant.now().minus(12, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(12, ChronoUnit.DAYS)));
+        insertOrderItem(bobOrder1Id, glovesVariantId,    1, new BigDecimal("14.99"));
+        insertOrderItem(bobOrder1Id, terracottaVariantId, 1, new BigDecimal("9.99"));
+        insertOrderEvent(bobOrder1Id, "ORDER_PLACED",     "Order placed");
+        insertOrderEvent(bobOrder1Id, "PAYMENT_RECEIVED", "Payment received via Stripe");
+
+        log.info("DevDataSeeder: seeded 3 additional orders (Alice ×2 incl. discounted+partial, Bob ×1)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Additional return requests (APPROVED + REJECTED status coverage)
+    // -------------------------------------------------------------------------
+
+    private void seedAdditionalReturnRequests(UUID aliceId, UUID bobId) {
+        UUID staffId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'staff@garden.local'", UUID.class);
+
+        // APPROVED: Alice returns 1 trowel from her discounted order — wrong item, exchange
+        UUID aliceOrderId = jdbc.queryForObject(
+            "SELECT id FROM checkout.orders WHERE stripe_session_id = 'cs_test_seed_alice_001'",
+            UUID.class);
+        UUID trowelItemId = jdbc.queryForObject("""
+            SELECT oi.id FROM checkout.order_items oi
+            JOIN catalog.product_variants pv ON pv.id = oi.variant_id
+            WHERE oi.order_id = ? AND pv.sku = 'SKU-004'
+            """, UUID.class, aliceOrderId);
+
+        UUID return3Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.return_requests
+              (id, order_id, user_id, reason, notes, resolution, status,
+               staff_notes, resolved_by, resolved_at)
+            VALUES (?, ?, ?, 'WRONG_ITEM',
+                    'Received the 10-inch trowel — I ordered the 12-inch.',
+                    'EXCHANGE', 'APPROVED',
+                    'Correct size dispatched as replacement. No return of original required.',
+                    ?, clock_timestamp() - INTERVAL '5 days')
+            """, return3Id, aliceOrderId, aliceId, staffId);
+        jdbc.update("""
+            INSERT INTO checkout.return_request_items (id, return_request_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 1)
+            """, UUID.randomUUID(), return3Id, trowelItemId);
+
+        // REJECTED: Bob claims gloves are damaged — staff rejects after reviewing dispatch photo
+        UUID bobOrderId = jdbc.queryForObject(
+            "SELECT id FROM checkout.orders WHERE stripe_session_id = 'cs_test_seed_bob_001'",
+            UUID.class);
+        UUID glovesItemId = jdbc.queryForObject("""
+            SELECT oi.id FROM checkout.order_items oi
+            JOIN catalog.product_variants pv ON pv.id = oi.variant_id
+            WHERE oi.order_id = ? AND pv.sku = 'SKU-G-M-GRN'
+            """, UUID.class, bobOrderId);
+
+        UUID return4Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO checkout.return_requests
+              (id, order_id, user_id, reason, notes, resolution, status,
+               staff_notes, resolved_by, resolved_at)
+            VALUES (?, ?, ?, 'DAMAGED',
+                    'Gloves arrived with a torn seam on the right thumb.',
+                    'REFUND', 'REJECTED',
+                    'Dispatch photo shows gloves in perfect condition. Claim declined — signs of use damage.',
+                    ?, clock_timestamp() - INTERVAL '2 days')
+            """, return4Id, bobOrderId, bobId, staffId);
+        jdbc.update("""
+            INSERT INTO checkout.return_request_items (id, return_request_id, order_item_id, quantity)
+            VALUES (?, ?, ?, 1)
+            """, UUID.randomUUID(), return4Id, glovesItemId);
+
+        log.info("DevDataSeeder: seeded 2 additional return requests (APPROVED exchange, REJECTED refund)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Additional B2B quotes (REJECTED + EXPIRED coverage)
+    // -------------------------------------------------------------------------
+
+    private void seedAdditionalQuotes() {
+        UUID companyId = jdbc.queryForObject(
+            "SELECT id FROM b2b.companies WHERE name = 'Green Thumb Nurseries LLC'", UUID.class);
+        UUID ownerUserId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'customer@garden.local'", UUID.class);
+
+        UUID cedarVid = variantIdBySku("SKU-QO-003");
+        UUID fountainVid = variantIdBySku("SKU-QO-004");
+
+        String addr = "456 Bloom Ave"; String city = "Portland";
+        String state = "OR"; String zip = "97202"; String ctry = "US";
+
+        // Quote 5: REJECTED — staff reviewed and declined the price expectation
+        UUID quote5Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               customer_notes, staff_notes, created_at, updated_at)
+            VALUES (?, ?, ?, 'REJECTED', ?, ?, ?, ?, ?,
+                    'Looking for a price closer to $800 for the cedar bed.',
+                    'Requested price is below our cost — quote declined.',
+                    ?, ?)
+            """, quote5Id, ownerUserId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().minus(25, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(23, ChronoUnit.DAYS)));
+        insertQuoteItem(quote5Id, cedarVid,
+            "Custom Cedar Raised Garden Bed — 4×8 ft, standard height", 1, null);
+
+        // Quote 6: EXPIRED — was sent but customer never responded
+        UUID quote6Id = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO quote.quote_requests
+              (id, user_id, company_id, status,
+               delivery_address_line1, delivery_city, delivery_state,
+               delivery_postal_code, delivery_country,
+               staff_notes, expires_at, created_at, updated_at)
+            VALUES (?, ?, ?, 'EXPIRED', ?, ?, ?, ?, ?,
+                    'Tiered-basin fountain, charcoal finish. No response from customer.',
+                    ?, ?, ?)
+            """, quote6Id, ownerUserId, companyId,
+                addr, city, state, zip, ctry,
+                Timestamp.from(Instant.now().minus(1, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(45, ChronoUnit.DAYS)),
+                Timestamp.from(Instant.now().minus(31, ChronoUnit.DAYS)));
+        insertQuoteItem(quote6Id, fountainVid,
+            "Cast Stone Fountain — Tiered Classic, charcoal, 36in basin", 1, null);
+
+        log.info("DevDataSeeder: seeded 2 additional quotes (REJECTED, EXPIRED)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Company approval rules
+    // -------------------------------------------------------------------------
+
+    private void seedCompanyApprovalRules() {
+        UUID companyId = jdbc.queryForObject(
+            "SELECT id FROM b2b.companies WHERE name = 'Green Thumb Nurseries LLC'", UUID.class);
+
+        Long existing = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM b2b.company_approval_rules WHERE company_id = ?", Long.class, companyId);
+        if (existing > 0) return;
+
+        jdbc.update("""
+            INSERT INTO b2b.company_approval_rules
+              (id, company_id, name, threshold_amount, required_role, is_active)
+            VALUES (?, ?, 'Large-order approval', 500.00, 'MANAGER', true)
+            """, UUID.randomUUID(), companyId);
+
+        log.info("DevDataSeeder: seeded company approval rule (orders >= $500 require MANAGER)");
+    }
+
+    // -------------------------------------------------------------------------
+    // Company departments
+    // -------------------------------------------------------------------------
+
+    private void seedDepartments() {
+        UUID companyId = jdbc.queryForObject(
+            "SELECT id FROM b2b.companies WHERE name = 'Green Thumb Nurseries LLC'", UUID.class);
+
+        Long existing = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM b2b.departments WHERE company_id = ?", Long.class, companyId);
+        if (existing > 0) return;
+
+        UUID procurementId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO b2b.departments (id, company_id, name) VALUES (?, ?, 'Procurement')
+            """, procurementId, companyId);
+
+        UUID retailId = UUID.randomUUID();
+        jdbc.update("""
+            INSERT INTO b2b.departments (id, company_id, name) VALUES (?, ?, 'Retail')
+            """, retailId, companyId);
+
+        // Assign B2B manager to Procurement
+        UUID managerId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'b2b-manager@garden.local'", UUID.class);
+        jdbc.update("""
+            UPDATE b2b.company_memberships SET department_id = ?
+            WHERE user_id = ? AND company_id = ?
+            """, procurementId, managerId, companyId);
+
+        log.info("DevDataSeeder: seeded 2 departments (Procurement, Retail); manager assigned to Procurement");
+    }
+
+    // -------------------------------------------------------------------------
+    // Inventory transactions (RECEIVED, SOLD, DAMAGED, ADJUSTED)
+    // -------------------------------------------------------------------------
+
+    private void seedInventoryTransactions(List<UUID> productIds, List<UUID> variantProductIds) {
+        UUID locationId = jdbc.queryForObject(
+            "SELECT id FROM inventory.locations WHERE name = 'Main Warehouse'", UUID.class);
+
+        Long existing = jdbc.queryForObject(
+            "SELECT COUNT(*) FROM inventory.inventory_transactions WHERE location_id = ?",
+            Long.class, locationId);
+        if (existing > 0) return;
+
+        record TxSeed(String sku, int qty, String reason, String note) {}
+        var txns = List.of(
+            // Trowel: initial receive, then units sold
+            new TxSeed("SKU-004", 100, "RECEIVED",  "Initial warehouse receipt"),
+            new TxSeed("SKU-004",  -50, "SOLD",     "Units allocated to fulfilled orders"),
+            // Shears: receive, damaged write-off
+            new TxSeed("SKU-005", 80,  "RECEIVED",  "Initial warehouse receipt"),
+            new TxSeed("SKU-005",  -5,  "DAMAGED",  "Blade defect — batch 22B, scrapped"),
+            // Tomato seeds: receive, cycle-count adjustment
+            new TxSeed("SKU-001", 200, "RECEIVED",  "Spring stock arrival"),
+            new TxSeed("SKU-001",   3,  "ADJUSTED", "Cycle count — found loose units in bin"),
+            // Lavender: receive, sold
+            new TxSeed("SKU-002", 150, "RECEIVED",  "Spring stock arrival"),
+            new TxSeed("SKU-002",  -80, "SOLD",     "Units allocated to fulfilled orders")
+        );
+
+        for (var t : txns) {
+            UUID itemId = jdbc.queryForObject("""
+                SELECT ii.id FROM inventory.inventory_items ii
+                JOIN catalog.product_variants pv ON pv.id = ii.variant_id
+                WHERE pv.sku = ?
+                """, UUID.class, t.sku());
+            jdbc.update("""
+                INSERT INTO inventory.inventory_transactions
+                  (id, inventory_item_id, location_id, quantity, reason, note)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """, UUID.randomUUID(), itemId, locationId, t.qty(), t.reason(), t.note());
+        }
+
+        log.info("DevDataSeeder: seeded {} inventory transactions", txns.size());
+    }
+
+    // -------------------------------------------------------------------------
+    // Additional reviews (1-star, 2-star, HIDDEN)
+    // -------------------------------------------------------------------------
+
+    private void seedAdditionalReviews(UUID aliceId, UUID bobId,
+                                        List<UUID> productIds, List<UUID> variantProductIds) {
+        // Alice: 1-star on sunflower mix (verified purchase — she ordered it)
+        insertExtendedReview(productIds.get(2), aliceId, (short) 1,
+            "Very disappointing germination rate",
+            "Barely a quarter of the seeds germinated despite following the instructions exactly. " +
+            "Expected much better from a premium seed mix.",
+            true, "PUBLISHED");
+
+        // Bob: 2-star on lavender (not a verified purchase)
+        insertExtendedReview(productIds.get(1), bobId, (short) 2,
+            "Slow and sparse germination",
+            "Only about a third of the seeds sprouted after three weeks. " +
+            "Lavender is notoriously slow but this felt below average even for that.",
+            false, "PUBLISHED");
+
+        // B2B member: 1-star on glazed planter — moderated HIDDEN (suspected competitor post)
+        UUID memberId = jdbc.queryForObject(
+            "SELECT id FROM auth.users WHERE email = 'b2b-member@garden.local'", UUID.class);
+        insertExtendedReview(productIds.get(7), memberId, (short) 1,
+            "Terrible quality",
+            "Do not buy — check out [competitor] instead. Much better prices.",
+            false, "HIDDEN");
+
+        log.info("DevDataSeeder: seeded 3 additional reviews (1-star, 2-star, HIDDEN)");
+    }
+
+    private void insertExtendedReview(UUID productId, UUID userId, short rating,
+                                       String title, String body,
+                                       boolean verifiedPurchase, String status) {
+        jdbc.update("""
+            INSERT INTO catalog.product_reviews
+              (id, product_id, user_id, rating, title, body, verified_purchase, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT DO NOTHING
+            """, UUID.randomUUID(), productId, userId, rating, title, body, verifiedPurchase, status);
+    }
 
     private void seedPendingApprovalOrder() {
         UUID memberId = jdbc.queryForObject(
