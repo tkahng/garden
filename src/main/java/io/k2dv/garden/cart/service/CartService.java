@@ -2,6 +2,7 @@ package io.k2dv.garden.cart.service;
 
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.service.PriceListService;
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
 import io.k2dv.garden.cart.dto.BulkAddToCartResponse;
 import io.k2dv.garden.cart.dto.CartItemProductInfo;
@@ -57,6 +58,7 @@ public class CartService {
     private final CompanyMembershipRepository membershipRepo;
     private final OrderRepository orderRepo;
     private final OrderItemRepository orderItemRepo;
+    private final AppProperties appProperties;
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
@@ -395,8 +397,6 @@ public class CartService {
         return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());
     }
 
-    private static final int CSV_MAX_ROWS = 500;
-
     @Transactional
     public BulkAddToCartResponse addItemsFromCsv(UUID userId, MultipartFile file) {
         if (file.isEmpty()) {
@@ -413,9 +413,10 @@ public class CartService {
                 line = line.trim();
                 if (line.isBlank()) continue;
                 if (first) { first = false; if (line.toLowerCase().startsWith("sku")) continue; }
-                if (++rowCount > CSV_MAX_ROWS) {
+                int csvMaxRows = appProperties.getCart().getCsvMaxRows();
+                if (++rowCount > csvMaxRows) {
                     throw new ValidationException("CSV_TOO_LARGE",
-                        "CSV exceeds the maximum of " + CSV_MAX_ROWS + " data rows");
+                        "CSV exceeds the maximum of " + csvMaxRows + " data rows");
                 }
                 String[] parts = line.split(",", -1);
                 if (parts.length < 2) continue;

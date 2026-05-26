@@ -71,4 +71,14 @@ public class AppProperties {
         /** Cumulative spend in USD at or above this threshold triggers the "vip" tag. */
         private BigDecimal vipSpendThreshold = new BigDecimal("500");
     }
+
+    @Getter
+    @Setter
+    public static class Cart {
+        /** Maximum number of data rows accepted in a bulk CSV upload. */
+        private int csvMaxRows = 500;
+    }
+
+    @Valid
+    private Cart cart = new Cart();
 }
