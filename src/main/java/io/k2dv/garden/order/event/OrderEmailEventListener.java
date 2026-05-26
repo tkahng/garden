@@ -23,7 +23,9 @@ public class OrderEmailEventListener {
                 event.to(), event.orderRef(), event.total(),
                 event.currency(), event.itemLines(), event.frontendUrl());
         } catch (Exception e) {
-            log.error("Failed to send order confirmation to {}: {}", event.to(), e.getMessage(), e);
+            // Log at ERROR with full stack so alerting / on-call picks this up
+            log.error("Failed to send order-confirmation email to {} for order {}: {}",
+                event.to(), event.orderRef(), e.getMessage(), e);
         }
     }
 
@@ -33,7 +35,9 @@ public class OrderEmailEventListener {
         try {
             emailService.sendOrderCancelled(event.to(), event.orderRef(), event.frontendUrl());
         } catch (Exception e) {
-            log.error("Failed to send order-cancelled email to {}: {}", event.to(), e.getMessage(), e);
+            // Log at ERROR with full stack so alerting / on-call picks this up
+            log.error("Failed to send order-cancelled email to {} for order {}: {}",
+                event.to(), event.orderRef(), e.getMessage(), e);
         }
     }
 }

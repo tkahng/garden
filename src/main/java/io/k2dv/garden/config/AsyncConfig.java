@@ -5,6 +5,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
+import java.util.concurrent.ThreadPoolExecutor;
 
 @Configuration
 public class AsyncConfig {
@@ -19,6 +20,9 @@ public class AsyncConfig {
         exec.setTaskDecorator(new MdcTaskDecorator());
         exec.setWaitForTasksToCompleteOnShutdown(true);
         exec.setAwaitTerminationSeconds(30);
+        // CallerRunsPolicy: when the queue is full the submitting thread sends the
+        // email itself instead of silently dropping the task.
+        exec.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         exec.initialize();
         return exec;
     }

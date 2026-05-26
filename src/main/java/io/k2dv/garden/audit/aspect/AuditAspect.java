@@ -9,7 +9,7 @@ import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.reflect.MethodSignature;
 import org.springframework.expression.ExpressionParser;
 import org.springframework.expression.spel.standard.SpelExpressionParser;
-import org.springframework.expression.spel.support.StandardEvaluationContext;
+import org.springframework.expression.spel.support.SimpleEvaluationContext;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -61,7 +61,13 @@ public class AuditAspect {
             MethodSignature sig = (MethodSignature) pjp.getSignature();
             Parameter[] params = sig.getMethod().getParameters();
             Object[] args = pjp.getArgs();
-            StandardEvaluationContext ctx = new StandardEvaluationContext();
+            // SimpleEvaluationContext allows only property/field/method access on the
+            // provided root/variables — it intentionally blocks class instantiation,
+            // static access, and reflection, preventing SpEL injection via user-supplied
+            // annotation expressions.
+            SimpleEvaluationContext ctx = SimpleEvaluationContext
+                .forReadOnlyDataBinding()
+                .build();
             for (int i = 0; i < params.length; i++) {
                 ctx.setVariable(params[i].getName(), args[i]);
             }

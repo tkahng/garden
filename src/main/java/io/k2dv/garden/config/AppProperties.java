@@ -42,12 +42,26 @@ public class AppProperties {
 
         private Duration accessTokenTtl = Duration.ofMinutes(15);
 
+        /** Legacy single-use token TTL (used for the Token table). */
         private Duration refreshTokenTtl = Duration.ofDays(30);
 
         private Duration emailVerificationTtl = Duration.ofHours(24);
 
         private Duration passwordResetTtl = Duration.ofHours(24);
     }
+
+    @Getter
+    @Setter
+    public static class Auth {
+        /**
+         * How long a rotating refresh token remains valid.
+         * Each rotation resets the expiry clock from the issue time of the new token.
+         */
+        private Duration refreshTokenExpiry = Duration.ofDays(7);
+    }
+
+    @Valid
+    private Auth auth = new Auth();
 
     @Getter
     @Setter
@@ -71,4 +85,14 @@ public class AppProperties {
         /** Cumulative spend in USD at or above this threshold triggers the "vip" tag. */
         private BigDecimal vipSpendThreshold = new BigDecimal("500");
     }
+
+    @Getter
+    @Setter
+    public static class Cart {
+        /** Maximum number of data rows accepted in a bulk CSV upload. */
+        private int csvMaxRows = 500;
+    }
+
+    @Valid
+    private Cart cart = new Cart();
 }

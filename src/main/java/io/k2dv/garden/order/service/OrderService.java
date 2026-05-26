@@ -518,10 +518,17 @@ public class OrderService {
         return PagedResult.of(orderRepo.findAll(buildSpec(filter), pageable), this::toResponse);
     }
 
+    public record CsvExportResult(String csv, boolean truncated) {}
+
     @Transactional(readOnly = true)
-    public String exportCsv(OrderFilter filter) {
+    public CsvExportResult exportCsv(OrderFilter filter, int maxRows) {
         List<Order> orders = orderRepo.findAll(
             buildSpec(filter), Sort.by(Sort.Direction.DESC, "createdAt"));
+
+        boolean truncated = orders.size() > maxRows;
+        if (truncated) {
+            orders = orders.subList(0, maxRows);
+        }
 
         Set<UUID> orderIds = orders.stream().map(Order::getId).collect(Collectors.toSet());
         Map<UUID, Long> itemCounts = orderIds.isEmpty() ? Map.of() :
@@ -553,7 +560,7 @@ public class OrderService {
               .append(csvCell(o.getShippingCost())).append(',')
               .append(csvCell(o.getShippingAddress())).append('\n');
         }
-        return sb.toString();
+        return new CsvExportResult(sb.toString(), truncated);
     }
 
     private void sendOrderConfirmationEmail(Order order) {

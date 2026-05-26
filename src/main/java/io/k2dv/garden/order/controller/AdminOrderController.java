@@ -57,12 +57,17 @@ public class AdminOrderController {
             @RequestParam(required = false) OrderStatus status,
             @RequestParam(required = false) UUID userId,
             @RequestParam(required = false) Instant from,
-            @RequestParam(required = false) Instant to) {
-        String csv = orderService.exportCsv(new OrderFilter(status, userId, from, to));
-        return ResponseEntity.ok()
+            @RequestParam(required = false) Instant to,
+            @RequestParam(defaultValue = "10000") int maxRows) {
+        OrderService.CsvExportResult result =
+            orderService.exportCsv(new OrderFilter(status, userId, from, to), maxRows);
+        ResponseEntity.BodyBuilder builder = ResponseEntity.ok()
             .contentType(MediaType.parseMediaType("text/csv"))
-            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"orders.csv\"")
-            .body(csv);
+            .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"orders.csv\"");
+        if (result.truncated()) {
+            builder = builder.header("X-Truncated", "true");
+        }
+        return builder.body(result.csv());
     }
 
     @GetMapping("/{id}")

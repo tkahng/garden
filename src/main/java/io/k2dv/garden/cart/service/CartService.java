@@ -2,6 +2,7 @@ package io.k2dv.garden.cart.service;
 
 import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.service.PriceListService;
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
 import io.k2dv.garden.cart.dto.BulkAddToCartResponse;
 import io.k2dv.garden.cart.dto.CartItemProductInfo;
@@ -26,6 +27,7 @@ import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +46,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CartService {
 
     private final CartRepository cartRepo;
@@ -55,6 +58,7 @@ public class CartService {
     private final CompanyMembershipRepository membershipRepo;
     private final OrderRepository orderRepo;
     private final OrderItemRepository orderItemRepo;
+    private final AppProperties appProperties;
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
@@ -101,12 +105,16 @@ public class CartService {
         // Re-price items back to base variant price
         List<CartItem> items = cartItemRepo.findByCartId(cart.getId());
         for (CartItem item : items) {
-            variantRepo.findByIdAndDeletedAtIsNull(item.getVariantId()).ifPresent(variant -> {
-                if (variant.getPrice() != null) {
-                    item.setUnitPrice(variant.getPrice());
-                    cartItemRepo.save(item);
-                }
-            });
+            variantRepo.findByIdAndDeletedAtIsNull(item.getVariantId()).ifPresentOrElse(
+                variant -> {
+                    if (variant.getPrice() != null) {
+                        item.setUnitPrice(variant.getPrice());
+                        cartItemRepo.save(item);
+                    }
+                },
+                () -> log.warn("Variant {} not found while re-pricing cart item {}; item retained at existing price",
+                    item.getVariantId(), item.getId())
+            );
         }
 
         return toResponse(cart);
@@ -270,6 +278,8 @@ public class CartService {
                 c.setUserId(userId);
                 return cartRepo.save(c);
             });
+        // Both the delete and the subsequent saveAll run inside this @Transactional
+        // method, so if saveAll throws, the delete is rolled back automatically.
         cartItemRepo.deleteAll(cartItemRepo.findByCartId(cart.getId()));
 
         // Batch-fetch variants and products to avoid per-item queries
@@ -387,8 +397,6 @@ public class CartService {
         return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());
     }
 
-    private static final int CSV_MAX_ROWS = 500;
-
     @Transactional
     public BulkAddToCartResponse addItemsFromCsv(UUID userId, MultipartFile file) {
         if (file.isEmpty()) {
@@ -405,9 +413,10 @@ public class CartService {
                 line = line.trim();
                 if (line.isBlank()) continue;
                 if (first) { first = false; if (line.toLowerCase().startsWith("sku")) continue; }
-                if (++rowCount > CSV_MAX_ROWS) {
+                int csvMaxRows = appProperties.getCart().getCsvMaxRows();
+                if (++rowCount > csvMaxRows) {
                     throw new ValidationException("CSV_TOO_LARGE",
-                        "CSV exceeds the maximum of " + CSV_MAX_ROWS + " data rows");
+                        "CSV exceeds the maximum of " + csvMaxRows + " data rows");
                 }
                 String[] parts = line.split(",", -1);
                 if (parts.length < 2) continue;
@@ -424,10 +433,17 @@ public class CartService {
                 }
                 try {
                     addItem(userId, new AddCartItemRequest(variant.get().getId(), qty));
-                    var product = productRepo.findByIdAndDeletedAtIsNull(variant.get().getProductId()).orElse(null);
+                    UUID productId = variant.get().getProductId();
+                    String productTitle = productRepo.findByIdAndDeletedAtIsNull(productId)
+                        .map(p -> p.getTitle())
+                        .orElseGet(() -> {
+                            log.warn("Product {} not found for variant {} during CSV import; title omitted",
+                                productId, variant.get().getId());
+                            return null;
+                        });
                     results.add(new BulkAddToCartResponse.LineResult(sku, qty,
                         BulkAddToCartResponse.Status.ADDED, variant.get().getId(),
-                        product != null ? product.getTitle() : null, null));
+                        productTitle, null));
                 } catch (Exception e) {
                     results.add(new BulkAddToCartResponse.LineResult(sku, qty,
                         BulkAddToCartResponse.Status.ERROR, variant.get().getId(), null, e.getMessage()));

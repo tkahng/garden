@@ -107,10 +107,20 @@ public class WebhookDispatchService {
             } else {
                 scheduleRetryOrFail(delivery);
             }
-        } catch (Exception e) {
-            log.warn("Webhook dispatch failed for delivery {}: {}", delivery.getId(), e.getMessage());
+        } catch (java.io.IOException | InterruptedException e) {
+            // Network / IO failures are expected transient errors — schedule a retry
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.warn("Webhook dispatch network error for delivery {}: {}", delivery.getId(), e.getMessage());
             delivery.setResponseBody(e.getMessage());
             scheduleRetryOrFail(delivery);
+        } catch (Exception e) {
+            // Covers checked exceptions from sign() (crypto) and unexpected runtime errors
+            log.error("Webhook dispatch unexpected error for delivery {}; not retrying", delivery.getId(), e);
+            delivery.setResponseBody(e.getMessage());
+            delivery.setStatus(WebhookDeliveryStatus.FAILED);
+            delivery.setNextRetryAt(null);
         }
 
         deliveryRepo.save(delivery);
