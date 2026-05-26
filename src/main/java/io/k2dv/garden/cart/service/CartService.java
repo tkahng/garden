@@ -26,6 +26,7 @@ import io.k2dv.garden.product.service.ProductImageResolver;
 import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -44,6 +45,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class CartService {
 
     private final CartRepository cartRepo;
@@ -101,12 +103,16 @@ public class CartService {
         // Re-price items back to base variant price
         List<CartItem> items = cartItemRepo.findByCartId(cart.getId());
         for (CartItem item : items) {
-            variantRepo.findByIdAndDeletedAtIsNull(item.getVariantId()).ifPresent(variant -> {
-                if (variant.getPrice() != null) {
-                    item.setUnitPrice(variant.getPrice());
-                    cartItemRepo.save(item);
-                }
-            });
+            variantRepo.findByIdAndDeletedAtIsNull(item.getVariantId()).ifPresentOrElse(
+                variant -> {
+                    if (variant.getPrice() != null) {
+                        item.setUnitPrice(variant.getPrice());
+                        cartItemRepo.save(item);
+                    }
+                },
+                () -> log.warn("Variant {} not found while re-pricing cart item {}; item retained at existing price",
+                    item.getVariantId(), item.getId())
+            );
         }
 
         return toResponse(cart);
@@ -424,10 +430,17 @@ public class CartService {
                 }
                 try {
                     addItem(userId, new AddCartItemRequest(variant.get().getId(), qty));
-                    var product = productRepo.findByIdAndDeletedAtIsNull(variant.get().getProductId()).orElse(null);
+                    UUID productId = variant.get().getProductId();
+                    String productTitle = productRepo.findByIdAndDeletedAtIsNull(productId)
+                        .map(p -> p.getTitle())
+                        .orElseGet(() -> {
+                            log.warn("Product {} not found for variant {} during CSV import; title omitted",
+                                productId, variant.get().getId());
+                            return null;
+                        });
                     results.add(new BulkAddToCartResponse.LineResult(sku, qty,
                         BulkAddToCartResponse.Status.ADDED, variant.get().getId(),
-                        product != null ? product.getTitle() : null, null));
+                        productTitle, null));
                 } catch (Exception e) {
                     results.add(new BulkAddToCartResponse.LineResult(sku, qty,
                         BulkAddToCartResponse.Status.ERROR, variant.get().getId(), null, e.getMessage()));
