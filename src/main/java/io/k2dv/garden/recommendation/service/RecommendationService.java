@@ -23,6 +23,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Generates product recommendations based on tag overlap with a source product.
+ * Results are capped at a maximum of 12 items to keep response payloads practical for
+ * carousel widgets on product detail pages.
+ */
 @Service
 @RequiredArgsConstructor
 public class RecommendationService {
@@ -33,6 +38,11 @@ public class RecommendationService {
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
 
+    /**
+     * Finds products that share the most tags with the product identified by {@code handle},
+     * ranked by tag-overlap score. The result set is capped at {@code min(limit, 12)} entries
+     * to prevent oversized payloads regardless of the caller's requested limit.
+     */
     @Transactional(readOnly = true)
     public List<ProductSummaryResponse> findRelated(String handle, int limit) {
         Product source = productRepo.findByHandle(handle)

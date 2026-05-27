@@ -14,6 +14,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Manages the immutable, append-only event timeline attached to each order and fans out
+ * selected event types to registered outbound webhooks. Timeline entries serve as both an
+ * audit trail and the source of truth for the order activity feed shown in the admin console.
+ */
 @Service
 @RequiredArgsConstructor
 public class OrderEventService {
@@ -28,6 +33,10 @@ public class OrderEventService {
         OrderEventType.ORDER_REFUNDED, WebhookEventType.ORDER_REFUNDED
     );
 
+    /**
+     * Appends a new event to the order timeline and, for event types mapped to a webhook,
+     * schedules outbound webhook delivery to all registered endpoints.
+     */
     @Transactional
     public OrderEventResponse emit(UUID orderId, OrderEventType type, String message,
                                    UUID authorId, String authorName, Map<String, Object> metadata) {
@@ -51,6 +60,10 @@ public class OrderEventService {
         return response;
     }
 
+    /**
+     * Returns all timeline events for an order in chronological order, used to render the
+     * activity feed in the order detail view.
+     */
     @Transactional(readOnly = true)
     public List<OrderEventResponse> list(UUID orderId) {
         return eventRepo.findByOrderIdOrderByCreatedAtAsc(orderId)

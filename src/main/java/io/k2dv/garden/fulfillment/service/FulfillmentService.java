@@ -37,6 +37,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Manages the shipment lifecycle for paid orders, supporting partial fulfillment where different
+ * items may ship in separate packages. Automatically re-derives the parent order status
+ * (PAID / PARTIALLY_FULFILLED / FULFILLED) after each change and dispatches shipping and delivery
+ * notifications to customers and outbound webhooks.
+ */
 @Service
 @RequiredArgsConstructor
 public class FulfillmentService {
@@ -52,6 +58,11 @@ public class FulfillmentService {
     private final OutboundWebhookService outboundWebhookService;
     private final NotificationPreferenceService notificationPreferenceService;
 
+    /**
+     * Records a new shipment against a paid order, validating that each requested line-item quantity
+     * does not exceed the ordered quantity minus what has already been fulfilled. Updates the parent
+     * order status after saving.
+     */
     @Transactional
     public FulfillmentResponse create(UUID orderId, CreateFulfillmentRequest req, User admin) {
         Order order = orderRepo.findById(orderId)
@@ -113,6 +124,11 @@ public class FulfillmentService {
         return toResponse(f);
     }
 
+    /**
+     * Advances a fulfillment through its status machine (PENDING → SHIPPED → DELIVERED or CANCELLED)
+     * and patches mutable carrier tracking fields. Transitioning to SHIPPED or DELIVERED triggers
+     * customer notification emails and outbound webhook delivery.
+     */
     @Transactional
     public FulfillmentResponse update(UUID orderId, UUID fulfillmentId, UpdateFulfillmentRequest req) {
         Fulfillment f = fulfillmentRepo.findByIdAndOrderId(fulfillmentId, orderId)
@@ -155,6 +171,9 @@ public class FulfillmentService {
         return toResponse(f);
     }
 
+    /**
+     * Returns all fulfillments for an order with their line items, batch-fetched to avoid per-fulfillment queries.
+     */
     @Transactional(readOnly = true)
     public List<FulfillmentResponse> list(UUID orderId) {
         List<Fulfillment> fulfillments = fulfillmentRepo.findByOrderId(orderId);
@@ -172,6 +191,9 @@ public class FulfillmentService {
             .toList();
     }
 
+    /**
+     * Retrieves a single fulfillment record, verifying it belongs to the specified order.
+     */
     @Transactional(readOnly = true)
     public FulfillmentResponse getById(UUID orderId, UUID fulfillmentId) {
         Fulfillment f = fulfillmentRepo.findByIdAndOrderId(fulfillmentId, orderId)

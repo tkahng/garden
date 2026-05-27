@@ -28,6 +28,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Application-level service for managing uploaded file assets (blobs). Handles file validation,
+ * upload to the configured storage backend, image dimension extraction, folder organisation,
+ * and lifecycle operations such as replacement and deletion. Tracks where each blob is used
+ * (product images, article images) so referential integrity can be inspected before deletion.
+ */
 @Service
 @RequiredArgsConstructor
 public class BlobService {
@@ -42,6 +48,10 @@ public class BlobService {
     private final ProductImageRepository productImageRepo;
     private final ArticleImageRepository articleImageRepo;
 
+    /**
+     * Returns a filterable, sortable paginated list of all uploaded blobs, each decorated with
+     * a resolved public URL. Supports filtering by content type, filename substring, and folder.
+     */
     @Transactional(readOnly = true)
     public PagedResult<BlobResponse> list(BlobFilter filter, Pageable pageable) {
         Sort sort = resolveSort(filter);
@@ -69,12 +79,20 @@ public class BlobService {
             b -> BlobResponse.from(b, storageService.resolveUrl(b.getKey())));
     }
 
+    /**
+     * Fetches a single blob record by ID, resolving its storage key to a public URL.
+     */
     @Transactional(readOnly = true)
     public BlobResponse getById(UUID id) {
         BlobObject blob = findOrThrow(id);
         return BlobResponse.from(blob, storageService.resolveUrl(blob.getKey()));
     }
 
+    /**
+     * Validates, stores, and registers an uploaded file. Image files have their dimensions
+     * extracted at upload time for use in responsive rendering. Enforces the configured maximum
+     * file size and sanitises the filename before writing to storage.
+     */
     @Transactional
     public BlobResponse upload(MultipartFile file) {
         if (file.getSize() > storageProperties.getMaxUploadSize()) {
@@ -112,6 +130,10 @@ public class BlobService {
         return BlobResponse.from(blob, storageService.resolveUrl(key));
     }
 
+    /**
+     * Overwrites the binary content of an existing blob at its current storage key, preserving
+     * all existing references (product images, articles) while updating metadata and dimensions.
+     */
     @Transactional
     public BlobResponse replace(UUID id, MultipartFile file) {
         if (file.getSize() > storageProperties.getMaxUploadSize()) {
@@ -148,11 +170,19 @@ public class BlobService {
         return BlobResponse.from(blob, storageService.resolveUrl(blob.getKey()));
     }
 
+    /**
+     * Returns the distinct list of folder names in use, for populating folder-picker UIs
+     * in the admin media library.
+     */
     @Transactional(readOnly = true)
     public List<String> listFolders() {
         return blobRepo.findDistinctFolders();
     }
 
+    /**
+     * Returns aggregate storage statistics (total blob count and cumulative byte size) for
+     * the admin dashboard.
+     */
     @Transactional(readOnly = true)
     public BlobStatsResponse getStats() {
         Object[] row = blobRepo.findStats();
@@ -161,6 +191,10 @@ public class BlobService {
         return new BlobStatsResponse(count, bytes);
     }
 
+    /**
+     * Bulk-assigns a set of blobs to a named folder, or moves them to the root (unorganised)
+     * when the folder argument is null or blank.
+     */
     @Transactional
     public void moveToFolder(List<UUID> ids, String folder) {
         String target = (folder != null && !folder.isBlank()) ? folder.strip() : null;
@@ -169,6 +203,10 @@ public class BlobService {
         blobRepo.saveAll(blobs);
     }
 
+    /**
+     * Updates the descriptive metadata (alt text, title, folder) of a blob without touching
+     * the stored binary. Used by the admin media library to improve SEO and accessibility.
+     */
     @Transactional
     public BlobResponse updateMetadata(UUID id, UpdateBlobRequest req) {
         BlobObject blob = findOrThrow(id);
@@ -181,6 +219,10 @@ public class BlobService {
         return BlobResponse.from(blob, storageService.resolveUrl(blob.getKey()));
     }
 
+    /**
+     * Permanently removes a blob from both the storage backend and the database. Callers should
+     * check {@link #getUsages} first to avoid breaking product or article images.
+     */
     @Transactional
     public void delete(UUID id) {
         BlobObject blob = findOrThrow(id);
@@ -188,6 +230,10 @@ public class BlobService {
         blobRepo.delete(blob);
     }
 
+    /**
+     * Bulk-deletes a list of blobs, removing each from storage before purging the database
+     * records in a single transaction.
+     */
     @Transactional
     public void bulkDelete(List<UUID> ids) {
         List<BlobObject> blobs = blobRepo.findAllById(ids);
@@ -197,6 +243,10 @@ public class BlobService {
         blobRepo.deleteAll(blobs);
     }
 
+    /**
+     * Enumerates every product image and article image that references this blob, enabling the
+     * admin UI to warn before a destructive delete.
+     */
     @Transactional(readOnly = true)
     public List<BlobUsageResponse> getUsages(UUID id) {
         findOrThrow(id);

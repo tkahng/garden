@@ -23,6 +23,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Maintains the membership relationship between products and AUTOMATED collections by evaluating
+ * tag-based rules. Provides targeted sync operations triggered by product tag changes or
+ * collection rule updates, as well as bulk removal when a product is deleted or archived.
+ */
 @Service
 @RequiredArgsConstructor
 public class CollectionMembershipService {

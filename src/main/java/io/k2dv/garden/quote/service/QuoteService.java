@@ -50,6 +50,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Orchestrates the B2B quote lifecycle from cart-based submission through multi-level approval,
+ * PDF generation, and final conversion to an order. Collaborates with {@link CompanyService},
+ * {@link CompanyApprovalRuleService}, {@link OrderService}, {@link PaymentService}, and
+ * {@link QuotePdfService} to fulfil both the spend-limit approval path and rule-based
+ * multi-level approval flows before routing payment via Stripe or net-terms invoicing.
+ */
 @Service
 @RequiredArgsConstructor
 public class QuoteService {
@@ -76,6 +83,12 @@ public class QuoteService {
     private final StorageProperties storageProperties;
     private final AppProperties appProperties;
 
+    /**
+     * Converts the user's active quote cart into a {@code QuoteRequest}, pre-populating
+     * contract-list prices where a price-list agreement exists for the company. Marks the
+     * cart as SUBMITTED, then sends a confirmation email to the user and a new-request alert
+     * to the configured admin address.
+     */
     @Transactional
     public QuoteRequestResponse submit(UUID userId, SubmitQuoteRequest req) {
         // Verify company exists, then membership
@@ -138,6 +151,7 @@ public class QuoteService {
         return toResponse(quote);
     }
 
+    /** Returns all quotes submitted by the specified user, most recent first. */
     @Transactional(readOnly = true)
     public PagedResult<QuoteRequestResponse> listForUser(UUID userId, Pageable pageable) {
         Specification<QuoteRequest> spec = (root, query, cb) ->
@@ -145,6 +159,10 @@ public class QuoteService {
         return PagedResult.of(quoteRepo.findAll(spec, pageable), this::toResponse);
     }
 
+    /**
+     * Returns quotes awaiting approval that belong to companies where the caller holds an
+     * OWNER or MANAGER role. Used to populate the manager's pending-approvals dashboard.
+     */
     @Transactional(readOnly = true)
     public PagedResult<QuoteRequestResponse> listPendingApprovals(UUID userId, Pageable pageable) {
         List<UUID> ownedCompanyIds = membershipRepo
@@ -160,6 +178,10 @@ public class QuoteService {
         return PagedResult.of(quoteRepo.findAll(spec, pageable), this::toResponse);
     }
 
+    /**
+     * Retrieves a quote for a customer, enforcing that the quote belongs to the requesting
+     * user. Throws {@code ForbiddenException} if the quote is owned by a different user.
+     */
     @Transactional(readOnly = true)
     public QuoteRequestResponse getForUser(UUID quoteId, UUID userId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -170,6 +192,11 @@ public class QuoteService {
         return toResponse(quote);
     }
 
+    /**
+     * Streams the PDF bytes for a customer's own quote. The PDF must have been generated
+     * by a prior {@link #send} call; throws {@code NotFoundException} if the PDF blob has
+     * not yet been attached to the quote.
+     */
     @Transactional(readOnly = true)
     public byte[] downloadPdf(UUID quoteId, UUID userId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -180,6 +207,10 @@ public class QuoteService {
         return fetchPdfBytes(quote);
     }
 
+    /**
+     * Admin-only variant of PDF download; bypasses ownership checks, allowing staff to
+     * retrieve the PDF for any quote regardless of the submitting user.
+     */
     public byte[] downloadPdfAdmin(UUID quoteId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
             .orElseThrow(() -> new NotFoundException("QUOTE_NOT_FOUND", "Quote not found"));
@@ -199,7 +230,13 @@ public class QuoteService {
         }
     }
 
-    // Accept: checks spending limit, then creates Order + Stripe session or routes for approval
+    /**
+     * Customer action: accepts a SENT quote, triggering either multi-level rule-based
+     * approval or spend-limit approval if configured for the company, or finalising the
+     * quote immediately by creating an order and a Stripe checkout session (or an invoice
+     * for net-terms accounts). Quotes that have passed their {@code expiresAt} are
+     * transitioned to EXPIRED and the acceptance is rejected.
+     */
     @Transactional
     public QuoteAcceptResponse accept(UUID quoteId, UUID userId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -245,7 +282,11 @@ public class QuoteService {
         return finalizeAcceptance(quote, items);
     }
 
-    // Approve a specific rule pendency (rule-based multi-level approval)
+    /**
+     * Records an individual approver's approval for a specific rule pendency in the
+     * multi-level approval chain. When all pendencies are resolved, the quote is finalised
+     * and the submitting user is notified by email.
+     */
     @Transactional
     public QuoteAcceptResponse approvePendency(UUID quoteId, UUID approverId, UUID ruleId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -268,7 +309,11 @@ public class QuoteService {
         return new QuoteAcceptResponse(null, null, true, null);
     }
 
-    // Reject a specific rule pendency
+    /**
+     * Rejects a rule-based pendency, immediately moving the quote to REJECTED status and
+     * notifying the submitting user. Once rejected, no further approvals are possible on
+     * this quote.
+     */
     @Transactional
     public QuoteRequestResponse rejectPendency(UUID quoteId, UUID approverId, UUID ruleId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -286,6 +331,10 @@ public class QuoteService {
         return response;
     }
 
+    /**
+     * Returns the current state of all approval pendencies for a quote. Accessible by the
+     * quote submitter or any OWNER/MANAGER of the associated company.
+     */
     @Transactional(readOnly = true)
     public List<QuoteApprovalPendencyResponse> listPendencies(UUID quoteId, UUID userId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -297,8 +346,11 @@ public class QuoteService {
         return approvalRuleService.getPendencies(quoteId);
     }
 
-    // Approve: company OWNER/MANAGER approves a PENDING_APPROVAL quote (legacy spend-limit path).
-    // Only valid when there are no unresolved rule-based pendencies.
+    /**
+     * Legacy spend-limit approval path: a company OWNER or MANAGER approves a quote that
+     * exceeded a user's spending limit. Blocked if any rule-based pendencies are still
+     * unresolved—those must be actioned via {@link #approvePendency} first.
+     */
     @Transactional
     public QuoteAcceptResponse approveSpend(UUID quoteId, UUID approverId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -328,7 +380,11 @@ public class QuoteService {
         return response;
     }
 
-    // Reject approval: company OWNER rejects a PENDING_APPROVAL quote
+    /**
+     * Legacy spend-limit rejection path: a company OWNER or MANAGER rejects a
+     * PENDING_APPROVAL quote and notifies the submitting user. Requires OWNER/MANAGER role
+     * on the associated company.
+     */
     @Transactional
     public QuoteRequestResponse rejectSpend(UUID quoteId, UUID approverId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -379,6 +435,11 @@ public class QuoteService {
             });
     }
 
+    /**
+     * Customer action: rejects a SENT quote on behalf of the submitting user, signalling to
+     * the sales team that the negotiated terms were not acceptable. The admin is notified by
+     * email.
+     */
     @Transactional
     public QuoteRequestResponse reject(UUID quoteId, UUID userId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -402,6 +463,10 @@ public class QuoteService {
 
     // --- Admin operations ---
 
+    /**
+     * Admin endpoint: returns all quotes across all companies and users, filterable by
+     * status, company, assigned staff, or submitting user.
+     */
     @Transactional(readOnly = true)
     public PagedResult<QuoteRequestResponse> listAll(QuoteFilter filter, Pageable pageable) {
         Specification<QuoteRequest> spec = (root, query, cb) -> {
@@ -416,6 +481,7 @@ public class QuoteService {
         return PagedResult.of(quoteRepo.findAll(spec, pageable), this::toResponse);
     }
 
+    /** Admin endpoint: retrieves any quote by ID without ownership or role restrictions. */
     @Transactional(readOnly = true)
     public QuoteRequestResponse getAdmin(UUID quoteId) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -423,6 +489,10 @@ public class QuoteService {
         return toResponse(quote);
     }
 
+    /**
+     * Assigns a staff member to a PENDING or ASSIGNED quote, transitioning it to ASSIGNED
+     * status so it appears in the assignee's work queue.
+     */
     @Transactional
     public QuoteRequestResponse assign(UUID quoteId, AssignStaffRequest req) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -436,6 +506,10 @@ public class QuoteService {
         return toResponse(quoteRepo.save(quote));
     }
 
+    /**
+     * Staff action: updates the quantity and negotiated unit price on a quote line item.
+     * Only permitted on quotes in an editable status (PENDING, ASSIGNED, DRAFT).
+     */
     @Transactional
     public QuoteItemResponse updateItem(UUID quoteId, UUID itemId, UpdateQuoteItemRequest req) {
         requireEditableStatus(quoteId);
@@ -446,6 +520,10 @@ public class QuoteService {
         return toItemResponse(itemRepo.save(item));
     }
 
+    /**
+     * Staff action: appends a new line item (e.g. a custom service charge) to an editable
+     * quote. Only permitted on quotes in an editable status (PENDING, ASSIGNED, DRAFT).
+     */
     @Transactional
     public QuoteItemResponse addItem(UUID quoteId, AddQuoteItemRequest req) {
         requireEditableStatus(quoteId);
@@ -457,6 +535,10 @@ public class QuoteService {
         return toItemResponse(itemRepo.save(item));
     }
 
+    /**
+     * Staff action: removes a line item from an editable quote. Only permitted on quotes in
+     * an editable status (PENDING, ASSIGNED, DRAFT).
+     */
     @Transactional
     public void removeItem(UUID quoteId, UUID itemId) {
         requireEditableStatus(quoteId);
@@ -465,6 +547,10 @@ public class QuoteService {
         itemRepo.delete(item);
     }
 
+    /**
+     * Staff action: records internal notes on a quote visible only to staff; these notes are
+     * not exposed to the customer in the quote PDF or customer-facing API responses.
+     */
     @Transactional
     public QuoteRequestResponse updateNotes(UUID quoteId, UpdateStaffNotesRequest req) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -473,7 +559,13 @@ public class QuoteService {
         return toResponse(quoteRepo.save(quote));
     }
 
-    // Send: generate PDF, email user, transition to SENT
+    /**
+     * Finalises the negotiated quote for customer review: validates that all line items have
+     * a unit price, generates the quote PDF via {@link QuotePdfService}, uploads it to
+     * private blob storage, transitions the quote to SENT, and emails the PDF to the customer
+     * (if email notifications are enabled for them). Only PENDING, ASSIGNED, or DRAFT quotes
+     * may be sent.
+     */
     @Transactional
     public QuoteRequestResponse send(UUID quoteId, SendQuoteRequest req) {
         QuoteRequest quote = loadForSend(quoteId);
@@ -521,6 +613,10 @@ public class QuoteService {
         return toResponse(quote);
     }
 
+    /**
+     * Admin action: cancels any quote that has not yet reached a terminal status (ACCEPTED,
+     * PAID, REJECTED, EXPIRED, or CANCELLED).
+     */
     @Transactional
     public QuoteRequestResponse cancel(UUID quoteId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)
@@ -536,6 +632,11 @@ public class QuoteService {
         return toResponse(quoteRepo.save(quote));
     }
 
+    /**
+     * Customer action: cancels the user's own quote before it reaches a terminal status.
+     * Enforces ownership; throws {@code ForbiddenException} if the quote belongs to a
+     * different user.
+     */
     @Transactional
     public QuoteRequestResponse cancelForUser(UUID quoteId, UUID userId, String reason) {
         QuoteRequest quote = quoteRepo.findById(quoteId)

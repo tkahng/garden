@@ -63,6 +63,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Orchestrates the end-to-end payment flow: resolving shipping rates, creating orders, applying
+ * discounts and gift cards, and routing to Stripe Checkout, net-terms invoicing, or the B2B
+ * approval gate depending on company configuration. Also processes inbound Stripe webhooks with
+ * idempotency guarantees and exposes helpers for quote-based and post-approval checkout sessions.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -89,6 +95,12 @@ public class PaymentService {
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
 
+  /**
+   * Starts the authenticated-user checkout flow: validates the shipping address, applies any
+   * discount or gift-card code, checks B2B credit limits, and then routes to Stripe Checkout,
+   * net-terms invoicing, or the spending-limit approval gate as appropriate. Not transactional
+   * at this level because the Stripe network call must occur outside a database transaction.
+   */
   // NOT @Transactional — Stripe call is outside transaction; each sub-call manages its own tx
   public CheckoutResponse initiateCheckout(UUID userId, String discountCode, String giftCardCode) {
     return initiateCheckout(userId, discountCode, giftCardCode, null, null);
@@ -185,6 +197,11 @@ public class PaymentService {
     }
   }
 
+  /**
+   * Starts the anonymous guest checkout flow using an inline shipping address rather than a saved
+   * profile address. Rejects the request if the email is already registered to an account,
+   * directing the customer to log in instead.
+   */
   public CheckoutResponse initiateGuestCheckout(String guestEmail, GuestAddressRequest guestAddress,
                                                  UUID shippingRateId, String discountCode,
                                                  String giftCardCode, UUID sessionId) {
@@ -244,6 +261,11 @@ public class PaymentService {
     }
   }
 
+  /**
+   * Creates a Stripe Checkout session for a previously accepted quote, using the quote's custom
+   * line-item descriptions and negotiated prices rather than the standard product catalog.
+   * Not transactional at this level because the Stripe network call occurs outside the database transaction.
+   */
   // NOT @Transactional — Stripe call is outside transaction
   public CheckoutResponse createCheckoutSessionFromQuote(Order order, List<QuoteItem> items, QuoteRequest quote) {
     try {
@@ -296,6 +318,10 @@ public class PaymentService {
     }
   }
 
+  /**
+   * Allows a company owner or manager to approve a spending-limit-gated order and resume the
+   * payment flow; routes to net-terms invoicing or a fresh Stripe session as applicable.
+   */
   public CheckoutResponse approveCartOrder(UUID orderId, UUID approverId) {
     Order order = orderService.getById(orderId);
     if (order.getStatus() != OrderStatus.PENDING_APPROVAL) {
@@ -338,6 +364,11 @@ public class PaymentService {
     }
   }
 
+  /**
+   * Verifies the post-checkout return from Stripe by polling the session status and returning
+   * the resolved order state; uses the database order status as a fallback if Stripe is unreachable.
+   * Ownership check is skipped for guest orders (no userId on the order).
+   */
   public CheckoutReturnResponse verifyReturn(String stripeSessionId, UUID userId) {
     Order order = orderService.findByStripeSessionId(stripeSessionId);
 
@@ -361,6 +392,11 @@ public class PaymentService {
     return new CheckoutReturnResponse(order.getId(), status);
   }
 
+  /**
+   * Processes an inbound Stripe webhook event with signature verification and idempotency
+   * protection via a processed-event deduplication table. Handles {@code checkout.session.completed}
+   * (confirms payment, marks paid quotes) and {@code checkout.session.expired} (cancels the order).
+   */
   public void handleWebhook(String payload, String sigHeader, String webhookSecret) {
     Event event;
     try {

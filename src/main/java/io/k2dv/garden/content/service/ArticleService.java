@@ -21,6 +21,11 @@ import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Manages the full lifecycle of blogs and their articles, covering both admin (CRUD + status
+ * transitions) and storefront (published-only) access paths.
+ * Handles handle uniqueness enforcement, tag management, and image URL resolution on read.
+ */
 @Service
 @RequiredArgsConstructor
 public class ArticleService {
@@ -35,6 +40,10 @@ public class ArticleService {
 
     // ---- Blog operations ----
 
+    /**
+     * Creates a new blog, auto-generating a URL handle from the title if none is provided.
+     * Throws {@link io.k2dv.garden.shared.exception.ConflictException} if the handle is already in use.
+     */
     @Transactional
     public AdminBlogResponse createBlog(CreateBlogRequest req) {
         String handle = req.handle() != null ? req.handle() : PageService.slugify(req.title(), "blog");
@@ -58,6 +67,10 @@ public class ArticleService {
         return toBlogAdminResponse(findBlogOrThrow(id));
     }
 
+    /**
+     * Partially updates a blog's title and/or handle, guarding against handle collisions
+     * with other existing blogs.
+     */
     @Transactional
     public AdminBlogResponse updateBlog(UUID id, UpdateBlogRequest req) {
         Blog blog = findBlogOrThrow(id);
@@ -77,6 +90,10 @@ public class ArticleService {
         blogRepo.delete(blog);
     }
 
+    /**
+     * Retrieves a blog by its URL handle for storefront display; throws {@link io.k2dv.garden.shared.exception.NotFoundException}
+     * if no blog with that handle exists.
+     */
     @Transactional(readOnly = true)
     public BlogResponse getBlogByHandle(String handle) {
         Blog blog = blogRepo.findByHandle(handle)
@@ -95,6 +112,10 @@ public class ArticleService {
 
     // ---- Article operations ----
 
+    /**
+     * Creates a new article in draft state under the specified blog, auto-generating a handle
+     * if not provided and creating any new content tags on the fly.
+     */
     @Transactional
     public AdminArticleResponse createArticle(UUID blogId, CreateArticleRequest req) {
         Blog blog = findBlogOrThrow(blogId);
@@ -158,6 +179,11 @@ public class ArticleService {
         return toArticleAdminResponse(article);
     }
 
+    /**
+     * Transitions an article's publication status; when publishing, stamps the current time as
+     * {@code publishedAt} and auto-populates the author name from the user record if not already set.
+     * Un-publishing clears the {@code publishedAt} timestamp.
+     */
     @Transactional
     public AdminArticleResponse changeArticleStatus(UUID blogId, UUID articleId, ArticleStatusRequest req) {
         findBlogOrThrow(blogId);

@@ -51,6 +51,12 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 
+/**
+ * Manages curated product collections used for merchandising (e.g., "Summer Sale",
+ * "Featured"). Supports both manually curated ({@code MANUAL}) and rule-driven
+ * ({@code AUTOMATED}) collection types, with separate read paths for the admin
+ * back-office and the customer-facing storefront.
+ */
 @Service
 @RequiredArgsConstructor
 public class CollectionService {
@@ -66,6 +72,11 @@ public class CollectionService {
 
     // --- Collection CRUD ---
 
+    /**
+     * Creates a new collection in DRAFT status, auto-generating a URL handle from the title
+     * if one is not supplied. Rejects the request if the handle conflicts with an existing
+     * non-deleted collection.
+     */
     @Transactional
     public AdminCollectionResponse create(CreateCollectionRequest req) {
         String handle = req.handle() != null ? req.handle() : slugify(req.title());
@@ -85,11 +96,18 @@ public class CollectionService {
         return toAdminResponse(saved);
     }
 
+    /**
+     * Fetches a collection with its full detail (rules, product count) for the admin view.
+     */
     @Transactional(readOnly = true)
     public AdminCollectionResponse getAdmin(UUID id) {
         return toAdminResponse(findActiveOrThrow(id));
     }
 
+    /**
+     * Returns a paginated admin list of collections with product counts batch-loaded to
+     * prevent N+1 queries per collection.
+     */
     @Transactional(readOnly = true)
     public PagedResult<AdminCollectionSummaryResponse> listAdmin(CollectionFilterRequest filter, Pageable pageable) {
         Page<Collection> page = collectionRepo.findAll(CollectionSpecification.toSpec(filter), pageable);
@@ -105,6 +123,10 @@ public class CollectionService {
                         countMap.getOrDefault(c.getId(), 0L), c.getCreatedAt()));
     }
 
+    /**
+     * Applies partial updates to a collection's display attributes and SEO fields.
+     * Handle changes are validated for uniqueness before being applied.
+     */
     @Transactional
     public AdminCollectionResponse update(UUID id, UpdateCollectionRequest req) {
         Collection c = findActiveOrThrow(id);
@@ -121,6 +143,10 @@ public class CollectionService {
         return toAdminResponse(collectionRepo.save(c));
     }
 
+    /**
+     * Transitions a collection to a new publishing status (e.g., DRAFT to ACTIVE),
+     * controlling its visibility on the storefront.
+     */
     @Transactional
     public AdminCollectionResponse changeStatus(UUID id, CollectionStatusRequest req) {
         Collection c = findActiveOrThrow(id);
@@ -128,6 +154,10 @@ public class CollectionService {
         return toAdminResponse(collectionRepo.save(c));
     }
 
+    /**
+     * Soft-deletes a collection, first purging all product memberships and rules to leave
+     * no orphaned data. The collection record is retained for historical reference.
+     */
     @Transactional
     public void softDelete(UUID id) {
         Collection c = findActiveOrThrow(id);
@@ -139,6 +169,9 @@ public class CollectionService {
 
     // --- Rules ---
 
+    /**
+     * Lists the tag-matching rules that govern automated product membership for a collection.
+     */
     @Transactional(readOnly = true)
     public List<CollectionRuleResponse> listRules(UUID collectionId) {
         findActiveOrThrow(collectionId);
@@ -146,6 +179,10 @@ public class CollectionService {
                 .map(this::toRuleResponse).toList();
     }
 
+    /**
+     * Adds a tag-matching rule to an AUTOMATED collection and immediately triggers a full
+     * membership sync so the collection's product set reflects the new rule set.
+     */
     @Transactional
     public CollectionRuleResponse addRule(UUID collectionId, CreateCollectionRuleRequest req) {
         Collection c = findActiveOrThrow(collectionId);
@@ -162,6 +199,10 @@ public class CollectionService {
         return toRuleResponse(saved);
     }
 
+    /**
+     * Removes a rule from an AUTOMATED collection and re-syncs membership so products that
+     * no longer qualify are immediately removed from the collection.
+     */
     @Transactional
     public void deleteRule(UUID collectionId, UUID ruleId) {
         Collection c = findActiveOrThrow(collectionId);
@@ -177,6 +218,9 @@ public class CollectionService {
 
     // --- Manual product membership ---
 
+    /**
+     * Returns the ordered, paginated list of products in a collection, as seen by the admin.
+     */
     @Transactional(readOnly = true)
     public PagedResult<CollectionProductResponse> listProducts(UUID collectionId, Pageable pageable) {
         findActiveOrThrow(collectionId);
@@ -192,6 +236,10 @@ public class CollectionService {
         });
     }
 
+    /**
+     * Manually adds a product to a MANUAL collection, appending it at the next available
+     * position. Rejects duplicates and disallows direct membership edits on AUTOMATED collections.
+     */
     @Transactional
     public CollectionProductResponse addProduct(UUID collectionId, AddCollectionProductRequest req) {
         Collection c = findActiveOrThrow(collectionId);
@@ -213,6 +261,10 @@ public class CollectionService {
         return toProductResponse(saved, product);
     }
 
+    /**
+     * Manually removes a product from a MANUAL collection. Throws if the product is not
+     * a current member, or if the collection is AUTOMATED (managed by rules, not by hand).
+     */
     @Transactional
     public void removeProduct(UUID collectionId, UUID productId) {
         Collection c = findActiveOrThrow(collectionId);
@@ -225,6 +277,10 @@ public class CollectionService {
         cpRepo.deleteByCollectionIdAndProductId(collectionId, productId);
     }
 
+    /**
+     * Updates the display position of a product within a collection, allowing merchandisers
+     * to control the sort order of the product grid.
+     */
     @Transactional
     public CollectionProductResponse updateProductPosition(UUID collectionId, UUID productId,
                                                            UpdateCollectionProductPositionRequest req) {
@@ -238,6 +294,10 @@ public class CollectionService {
 
     // --- Storefront ---
 
+    /**
+     * Returns a customer-facing paginated list of active collections, each decorated with a
+     * resolved featured image URL.
+     */
     @Transactional(readOnly = true)
     public PagedResult<CollectionSummaryResponse> listStorefront(Pageable pageable) {
         Page<Collection> page = collectionRepo.findAll(CollectionSpecification.storefrontSpec(), pageable);
@@ -247,6 +307,10 @@ public class CollectionService {
                 c.getFeaturedImageId() != null ? imageUrls.get(c.getFeaturedImageId()) : null));
     }
 
+    /**
+     * Fetches a single active collection by its URL handle for the storefront detail page,
+     * including SEO metadata and a resolved featured image URL.
+     */
     @Transactional(readOnly = true)
     public CollectionDetailResponse getByHandle(String handle) {
         Collection c = collectionRepo.findByHandleAndDeletedAtIsNullAndStatus(handle, CollectionStatus.ACTIVE)
@@ -260,6 +324,12 @@ public class CollectionService {
                 c.getMetaTitle(), c.getMetaDescription());
     }
 
+    /**
+     * Returns the paginated, sorted product listing for a collection's storefront page.
+     * Supports multiple sort modes including featured (position-based), date, and title.
+     * B2B catalog restrictions are enforced via {@code companyId}: only products accessible
+     * to the company are returned when a company context is present.
+     */
     @Transactional(readOnly = true)
     public PagedResult<CollectionProductResponse> listProductsStorefront(String handle, int page, int size, String sortBy, String sortDir, UUID companyId) {
         Collection c = collectionRepo.findByHandleAndDeletedAtIsNullAndStatus(handle, CollectionStatus.ACTIVE)

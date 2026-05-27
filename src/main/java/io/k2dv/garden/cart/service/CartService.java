@@ -44,6 +44,12 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.springframework.web.multipart.MultipartFile;
 
+/**
+ * Manages shopping cart lifecycle for both authenticated users and anonymous guests.
+ * Handles item-level price resolution — delegating to {@link PriceListService} for B2B
+ * company price-lists and volume tiers — and exposes internal API methods consumed by
+ * {@code PaymentService} during checkout.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -60,6 +66,9 @@ public class CartService {
     private final OrderItemRepository orderItemRepo;
     private final AppProperties appProperties;
 
+    /**
+     * Returns the user's active cart, creating one on-the-fly if none exists yet.
+     */
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
         Cart cart = cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
@@ -71,6 +80,10 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Associates a B2B company with the user's cart and re-prices all existing items using
+     * the company's price list; rejects the operation if the user is not a member of that company.
+     */
     @Transactional
     public CartResponse setCompanyContext(UUID userId, UUID companyId) {
         if (!membershipRepo.existsByCompanyIdAndUserId(companyId, userId)) {
@@ -96,6 +109,10 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Removes the B2B company association from the cart and reverts item prices to the base
+     * variant retail price; items whose variant no longer exists are retained at their current price.
+     */
     @Transactional
     public CartResponse clearCompanyContext(UUID userId) {
         Cart cart = findActiveCartOrThrow(userId);
@@ -120,6 +137,11 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Adds a product variant to the authenticated user's cart, accumulating quantity if the
+     * item already exists. Enforces minimum-order-quantity and rejects quote-only variants
+     * when no company context is set. Price is resolved from the company price list when applicable.
+     */
     @Transactional
     public CartResponse addItem(UUID userId, AddCartItemRequest req) {
         Cart cart = findActiveCartOrThrow(userId);
@@ -155,6 +177,10 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Sets an exact quantity on an existing cart item, re-pricing it if the cart has a company
+     * context (volume tiers may change the unit price). Enforces minimum-order-quantity.
+     */
     @Transactional
     public CartResponse updateItem(UUID userId, UUID itemId, UpdateCartItemRequest req) {
         Cart cart = findActiveCartOrThrow(userId);
@@ -176,6 +202,9 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Removes a single item from the authenticated user's active cart.
+     */
     @Transactional
     public CartResponse removeItem(UUID userId, UUID itemId) {
         Cart cart = findActiveCartOrThrow(userId);
@@ -185,6 +214,10 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Marks the user's active cart as ABANDONED; typically called on session expiry or explicit
+     * user logout. No-ops if no active cart exists.
+     */
     @Transactional
     public void abandonCart(UUID userId) {
         cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE).ifPresent(cart -> {
@@ -195,6 +228,9 @@ public class CartService {
 
     // --- Guest cart ---
 
+    /**
+     * Returns the guest cart for the given anonymous session token, creating one if none exists.
+     */
     @Transactional
     public CartResponse getOrCreateGuestCart(UUID sessionId) {
         Cart cart = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE)
@@ -206,6 +242,10 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Adds a product variant to an anonymous guest cart; quote-only variants are rejected because
+     * guests cannot carry a company context for price resolution.
+     */
     @Transactional
     public CartResponse addGuestItem(UUID sessionId, AddCartItemRequest req) {
         Cart cart = findActiveGuestCartOrThrow(sessionId);
@@ -233,6 +273,10 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Updates the quantity of an item in a guest cart. No company-based re-pricing is applied
+     * because guest carts always use base retail prices.
+     */
     @Transactional
     public CartResponse updateGuestItem(UUID sessionId, UUID itemId, UpdateCartItemRequest req) {
         Cart cart = findActiveGuestCartOrThrow(sessionId);
@@ -243,6 +287,9 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Removes a single item from an anonymous guest cart.
+     */
     @Transactional
     public CartResponse removeGuestItem(UUID sessionId, UUID itemId) {
         Cart cart = findActiveGuestCartOrThrow(sessionId);
@@ -252,6 +299,9 @@ public class CartService {
         return toResponse(cart);
     }
 
+    /**
+     * Marks the guest cart for the given session as ABANDONED. No-ops if no active cart exists.
+     */
     @Transactional
     public void abandonGuestCart(UUID sessionId) {
         cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE).ifPresent(cart -> {
@@ -260,6 +310,11 @@ public class CartService {
         });
     }
 
+    /**
+     * Replaces the user's current cart contents with items from a previous order, skipping any
+     * variants that have been deleted or whose products are no longer active. Prices are resolved
+     * fresh (company price list if applicable) rather than re-used from the original order.
+     */
     @Transactional
     public CartResponse reorderFromHistory(UUID userId, UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -315,11 +370,19 @@ public class CartService {
 
     // --- Internal API for PaymentService ---
 
+    /**
+     * Returns the raw {@link Cart} entity for an authenticated user, throwing if none is active;
+     * intended for use by {@code PaymentService} prior to checkout.
+     */
     @Transactional(readOnly = true)
     public Cart requireActiveCart(UUID userId) {
         return findActiveCartOrThrow(userId);
     }
 
+    /**
+     * Returns the raw {@link Cart} entity for a guest session, throwing if none is active;
+     * intended for use by {@code PaymentService} prior to guest checkout.
+     */
     @Transactional(readOnly = true)
     public Cart requireActiveGuestCart(UUID sessionId) {
         return findActiveGuestCartOrThrow(sessionId);
@@ -335,11 +398,19 @@ public class CartService {
             .orElseThrow(() -> new ValidationException("NO_ACTIVE_CART", "No active guest cart found"));
     }
 
+    /**
+     * Retrieves all items for the given cart; used by {@code PaymentService} to build the
+     * Stripe line-item list without re-acquiring the cart entity.
+     */
     @Transactional(readOnly = true)
     public List<CartItem> getCartItems(UUID cartId) {
         return cartItemRepo.findByCartId(cartId);
     }
 
+    /**
+     * Transitions the cart to CHECKED_OUT status once the payment flow has successfully started;
+     * called by {@code PaymentService} to prevent duplicate checkouts from the same cart.
+     */
     @Transactional
     public void markCheckedOut(UUID cartId) {
         cartRepo.findById(cartId).ifPresent(cart -> {
@@ -397,6 +468,11 @@ public class CartService {
         return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());
     }
 
+    /**
+     * Parses an uploaded CSV file (columns: SKU, quantity) and adds each valid row to the user's
+     * cart, reporting per-row success, error, or not-found status in the response. Enforces a
+     * configurable maximum row count to prevent abuse.
+     */
     @Transactional
     public BulkAddToCartResponse addItemsFromCsv(UUID userId, MultipartFile file) {
         if (file.isEmpty()) {

@@ -12,6 +12,12 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import java.io.IOException;
 import java.io.InputStream;
 
+/**
+ * AWS S3 (and S3-compatible, e.g., MinIO) implementation of {@link StorageService}. Derives the
+ * default bucket and base URL from {@link io.k2dv.garden.blob.config.StorageProperties}. Note that
+ * the S3 client requires an explicit content-length for all uploads; chunked/streaming uploads
+ * without a known size are not supported.
+ */
 @Service
 @RequiredArgsConstructor
 public class S3StorageService implements StorageService {

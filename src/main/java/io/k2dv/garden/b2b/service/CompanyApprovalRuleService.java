@@ -24,6 +24,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Manages spend-threshold approval rules for B2B companies and drives the quote
+ * approval workflow. When an order or quote exceeds a configured threshold, this
+ * service creates {@code QuoteApprovalPendency} records that must be resolved by
+ * members with the required role before the order can be finalized.
+ */
 @Service
 @RequiredArgsConstructor
 public class CompanyApprovalRuleService {
@@ -32,11 +38,18 @@ public class CompanyApprovalRuleService {
     private final QuoteApprovalPendencyRepository pendencyRepo;
     private final CompanyMembershipRepository membershipRepo;
 
+    /**
+     * Returns all approval rules configured for the given company, both active and inactive.
+     */
     @Transactional(readOnly = true)
     public List<CompanyApprovalRuleResponse> listByCompany(UUID companyId) {
         return ruleRepo.findByCompanyId(companyId).stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Creates a new spend-threshold rule for the company, defaulting to active status.
+     * The rule fires when an order or quote total meets or exceeds the configured threshold.
+     */
     @Transactional
     public CompanyApprovalRuleResponse create(UUID companyId, CompanyApprovalRuleRequest req) {
         CompanyApprovalRule rule = new CompanyApprovalRule();
@@ -48,6 +61,10 @@ public class CompanyApprovalRuleService {
         return toResponse(ruleRepo.save(rule));
     }
 
+    /**
+     * Updates the threshold, required role, or display name of an existing approval rule.
+     * Enforces company ownership of the rule before making changes.
+     */
     @Transactional
     public CompanyApprovalRuleResponse update(UUID ruleId, UUID companyId, CompanyApprovalRuleRequest req) {
         CompanyApprovalRule rule = ruleRepo.findById(ruleId)
@@ -61,6 +78,10 @@ public class CompanyApprovalRuleService {
         return toResponse(ruleRepo.save(rule));
     }
 
+    /**
+     * Permanently deletes an approval rule. Blocked if any quotes have unresolved pendencies
+     * tied to this rule; in that case, deactivating via {@link #toggleActive} is preferred.
+     */
     @Transactional
     public void delete(UUID ruleId, UUID companyId) {
         CompanyApprovalRule rule = ruleRepo.findById(ruleId)
@@ -77,6 +98,10 @@ public class CompanyApprovalRuleService {
         ruleRepo.delete(rule);
     }
 
+    /**
+     * Activates or deactivates an approval rule without deleting it.
+     * Inactive rules are ignored by {@link #evaluateAndCreatePendencies}.
+     */
     @Transactional
     public void toggleActive(UUID ruleId, UUID companyId, boolean active) {
         CompanyApprovalRule rule = ruleRepo.findById(ruleId)
@@ -88,7 +113,12 @@ public class CompanyApprovalRuleService {
         ruleRepo.save(rule);
     }
 
-    /** Returns true and creates pendency records if any rules fire; false if no rules apply. */
+    /**
+     * Evaluates all active rules against the order/quote total and creates a
+     * {@code QuoteApprovalPendency} record for each rule that fires.
+     * Returns {@code true} if at least one rule triggered (approval required), {@code false} if the
+     * order can proceed immediately.
+     */
     @Transactional
     public boolean evaluateAndCreatePendencies(UUID quoteId, UUID companyId, BigDecimal totalAmount) {
         List<CompanyApprovalRule> rules = ruleRepo.findByCompanyIdAndActiveTrue(companyId)

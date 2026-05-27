@@ -18,6 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Handles storefront user profile management: reading and updating personal details
+ * (name, phone) and maintaining the user's address book. Enforces ownership checks
+ * to ensure users can only access and modify their own addresses. Works directly with
+ * {@code UserRepository} and {@code AddressRepository}; no IAM or auth concerns here.
+ */
 @Service
 @RequiredArgsConstructor
 public class AccountService {
@@ -25,11 +31,16 @@ public class AccountService {
     private final UserRepository userRepo;
     private final AddressRepository addressRepo;
 
+    /** Retrieves the profile information for the authenticated user. */
     @Transactional(readOnly = true)
     public AccountResponse getAccount(UUID userId) {
         return AccountResponse.from(findUser(userId));
     }
 
+    /**
+     * Applies a partial update to the user's profile. Only non-null fields in the request
+     * are written, so callers may send only the fields they wish to change (PATCH semantics).
+     */
     @Transactional
     public AccountResponse updateAccount(UUID userId, UpdateAccountRequest req) {
         User user = findUser(userId);
@@ -39,6 +50,7 @@ public class AccountService {
         return AccountResponse.from(userRepo.save(user));
     }
 
+    /** Returns all saved addresses for the user, ordered as stored. */
     @Transactional(readOnly = true)
     public List<AddressResponse> listAddresses(UUID userId) {
         return addressRepo.findByUserId(userId).stream()
@@ -46,6 +58,11 @@ public class AccountService {
             .toList();
     }
 
+    /**
+     * Adds a new address to the user's address book. If the new address is marked as
+     * default, any existing default address is cleared first to maintain the one-default
+     * invariant.
+     */
     @Transactional
     public AddressResponse createAddress(UUID userId, AddressRequest req) {
         findUser(userId); // verify user exists
@@ -58,6 +75,11 @@ public class AccountService {
         return AddressResponse.from(addressRepo.save(address));
     }
 
+    /**
+     * Replaces the fields of an existing address after verifying the address belongs to
+     * the requesting user. Enforces the one-default invariant when the request sets
+     * {@code isDefault} to true.
+     */
     @Transactional
     public AddressResponse updateAddress(UUID userId, UUID addressId, AddressRequest req) {
         Address address = findAddress(addressId);
@@ -69,6 +91,10 @@ public class AccountService {
         return AddressResponse.from(addressRepo.save(address));
     }
 
+    /**
+     * Permanently removes an address from the user's address book after verifying
+     * ownership. Throws {@code ForbiddenException} if the address belongs to a different user.
+     */
     @Transactional
     public void deleteAddress(UUID userId, UUID addressId) {
         Address address = findAddress(addressId);

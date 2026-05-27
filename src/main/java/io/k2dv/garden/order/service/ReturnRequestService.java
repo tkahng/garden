@@ -21,6 +21,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Manages the full lifecycle of customer return requests from submission through staff review
+ * and final completion. When a return is approved with a REFUND resolution the Stripe refund
+ * is issued automatically; all state transitions are recorded on the order's event timeline.
+ */
 @Service
 @RequiredArgsConstructor
 public class ReturnRequestService {
@@ -38,6 +43,11 @@ public class ReturnRequestService {
     private static final Set<ReturnRequestStatus> OPEN_STATUSES =
         Set.of(ReturnRequestStatus.PENDING, ReturnRequestStatus.APPROVED);
 
+    /**
+     * Opens a new return request against a paid or fulfilled order; rejects the request if another
+     * open return already exists or the order is not in a returnable state. Defaults the resolution
+     * to REFUND when the caller does not specify one.
+     */
     @Transactional
     public ReturnRequestResponse submit(UUID orderId, UUID userId, SubmitReturnRequest req) {
         Order order = requireOrder(orderId);
@@ -69,6 +79,10 @@ public class ReturnRequestService {
         return toResponse(rr, savedItems);
     }
 
+    /**
+     * Returns a paginated list of return requests belonging to the authenticated user,
+     * ordered by the repository default (typically newest first).
+     */
     @Transactional(readOnly = true)
     public PagedResult<ReturnRequestResponse> listForUser(UUID userId, Pageable pageable) {
         return PagedResult.of(
@@ -76,6 +90,10 @@ public class ReturnRequestService {
             rr -> toResponse(rr, returnItemRepo.findByReturnRequestId(rr.getId())));
     }
 
+    /**
+     * Returns a paginated, admin-facing list of all return requests; optionally filtered to a
+     * single status to support the staff review queue.
+     */
     @Transactional(readOnly = true)
     public PagedResult<ReturnRequestResponse> listAll(ReturnRequestStatus status, Pageable pageable) {
         var page = status != null
@@ -85,12 +103,20 @@ public class ReturnRequestService {
             rr -> toResponse(rr, returnItemRepo.findByReturnRequestId(rr.getId())));
     }
 
+    /**
+     * Retrieves the full details of a return request by its ID; intended for admin use where
+     * no ownership check is required.
+     */
     @Transactional(readOnly = true)
     public ReturnRequestResponse getById(UUID id) {
         ReturnRequest rr = requireReturnRequest(id);
         return toResponse(rr, returnItemRepo.findByReturnRequestId(id));
     }
 
+    /**
+     * Retrieves a return request for the authenticated customer, throwing a not-found error (rather
+     * than forbidden) if the request belongs to a different user to avoid ID enumeration.
+     */
     @Transactional(readOnly = true)
     public ReturnRequestResponse getByIdForUser(UUID id, UUID userId) {
         ReturnRequest rr = requireReturnRequest(id);
@@ -100,6 +126,10 @@ public class ReturnRequestService {
         return toResponse(rr, returnItemRepo.findByReturnRequestId(id));
     }
 
+    /**
+     * Staff approval of a pending return request; if the resolution is REFUND, the Stripe refund
+     * is issued atomically within the same transaction before the status is updated.
+     */
     @Transactional
     public ReturnRequestResponse approve(UUID id, UUID staffId, ReviewReturnRequest req) {
         ReturnRequest rr = requireReturnRequest(id);
@@ -124,6 +154,10 @@ public class ReturnRequestService {
         return toResponse(rr, returnItemRepo.findByReturnRequestId(id));
     }
 
+    /**
+     * Staff rejection of a pending return request; no Stripe refund is issued. The request moves
+     * to REJECTED and no further transitions are permitted.
+     */
     @Transactional
     public ReturnRequestResponse reject(UUID id, UUID staffId, ReviewReturnRequest req) {
         ReturnRequest rr = requireReturnRequest(id);
@@ -144,6 +178,10 @@ public class ReturnRequestService {
         return toResponse(rr, returnItemRepo.findByReturnRequestId(id));
     }
 
+    /**
+     * Marks an approved return request as physically completed (e.g., item received back in
+     * warehouse); this is the terminal success state for the return workflow.
+     */
     @Transactional
     public ReturnRequestResponse complete(UUID id, UUID staffId) {
         ReturnRequest rr = requireReturnRequest(id);

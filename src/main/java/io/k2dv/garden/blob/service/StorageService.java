@@ -2,6 +2,11 @@ package io.k2dv.garden.blob.service;
 
 import java.io.InputStream;
 
+/**
+ * Abstraction over an object-storage backend (S3, MinIO, or any S3-compatible service).
+ * All operations are keyed by bucket and object key; convenience overloads default to the
+ * application's configured public bucket. {@code S3StorageService} is the production implementation.
+ */
 public interface StorageService {
 
     /**

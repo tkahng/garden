@@ -31,6 +31,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Manages each user's wishlist — a persistent list of product variants the shopper intends
+ * to purchase later. A wishlist is created on demand when the first item is added, so callers
+ * never need to provision one explicitly.
+ */
 @Service
 @RequiredArgsConstructor
 public class WishlistService {
@@ -43,6 +48,10 @@ public class WishlistService {
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
 
+    /**
+     * Returns the user's wishlist including enriched product details (images, price range).
+     * Returns an empty response with a null wishlist ID if the user has not yet added any items.
+     */
     @Transactional(readOnly = true)
     public WishlistResponse getWishlist(UUID userId) {
         Optional<Wishlist> wishlist = wishlistRepo.findByUserId(userId);
@@ -53,6 +62,11 @@ public class WishlistService {
         return new WishlistResponse(wishlist.get().getId(), toItemResponses(items));
     }
 
+    /**
+     * Adds an active product to the user's wishlist, lazily creating the wishlist if necessary.
+     * Throws {@link io.k2dv.garden.shared.exception.ConflictException} if the product is already on the list
+     * and {@link io.k2dv.garden.shared.exception.NotFoundException} if the product does not exist or is inactive.
+     */
     @Transactional
     public WishlistResponse addItem(UUID userId, UUID productId) {
         productRepo.findByIdAndDeletedAtIsNull(productId)
@@ -78,6 +92,10 @@ public class WishlistService {
         return new WishlistResponse(wishlist.getId(), toItemResponses(items));
     }
 
+    /**
+     * Removes a product from the user's wishlist and returns the updated list.
+     * Throws {@link io.k2dv.garden.shared.exception.NotFoundException} if the user has no wishlist.
+     */
     @Transactional
     public WishlistResponse removeItem(UUID userId, UUID productId) {
         Wishlist wishlist = wishlistRepo.findByUserId(userId)

@@ -22,6 +22,12 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Back-office service for managing platform users on behalf of administrators.
+ * Provides filterable user search, profile editing, account suspension, bulk status
+ * operations, tag and metadata management, and role assignment through
+ * {@link io.k2dv.garden.iam.service.IamService}.
+ */
 @Service
 @RequiredArgsConstructor
 public class AdminUserService {
@@ -29,6 +35,10 @@ public class AdminUserService {
     private final UserRepository userRepo;
     private final IamService iamService;
 
+    /**
+     * Returns a paginated, filterable list of users with their current roles, suitable
+     * for the admin user-management table.
+     */
     @Transactional(readOnly = true)
     public PagedResult<AdminUserResponse> listUsers(UserFilter filter, Pageable pageable) {
         Page<User> page = userRepo.findAll(UserSpecification.toSpec(filter), pageable);
@@ -45,6 +55,10 @@ public class AdminUserService {
         return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
     }
 
+    /**
+     * Applies a partial update to a user's profile fields (name, phone, email).
+     * Only non-null fields in the request are written; roles are not affected here.
+     */
     @Transactional
     public AdminUserResponse updateUser(UUID id, UpdateUserRequest req) {
         User user = findUser(id);
@@ -56,6 +70,9 @@ public class AdminUserService {
         return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
     }
 
+    /**
+     * Suspends a user account, preventing authentication until reactivated.
+     */
     @Transactional
     public void suspendUser(UUID id) {
         User user = findUser(id);
@@ -63,6 +80,9 @@ public class AdminUserService {
         userRepo.save(user);
     }
 
+    /**
+     * Restores a suspended user to active status, allowing them to authenticate again.
+     */
     @Transactional
     public void reactivateUser(UUID id) {
         User user = findUser(id);
@@ -70,6 +90,9 @@ public class AdminUserService {
         userRepo.save(user);
     }
 
+    /**
+     * Suspends multiple user accounts in a single transaction, used by the admin bulk-action UI.
+     */
     @Transactional
     public void bulkSuspend(List<UUID> ids) {
         List<User> users = userRepo.findAllById(ids);
@@ -77,6 +100,9 @@ public class AdminUserService {
         userRepo.saveAll(users);
     }
 
+    /**
+     * Reactivates multiple suspended user accounts in a single transaction.
+     */
     @Transactional
     public void bulkReactivate(List<UUID> ids) {
         List<User> users = userRepo.findAllById(ids);
@@ -84,6 +110,9 @@ public class AdminUserService {
         userRepo.saveAll(users);
     }
 
+    /**
+     * Replaces the internal admin notes on a user record; notes are never shown to the user.
+     */
     @Transactional
     public AdminUserResponse updateNotes(UUID id, String adminNotes) {
         User user = findUser(id);
@@ -92,6 +121,10 @@ public class AdminUserService {
         return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
     }
 
+    /**
+     * Replaces the tag list on a user record; tags drive segmentation in marketing and
+     * automation rules. Passing null or an empty list clears all tags.
+     */
     @Transactional
     public AdminUserResponse updateTags(UUID id, List<String> tags) {
         User user = findUser(id);
@@ -100,6 +133,10 @@ public class AdminUserService {
         return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
     }
 
+    /**
+     * Replaces the free-form metadata blob on a user, used for custom integrations
+     * and CRM annotations.
+     */
     @Transactional
     public AdminUserResponse updateMetadata(UUID id, java.util.Map<String, Object> metadata) {
         User user = findUser(id);
@@ -108,16 +145,28 @@ public class AdminUserService {
         return AdminUserResponse.from(user, userRepo.findRoleNamesByUserId(id));
     }
 
+    /**
+     * Grants a platform role to a user, delegating to {@link io.k2dv.garden.iam.service.IamService}
+     * which also evicts the permission cache.
+     */
     @Transactional
     public void assignRole(UUID userId, String roleName) {
         iamService.assignRoleByName(userId, roleName);
     }
 
+    /**
+     * Revokes a platform role from a user, delegating to {@link io.k2dv.garden.iam.service.IamService}
+     * which also evicts the permission cache.
+     */
     @Transactional
     public void removeRole(UUID userId, String roleName) {
         iamService.removeRoleByName(userId, roleName);
     }
 
+    /**
+     * Exports all users matching the given filter as a CSV, including roles and tags,
+     * for use in offline reporting or bulk-import workflows.
+     */
     @Transactional(readOnly = true)
     public String exportCsv(UserFilter filter) {
         List<User> users = userRepo.findAll(

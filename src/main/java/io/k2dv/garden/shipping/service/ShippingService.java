@@ -24,6 +24,12 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Manages shipping zones and their associated rates for the storefront checkout flow. Admins
+ * define zones by country/province and attach named rates (flat, weight-banded, or
+ * minimum-order-gated) to each zone; at checkout, {@link #findRatesForAddress} resolves the
+ * eligible rates for a buyer's delivery address and order value.
+ */
 @Service
 @RequiredArgsConstructor
 public class ShippingService {
@@ -33,16 +39,22 @@ public class ShippingService {
 
     // ---- Zones ----
 
+    /** Returns a paginated list of all shipping zones. */
     @Transactional(readOnly = true)
     public PagedResult<ShippingZoneResponse> listZones(Pageable pageable) {
         return PagedResult.of(zoneRepo.findAll(pageable), ShippingZoneResponse::from);
     }
 
+    /** Retrieves a single shipping zone by ID, throwing {@code NotFoundException} if absent. */
     @Transactional(readOnly = true)
     public ShippingZoneResponse getZone(UUID id) {
         return ShippingZoneResponse.from(findZoneOrThrow(id));
     }
 
+    /**
+     * Creates a new shipping zone covering the specified countries and optional provinces.
+     * Country codes are normalised to uppercase ISO-3166-1 alpha-2 format before persistence.
+     */
     @Transactional
     public ShippingZoneResponse createZone(CreateShippingZoneRequest req) {
         ShippingZone z = new ShippingZone();
@@ -53,6 +65,10 @@ public class ShippingService {
         return ShippingZoneResponse.from(zoneRepo.save(z));
     }
 
+    /**
+     * Updates mutable fields of an existing shipping zone (name, description, country codes,
+     * provinces, active flag). Only non-null request fields are applied.
+     */
     @Transactional
     public ShippingZoneResponse updateZone(UUID id, UpdateShippingZoneRequest req) {
         ShippingZone z = findZoneOrThrow(id);
@@ -64,6 +80,10 @@ public class ShippingService {
         return ShippingZoneResponse.from(zoneRepo.save(z));
     }
 
+    /**
+     * Permanently deletes a shipping zone and all of its associated rates. Consider
+     * deactivating the zone instead if historical order records reference these rates.
+     */
     @Transactional
     public void deleteZone(UUID id) {
         ShippingZone z = findZoneOrThrow(id);
@@ -73,6 +93,7 @@ public class ShippingService {
 
     // ---- Rates ----
 
+    /** Returns all rates defined for the given zone, throwing {@code NotFoundException} if the zone is absent. */
     @Transactional(readOnly = true)
     public List<ShippingRateResponse> listRates(UUID zoneId) {
         findZoneOrThrow(zoneId);
@@ -80,11 +101,16 @@ public class ShippingService {
             .map(ShippingRateResponse::from).toList();
     }
 
+    /** Retrieves a single rate, scoped to its parent zone for safety. */
     @Transactional(readOnly = true)
     public ShippingRateResponse getRate(UUID zoneId, UUID rateId) {
         return ShippingRateResponse.from(findRateOrThrow(zoneId, rateId));
     }
 
+    /**
+     * Adds a new rate to an existing zone. Rates can encode flat pricing, weight-band limits
+     * ({@code minWeightGrams}/{@code maxWeightGrams}), and a minimum order amount threshold.
+     */
     @Transactional
     public ShippingRateResponse createRate(UUID zoneId, CreateShippingRateRequest req) {
         findZoneOrThrow(zoneId);
@@ -101,6 +127,10 @@ public class ShippingService {
         return ShippingRateResponse.from(rateRepo.save(r));
     }
 
+    /**
+     * Updates mutable fields of an existing rate within a zone. Only non-null fields in the
+     * request are applied; use {@code isActive = false} to hide a rate without deleting it.
+     */
     @Transactional
     public ShippingRateResponse updateRate(UUID zoneId, UUID rateId, UpdateShippingRateRequest req) {
         ShippingRate r = findRateOrThrow(zoneId, rateId);
@@ -116,6 +146,7 @@ public class ShippingService {
         return ShippingRateResponse.from(rateRepo.save(r));
     }
 
+    /** Permanently removes a shipping rate from a zone. */
     @Transactional
     public void deleteRate(UUID zoneId, UUID rateId) {
         ShippingRate r = findRateOrThrow(zoneId, rateId);
@@ -124,6 +155,11 @@ public class ShippingService {
 
     // ---- Storefront ----
 
+    /**
+     * Confirms that a previously selected shipping rate is still valid for the given delivery
+     * address at order placement time. Throws {@code ValidationException} if the rate's parent
+     * zone no longer covers the destination country/province, guarding against stale cart state.
+     */
     @Transactional(readOnly = true)
     public void validateRateForAddress(UUID rateId, String country, String province) {
         String normalizedCountry = CountryCode.normalize(country);
@@ -135,6 +171,11 @@ public class ShippingService {
         }
     }
 
+    /**
+     * Resolves all active shipping rates applicable to the given destination and order value,
+     * sorted by price ascending so the checkout UI can present options cheapest-first. Weight-
+     * based filtering is noted but not yet enforced (cart weight calculation is pending).
+     */
     @Transactional(readOnly = true)
     public List<ShippingRateResponse> findRatesForAddress(String country, String province,
                                                            BigDecimal orderAmount) {

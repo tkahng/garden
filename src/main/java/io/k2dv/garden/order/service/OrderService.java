@@ -66,6 +66,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Central service for the order lifecycle from creation through payment, cancellation, and refund.
+ * Coordinates inventory reservation and release, Stripe payment confirmation, domain event
+ * publication, and automatic tag application; supports both Stripe-based and net-terms (invoice)
+ * payment paths as well as B2B spend-limit approval gating.
+ */
 @Service
 @RequiredArgsConstructor
 public class OrderService {
@@ -86,6 +92,11 @@ public class OrderService {
     private final CompanyService companyService;
     private final NotificationPreferenceService notificationPreferenceService;
 
+    /**
+     * Creates a new order for an authenticated user from the given cart items, reserving inventory
+     * for each item. Overloads allow callers to progressively supply shipping, B2B company context,
+     * and a purchase-order number.
+     */
     @Transactional
     public Order createFromCart(UUID userId, List<CartItem> cartItems) {
         return createFromCart(userId, cartItems, null, null, null, null);
@@ -111,6 +122,10 @@ public class OrderService {
         return buildOrder(userId, null, companyId, taxExempt, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
     }
 
+    /**
+     * Creates a new order for an anonymous guest, reserving inventory for each item. A guest email
+     * is stored on the order so confirmation notifications can be delivered without an account.
+     */
     @Transactional
     public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
                                   UUID shippingRateId, BigDecimal shippingCost, String shippingAddress) {
@@ -200,6 +215,10 @@ public class OrderService {
         return order;
     }
 
+    /**
+     * Converts an accepted quote into an order, reserving inventory for any variant-linked items.
+     * Quote items may carry custom pricing negotiated outside the standard price list.
+     */
     @Transactional
     public Order createFromQuote(QuoteRequest quoteRequest, List<QuoteItem> quoteItems) {
         if (quoteItems.isEmpty()) {
@@ -238,6 +257,10 @@ public class OrderService {
         return order;
     }
 
+    /**
+     * Records an applied discount on the order and subtracts the discount amount from the
+     * running total; called by {@code PaymentService} after the discount code has been validated.
+     */
     @Transactional
     public void applyDiscount(UUID orderId, UUID discountId, BigDecimal discountAmount) {
         Order order = orderRepo.findById(orderId)
@@ -248,6 +271,10 @@ public class OrderService {
         orderRepo.save(order);
     }
 
+    /**
+     * Records a gift-card redemption on the order and subtracts the applied amount from the
+     * running total; if the total reaches zero the order transitions to PAID immediately.
+     */
     @Transactional
     public void applyGiftCard(UUID orderId, UUID giftCardId, BigDecimal giftCardAmount) {
         Order order = orderRepo.findById(orderId)
@@ -258,6 +285,10 @@ public class OrderService {
         orderRepo.save(order);
     }
 
+    /**
+     * Moves the order to PENDING_APPROVAL, pausing the payment flow until a company owner or
+     * manager approves it; triggered when the order total exceeds the B2B user's spending limit.
+     */
     @Transactional
     public void holdForApproval(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -268,6 +299,10 @@ public class OrderService {
             "Order pending company approval — spending limit exceeded", null, "system", null);
     }
 
+    /**
+     * Records the approver identity and timestamp on the order, advancing it to PENDING_PAYMENT
+     * so the payment flow can resume.
+     */
     @Transactional
     public void recordApproval(UUID orderId, UUID approverId) {
         Order order = orderRepo.findById(orderId)
@@ -280,6 +315,10 @@ public class OrderService {
             "Order approved", approverId, null, null);
     }
 
+    /**
+     * Cancels an order that is awaiting B2B approval, releasing all inventory reservations.
+     * Only a company owner or manager may reject; a plain member will receive a FORBIDDEN error.
+     */
     @Transactional
     public OrderResponse rejectApproval(UUID orderId, UUID rejectorId) {
         Order order = orderRepo.findById(orderId)
@@ -302,6 +341,10 @@ public class OrderService {
         return toResponse(order);
     }
 
+    /**
+     * Returns a paged list of orders awaiting approval within the given company, intended for the
+     * B2B approver dashboard.
+     */
     @Transactional(readOnly = true)
     public PagedResult<OrderResponse> listPendingApprovals(UUID companyId, Pageable pageable) {
         Specification<Order> spec = (root, query, cb) -> cb.and(
@@ -316,6 +359,10 @@ public class OrderService {
         return orderItemRepo.findByOrderId(orderId);
     }
 
+    /**
+     * Emits an INVOICE_ISSUED timeline event and sends the order confirmation email for a B2B
+     * net-terms order, where payment is deferred rather than collected via Stripe immediately.
+     */
     @Transactional
     public void notifyNetTermsPlaced(Order order) {
         orderEventService.emit(order.getId(), OrderEventType.INVOICE_ISSUED,
@@ -324,6 +371,10 @@ public class OrderService {
         if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
     }
 
+    /**
+     * Transitions the order to PAID after an invoice has been settled, confirming inventory sales
+     * without involving Stripe. Used for the net-terms payment path.
+     */
     @Transactional
     public void markPaidFromInvoice(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -337,6 +388,10 @@ public class OrderService {
             "Payment confirmed via invoice", null, "system", null);
     }
 
+    /**
+     * Transitions the order to PAID when the total has been fully covered by a gift card (no
+     * Stripe payment required); sends the confirmation email and applies automatic user tags.
+     */
     @Transactional
     public void markPaidDirectly(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -352,6 +407,11 @@ public class OrderService {
         if (order.getUserId() != null) autoTagService.applyOrderTags(order.getUserId());
     }
 
+    /**
+     * Manual reconciliation fallback that polls Stripe for the current session status and drives
+     * the order to PAID or CANCELLED accordingly. Not transactional at this level because the
+     * Stripe network call must happen outside the database transaction.
+     */
     // NOT @Transactional — Stripe call is outside transaction; sub-calls manage their own tx
     public OrderResponse syncPaymentFromStripe(UUID orderId) {
         Order order = getById(orderId);
@@ -379,6 +439,10 @@ public class OrderService {
         return getOrderResponse(orderId);
     }
 
+    /**
+     * Stores the Stripe Checkout session ID on the order so that webhook callbacks can locate
+     * the order when Stripe posts the payment result.
+     */
     @Transactional
     public void setStripeSession(UUID orderId, String stripeSessionId) {
         Order order = orderRepo.findById(orderId)
@@ -387,6 +451,12 @@ public class OrderService {
         orderRepo.save(order);
     }
 
+    /**
+     * Marks the order as PAID upon successful Stripe payment confirmation, converts inventory
+     * reservations to confirmed sales, emits a timeline event, sends the confirmation email,
+     * and applies user tags. Operation is idempotent — repeated calls for the same session are
+     * safely ignored.
+     */
     @Transactional
     public void confirmPayment(String stripeSessionId, String stripePaymentIntentId) {
         confirmPayment(stripeSessionId, stripePaymentIntentId, null);
@@ -415,6 +485,10 @@ public class OrderService {
         });
     }
 
+    /**
+     * Cancels the order associated with an expired Stripe session and releases all inventory
+     * reservations. Idempotent — already-cancelled orders are silently skipped.
+     */
     @Transactional
     public void cancelBySession(String stripeSessionId) {
         orderRepo.findByStripeSessionId(stripeSessionId).ifPresent(order -> {
@@ -431,6 +505,11 @@ public class OrderService {
         });
     }
 
+    /**
+     * Admin-initiated cancellation that releases inventory and writes an audit-log entry via
+     * {@code @Audited}. Only orders in PENDING_PAYMENT or PENDING_APPROVAL status can be cancelled
+     * through this path; already-cancelled orders are silently skipped.
+     */
     @Audited(entityType = "order", entityId = "#orderId")
     @Transactional
     public void cancelOrder(UUID orderId) {
@@ -452,6 +531,10 @@ public class OrderService {
         orderEventService.emit(orderId, OrderEventType.ORDER_CANCELLED, "Order cancelled", null, "system", null);
     }
 
+    /**
+     * Customer-facing cancellation that releases inventory and, if the user has not opted out of
+     * notifications, fires an {@code OrderCancelledEvent} for transactional email delivery.
+     */
     @Transactional
     public OrderResponse cancelAndReturn(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -475,6 +558,11 @@ public class OrderService {
         return toResponse(order);
     }
 
+    /**
+     * Cancels multiple orders in one operation, releasing inventory for each and sending
+     * cancellation emails to customers who have not opted out. Orders that are not in
+     * PENDING_PAYMENT or PAID status are silently skipped.
+     */
     @Transactional
     public void bulkCancel(List<UUID> ids) {
         List<Order> cancellable = orderRepo.findAllById(ids).stream()
@@ -513,6 +601,10 @@ public class OrderService {
         return toResponse(order);
     }
 
+    /**
+     * Returns a filtered, paginated list of orders; used by both the admin console and customer
+     * order-history views depending on the filter criteria supplied.
+     */
     @Transactional(readOnly = true)
     public PagedResult<OrderResponse> list(OrderFilter filter, Pageable pageable) {
         return PagedResult.of(orderRepo.findAll(buildSpec(filter), pageable), this::toResponse);
@@ -520,6 +612,10 @@ public class OrderService {
 
     public record CsvExportResult(String csv, boolean truncated) {}
 
+    /**
+     * Exports a filtered order list as a CSV string, capped at {@code maxRows} to prevent
+     * memory exhaustion. Returns a {@code truncated} flag when the result set was trimmed.
+     */
     @Transactional(readOnly = true)
     public CsvExportResult exportCsv(OrderFilter filter, int maxRows) {
         List<Order> orders = orderRepo.findAll(
@@ -616,6 +712,10 @@ public class OrderService {
         return s;
     }
 
+    /**
+     * Issues a full Stripe refund and marks the order REFUNDED; restricted to admin callers.
+     * Idempotent — already-refunded orders are returned unchanged without re-calling Stripe.
+     */
     @Transactional
     public OrderResponse adminRefundOrder(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -644,6 +744,10 @@ public class OrderService {
         return toResponse(order);
     }
 
+    /**
+     * Allows admin users to patch mutable order fields: shipping address (blocked once shipped),
+     * admin notes, and purchase-order number. Note additions are appended to the order timeline.
+     */
     @Transactional
     public OrderResponse updateOrder(UUID orderId, UpdateOrderRequest req) {
         Order order = orderRepo.findById(orderId)
@@ -667,6 +771,10 @@ public class OrderService {
         return toResponse(orderRepo.save(order));
     }
 
+    /**
+     * Customer-initiated full refund via Stripe; verifies the requesting user owns the order
+     * and writes an audit-log entry via {@code @Audited}. Idempotent for already-refunded orders.
+     */
     @Audited(entityType = "order", entityId = "#orderId")
     @Transactional
     public OrderResponse refundOrder(UUID orderId, UUID requestingUserId) {
@@ -700,6 +808,10 @@ public class OrderService {
         return toResponse(order);
     }
 
+    /**
+     * Creates a DRAFT order for admin use without reserving inventory or initiating payment;
+     * useful for manually constructing orders on behalf of a customer before finalising them.
+     */
     @Transactional
     public OrderResponse createDraft(CreateDraftOrderRequest req) {
         if (req.userId() == null && (req.guestEmail() == null || req.guestEmail().isBlank())) {
@@ -739,6 +851,10 @@ public class OrderService {
         return toResponse(order);
     }
 
+    /**
+     * Replaces the line items of a DRAFT order wholesale, recalculating the total; the draft must
+     * not yet have been submitted (status DRAFT), so no inventory changes are made at this point.
+     */
     @Transactional
     public OrderResponse updateDraftItems(UUID orderId, java.util.List<io.k2dv.garden.order.dto.DraftOrderItemRequest> items) {
         Order order = orderRepo.findById(orderId)
@@ -765,6 +881,10 @@ public class OrderService {
         return toResponse(orderRepo.save(order));
     }
 
+    /**
+     * Finalises a DRAFT order by reserving inventory for all items and advancing the status to
+     * PENDING_PAYMENT so payment can be collected.
+     */
     @Transactional
     public OrderResponse completeDraft(UUID orderId) {
         Order order = orderRepo.findById(orderId)
@@ -783,6 +903,10 @@ public class OrderService {
         return toResponse(orderRepo.save(order));
     }
 
+    /**
+     * Replaces the order's free-form metadata map; intended for integration partners that need
+     * to attach external reference data (e.g., ERP identifiers) to an order.
+     */
     @Transactional
     public OrderResponse updateMetadata(UUID orderId, java.util.Map<String, Object> metadata) {
         Order order = orderRepo.findById(orderId)

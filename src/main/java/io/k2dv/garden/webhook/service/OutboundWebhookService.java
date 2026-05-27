@@ -20,6 +20,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Manages the lifecycle of outbound webhook endpoint registrations and provides
+ * the entry point for enqueuing delivery records when a platform event occurs.
+ * Actual HTTP dispatch is performed by {@link WebhookDispatchService}.
+ */
 @Service
 @RequiredArgsConstructor
 public class OutboundWebhookService {
@@ -27,6 +32,9 @@ public class OutboundWebhookService {
     private final WebhookEndpointRepository endpointRepo;
     private final WebhookDeliveryRepository deliveryRepo;
 
+    /**
+     * Registers a new webhook endpoint with its target URL, shared secret, and subscribed event types.
+     */
     @Transactional
     public WebhookEndpointResponse create(CreateWebhookEndpointRequest req) {
         WebhookEndpoint e = new WebhookEndpoint();
@@ -47,6 +55,10 @@ public class OutboundWebhookService {
         return WebhookEndpointResponse.from(require(id));
     }
 
+    /**
+     * Partially updates a webhook endpoint; only non-null fields in the request are applied,
+     * allowing callers to toggle active state or rotate the signing secret independently.
+     */
     @Transactional
     public WebhookEndpointResponse update(UUID id, UpdateWebhookEndpointRequest req) {
         WebhookEndpoint e = require(id);
@@ -64,6 +76,10 @@ public class OutboundWebhookService {
         endpointRepo.deleteById(id);
     }
 
+    /**
+     * Returns paginated delivery history for a specific endpoint, allowing operators
+     * to inspect past attempts, HTTP status codes, and response bodies.
+     */
     @Transactional(readOnly = true)
     public PagedResult<WebhookDeliveryResponse> listDeliveries(UUID endpointId, Pageable pageable) {
         require(endpointId);

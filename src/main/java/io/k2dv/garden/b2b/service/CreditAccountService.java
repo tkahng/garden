@@ -18,6 +18,12 @@ import java.math.BigDecimal;
 import java.util.Optional;
 import java.util.UUID;
 
+/**
+ * Manages net-terms credit accounts that allow B2B companies to purchase on credit
+ * and pay later via invoices. Each company may have at most one credit account; this
+ * service tracks the credit limit, outstanding invoice balance, and payment term days
+ * (e.g. NET_30) used when generating invoices.
+ */
 @Service
 @RequiredArgsConstructor
 public class CreditAccountService {
@@ -26,6 +32,10 @@ public class CreditAccountService {
     private final InvoiceRepository invoiceRepo;
     private final CompanyRepository companyRepo;
 
+    /**
+     * Opens a new credit account for a company, applying default values of 30 payment-term
+     * days and USD currency when not specified. Enforces one-account-per-company.
+     */
     @Transactional
     public CreditAccountResponse create(CreateCreditAccountRequest req) {
         companyRepo.findById(req.companyId())
@@ -48,6 +58,9 @@ public class CreditAccountService {
         return toResponse(account);
     }
 
+    /**
+     * Updates the credit limit and optionally the payment term days for a company's credit account.
+     */
     @Transactional
     public CreditAccountResponse update(UUID companyId, UpdateCreditAccountRequest req) {
         CreditAccount account = requireByCompany(companyId);
@@ -56,6 +69,10 @@ public class CreditAccountService {
         return toResponse(creditAccountRepo.save(account));
     }
 
+    /**
+     * Removes a company's credit account, reverting the company to pay-at-checkout.
+     * Existing invoices are unaffected.
+     */
     @Transactional
     public void delete(UUID companyId) {
         CreditAccount account = requireByCompany(companyId);
@@ -67,14 +84,18 @@ public class CreditAccountService {
         return creditAccountRepo.findByCompanyId(companyId);
     }
 
+    /**
+     * Returns the sum of all unpaid invoice amounts for the company, representing
+     * the currently drawn-down portion of the credit limit.
+     */
     @Transactional(readOnly = true)
     public BigDecimal getOutstandingBalance(UUID companyId) {
         return invoiceRepo.computeOutstandingBalance(companyId);
     }
 
     /**
-     * Throws ValidationException if the company has a credit account but insufficient available credit.
-     * No-ops if the company has no credit account (pay-at-checkout flow).
+     * Returns the number of days until invoice payment is due for this company's credit account,
+     * or 0 if the company has no credit account.
      */
     @Transactional(readOnly = true)
     public int getPaymentTermsDays(UUID companyId) {
@@ -83,6 +104,11 @@ public class CreditAccountService {
             .orElse(0);
     }
 
+    /**
+     * Throws {@link io.k2dv.garden.shared.exception.ValidationException} if the company has a
+     * credit account but the order total would exceed the remaining available credit.
+     * No-ops if the company has no credit account (pay-at-checkout flow).
+     */
     @Transactional(readOnly = true)
     public void assertCreditAvailable(UUID companyId, BigDecimal orderTotal) {
         creditAccountRepo.findByCompanyId(companyId).ifPresent(account -> {

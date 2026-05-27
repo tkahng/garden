@@ -17,6 +17,13 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.UUID;
 
+/**
+ * Manages the lifecycle of all non-JWT tokens: single-use one-time tokens (email
+ * verification, password reset) stored in the {@code auth.tokens} table, and rotating
+ * refresh tokens stored in {@code auth.refresh_tokens}. All tokens are stored as
+ * SHA-256 hashes; raw values are never persisted, only returned to callers for
+ * delivery to the client.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -25,6 +32,12 @@ public class TokenService {
     private final TokenRepository tokenRepo;
     private final RefreshTokenRepository refreshTokenRepo;
 
+    /**
+     * Creates and persists a new one-time token of the given type for the user. Any
+     * existing token of the same type is deleted first, ensuring only one active
+     * token exists per purpose (e.g. a re-sent verification link invalidates the previous one).
+     * Returns the raw (unhashed) token value to be delivered out-of-band to the user.
+     */
     @Transactional
     public String createToken(UUID userId, TokenType type, Duration ttl) {
         // Verification/reset tokens are single-purpose. Refresh tokens are
@@ -46,6 +59,11 @@ public class TokenService {
         return raw;
     }
 
+    /**
+     * Validates a one-time token against the expected type, deletes it (consuming it
+     * for single-use semantics), and returns the owning user's ID. Throws
+     * {@code UnauthorizedException} if the token is not found, already consumed, or expired.
+     */
     @Transactional
     public UUID validateAndConsume(String rawToken, TokenType type) {
         String hash = hash(rawToken);

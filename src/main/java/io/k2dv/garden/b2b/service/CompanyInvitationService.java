@@ -21,6 +21,12 @@ import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Manages the token-based invitation flow that brings new users into a company.
+ * Invitations are scoped to a specific email address, carry a pre-configured role and
+ * optional spending limit, expire after seven days, and trigger a notification email
+ * via {@link io.k2dv.garden.auth.service.EmailService}.
+ */
 @Service
 @RequiredArgsConstructor
 public class CompanyInvitationService {
@@ -33,6 +39,11 @@ public class CompanyInvitationService {
     private final UserRepository userRepo;
     private final EmailService emailService;
 
+    /**
+     * Sends a new company invitation to the specified email address, enforcing that only
+     * owners and managers may invite and that no duplicate pending invitation exists.
+     * Dispatches an invitation email with the unique acceptance token.
+     */
     @Transactional
     public InvitationResponse invite(UUID companyId, UUID requestorId, CreateInvitationRequest req) {
         Company company = companyRepo.findById(companyId)
@@ -77,6 +88,10 @@ public class CompanyInvitationService {
         return toResponse(invitation, company.getName());
     }
 
+    /**
+     * Looks up an invitation by its opaque token, used by the acceptance UI to display
+     * company and role information before the recipient confirms.
+     */
     @Transactional(readOnly = true)
     public InvitationResponse getByToken(UUID token) {
         CompanyInvitation invitation = requireByToken(token);
@@ -84,6 +99,11 @@ public class CompanyInvitationService {
         return toResponse(invitation, company.getName());
     }
 
+    /**
+     * Accepts a pending invitation, creating a company membership for the authenticated user.
+     * Validates expiry, PENDING status, and that the caller's email matches the invitation;
+     * marks the invitation ACCEPTED and enrolls the user with the pre-configured role and spending limit.
+     */
     @Transactional
     public InvitationResponse accept(UUID token, UUID userId) {
         CompanyInvitation invitation = requireByToken(token);
@@ -124,6 +144,10 @@ public class CompanyInvitationService {
         return toResponse(invitation, company.getName());
     }
 
+    /**
+     * Cancels a pending invitation before it is accepted; only owners and managers may cancel.
+     * Has no effect on accepted or already-cancelled invitations (throws ConflictException if not PENDING).
+     */
     @Transactional
     public InvitationResponse cancel(UUID companyId, UUID invitationId, UUID requestorId) {
         requireOwnerOrManager(companyId, requestorId);
@@ -142,6 +166,9 @@ public class CompanyInvitationService {
         return toResponse(invitation, company.getName());
     }
 
+    /**
+     * Returns all outstanding (PENDING) invitations for a company; restricted to owners and managers.
+     */
     @Transactional(readOnly = true)
     public List<InvitationResponse> listPending(UUID companyId, UUID requestorId) {
         requireOwnerOrManager(companyId, requestorId);

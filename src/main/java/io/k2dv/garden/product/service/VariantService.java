@@ -28,6 +28,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Manages product variants, which are the purchasable SKUs of a product distinguished by
+ * option value combinations (e.g., size + color). Automatically provisions an
+ * {@code InventoryItem} for each new variant and enforces pricing invariants such as
+ * compare-at price being strictly greater than the sale price.
+ */
 @Service
 @RequiredArgsConstructor
 public class VariantService {
@@ -38,6 +44,11 @@ public class VariantService {
     private final InventoryItemRepository inventoryRepo;
     private final ProductRepository productRepo;
 
+    /**
+     * Adds a new purchasable variant to an existing product, linking it to the supplied option
+     * values and auto-creating a corresponding {@code InventoryItem} for stock tracking.
+     * The variant title is derived from its option value labels (e.g., "Red / Large").
+     */
     @Transactional
     public AdminVariantResponse create(UUID productId, CreateVariantRequest req) {
         productRepo.findByIdAndDeletedAtIsNull(productId)
@@ -83,6 +94,10 @@ public class VariantService {
         return toResponse(v);
     }
 
+    /**
+     * Applies partial updates to a variant's pricing, SKU, weight, and fulfillment settings.
+     * Validates that the compare-at price, if set, remains strictly above the effective sale price.
+     */
     @Transactional
     public AdminVariantResponse update(UUID productId, UUID variantId, UpdateVariantRequest req) {
         ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(variantId)
@@ -107,6 +122,10 @@ public class VariantService {
         return toResponse(variantRepo.save(v));
     }
 
+    /**
+     * Soft-deletes a variant by stamping {@code deletedAt}, preserving its historical data for
+     * order references while hiding it from active product listings and the storefront.
+     */
     @Transactional
     public void softDelete(UUID productId, UUID variantId) {
         ProductVariant v = variantRepo.findByIdAndDeletedAtIsNull(variantId)
@@ -115,6 +134,10 @@ public class VariantService {
         v.setDeletedAt(Instant.now());
     }
 
+    /**
+     * Returns the inventory items for all active variants of a product, providing the link
+     * between variants and the inventory tracking system.
+     */
     @Transactional(readOnly = true)
     public List<InventoryItemResponse> getInventoryForProduct(UUID productId) {
         List<ProductVariant> variants = variantRepo.findByProductIdAndDeletedAtIsNullOrderByCreatedAtAsc(productId);

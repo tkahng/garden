@@ -18,6 +18,12 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Manages the collection of images attached to a CMS article, including upload linkage,
+ * deletion, and display-order reordering.
+ * Automatically promotes the first uploaded image to featured status and demotes gracefully
+ * when the featured image is removed.
+ */
 @Service
 @RequiredArgsConstructor
 public class ArticleImageService {
@@ -28,6 +34,10 @@ public class ArticleImageService {
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
 
+    /**
+     * Attaches a pre-uploaded blob to an article as an image, appending it at the next available
+     * position and auto-assigning it as the featured image when no featured image is set yet.
+     */
     @Transactional
     public ArticleImageResponse addImage(UUID blogId, UUID articleId, CreateArticleImageRequest req) {
         verifyBlogExists(blogId);
@@ -49,6 +59,10 @@ public class ArticleImageService {
         return toResponse(img);
     }
 
+    /**
+     * Removes an image from an article; if the removed image was the featured image, promotes
+     * the next image in position order to featured, or clears the featured reference if none remain.
+     */
     @Transactional
     public void deleteImage(UUID blogId, UUID articleId, UUID imageId) {
         verifyBlogExists(blogId);
@@ -67,6 +81,10 @@ public class ArticleImageService {
         }
     }
 
+    /**
+     * Applies a caller-specified display order to the images of an article, enabling
+     * drag-and-drop reordering in the admin UI without creating or deleting any records.
+     */
     @Transactional
     public void reorderImages(UUID blogId, UUID articleId, List<ArticleImagePositionItem> items) {
         verifyBlogExists(blogId);

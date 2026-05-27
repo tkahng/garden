@@ -16,6 +16,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Automatically classifies users with lifecycle tags based on their purchase history.
+ * Tags such as "first-time-buyer", "repeat-customer", "loyal-customer", and "vip" are
+ * maintained on the user record and drive segmentation in marketing and admin tools.
+ * The VIP spend threshold is configurable via {@link io.k2dv.garden.config.AppProperties}.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -28,6 +34,12 @@ public class AutoTagService {
     private final OrderRepository orderRepo;
     private final AppProperties appProperties;
 
+    /**
+     * Recalculates and applies purchase-based tags for a user after an order is confirmed.
+     * Evaluates total confirmed order count and lifetime spend to assign or remove tags;
+     * the "first-time-buyer" tag is replaced by "repeat-customer" on the second confirmed order.
+     * No-ops silently if the user no longer exists.
+     */
     @Transactional
     public void applyOrderTags(UUID userId) {
         User user = userRepo.findById(userId).orElse(null);

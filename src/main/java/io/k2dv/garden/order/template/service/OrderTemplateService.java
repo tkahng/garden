@@ -27,6 +27,11 @@ import java.math.BigDecimal;
 import java.util.*;
 import java.util.stream.Collectors;
 
+/**
+ * Allows authenticated users to save named lists of product variants as reusable order templates.
+ * Loading a template replaces the user's active cart contents with the template items,
+ * silently skipping any variants that are no longer available or whose products are inactive.
+ */
 @Service
 @RequiredArgsConstructor
 public class OrderTemplateService {
@@ -39,6 +44,9 @@ public class OrderTemplateService {
     private final ProductRepository productRepo;
     private final CartService cartService;
 
+    /**
+     * Creates a new named order template for the user with the specified variant and quantity list.
+     */
     @Transactional
     public OrderTemplateResponse create(UUID userId, CreateOrderTemplateRequest req) {
         OrderTemplate template = new OrderTemplate();
@@ -58,6 +66,10 @@ public class OrderTemplateService {
         return toResponse(template, items);
     }
 
+    /**
+     * Returns all templates owned by the user, newest first, with variant titles batch-fetched
+     * to avoid N+1 queries on the item list.
+     */
     @Transactional(readOnly = true)
     public List<OrderTemplateResponse> listForUser(UUID userId) {
         List<OrderTemplate> templates = templateRepo.findByUserIdOrderByCreatedAtDesc(userId);
@@ -82,6 +94,9 @@ public class OrderTemplateService {
             .toList();
     }
 
+    /**
+     * Retrieves a single template, enforcing that it belongs to the requesting user.
+     */
     @Transactional(readOnly = true)
     public OrderTemplateResponse getById(UUID userId, UUID templateId) {
         OrderTemplate template = requireOwned(userId, templateId);
@@ -89,6 +104,9 @@ public class OrderTemplateService {
         return toResponse(template, items);
     }
 
+    /**
+     * Permanently deletes a template and all its line items; enforces ownership before deletion.
+     */
     @Transactional
     public void delete(UUID userId, UUID templateId) {
         requireOwned(userId, templateId);
@@ -96,6 +114,11 @@ public class OrderTemplateService {
         templateRepo.deleteById(templateId);
     }
 
+    /**
+     * Replaces the user's active cart contents with the items from the named template, using current
+     * retail prices rather than any historical price stored in the template. Variants that have
+     * been deleted or whose products are no longer active are silently skipped.
+     */
     @Transactional
     public CartResponse loadToCart(UUID userId, UUID templateId) {
         OrderTemplate template = requireOwned(userId, templateId);

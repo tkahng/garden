@@ -17,6 +17,13 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * SMTP-backed implementation of {@link EmailService} that delivers transactional emails
+ * via Spring's {@link JavaMailSender}. Simple notifications use plain-text messages
+ * while richer emails (order confirmations, quote lifecycle events) are rendered from
+ * Thymeleaf HTML templates. All send operations catch and log delivery failures rather
+ * than propagating them, ensuring email errors never abort a business transaction.
+ */
 @Slf4j
 @Service
 @RequiredArgsConstructor

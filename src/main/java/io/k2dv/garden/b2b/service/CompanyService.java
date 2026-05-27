@@ -31,6 +31,12 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Core B2B service that manages company lifecycle, membership, and spending controls.
+ * Handles company creation (which auto-assigns the creator as OWNER), member role management,
+ * per-member spending limits, a company-scoped product catalog, and aggregated spending
+ * analytics across orders and invoices.
+ */
 @Service
 @RequiredArgsConstructor
 public class CompanyService {
@@ -43,6 +49,10 @@ public class CompanyService {
     private final OrderRepository orderRepo;
     private final InvoiceRepository invoiceRepo;
 
+    /**
+     * Creates a new company and automatically enrolls the requestor as its OWNER.
+     * The OWNER role is the only role that can manage members and mutate company settings.
+     */
     @Transactional
     public CompanyResponse create(UUID requestorId, CreateCompanyRequest req) {
         Company company = new Company();
@@ -66,6 +76,9 @@ public class CompanyService {
         return toResponse(company);
     }
 
+    /**
+     * Returns all companies the given user belongs to, regardless of their role within each company.
+     */
     @Transactional(readOnly = true)
     public List<CompanyResponse> listForUser(UUID userId) {
         List<UUID> companyIds = membershipRepo.findByUserId(userId).stream()
@@ -76,6 +89,9 @@ public class CompanyService {
             .toList();
     }
 
+    /**
+     * Retrieves a single company by ID, enforcing that the caller is a member of that company.
+     */
     @Transactional(readOnly = true)
     public CompanyResponse getById(UUID companyId, UUID userId) {
         requireMember(companyId, userId);
@@ -84,6 +100,10 @@ public class CompanyService {
         return toResponse(company);
     }
 
+    /**
+     * Updates company profile and billing details; restricted to the company OWNER.
+     * The optional {@code taxExempt} flag, when set, suppresses tax calculation on future orders.
+     */
     @Transactional
     public CompanyResponse update(UUID companyId, UUID requestorId, UpdateCompanyRequest req) {
         requireOwner(companyId, requestorId);
@@ -102,6 +122,10 @@ public class CompanyService {
         return toResponse(companyRepo.save(company));
     }
 
+    /**
+     * Lists all members of a company along with their roles and spending limits.
+     * Accessible to any member of the company.
+     */
     @Transactional(readOnly = true)
     public List<CompanyMemberResponse> listMembers(UUID companyId, UUID requestorId) {
         requireMember(companyId, requestorId);
@@ -112,6 +136,11 @@ public class CompanyService {
         }).toList();
     }
 
+    /**
+     * Directly adds an existing platform user to the company with the MEMBER role.
+     * Prefer the invitation flow ({@link CompanyInvitationService}) when the user
+     * may not yet have an account. Throws if the user is already a member.
+     */
     @Transactional
     public CompanyMemberResponse addMember(UUID companyId, UUID requestorId, AddMemberRequest req) {
         requireOwner(companyId, requestorId);
@@ -129,6 +158,10 @@ public class CompanyService {
         return toMemberResponse(membership, user);
     }
 
+    /**
+     * Removes a member from the company. The OWNER cannot remove themselves to
+     * prevent a company from becoming ownerless.
+     */
     @Transactional
     public void removeMember(UUID companyId, UUID requestorId, UUID targetUserId) {
         requireOwner(companyId, requestorId);
@@ -140,6 +173,11 @@ public class CompanyService {
         membershipRepo.delete(membership);
     }
 
+    /**
+     * Sets or clears the per-order spending cap for a specific member.
+     * A null limit means unlimited spend; a non-null limit is enforced by
+     * {@link #assertSpendingLimit} at order placement time.
+     */
     @Transactional
     public CompanyMemberResponse updateSpendingLimit(UUID companyId, UUID targetUserId, UUID requestorId, UpdateSpendingLimitRequest req) {
         requireOwner(companyId, requestorId);
@@ -151,15 +189,25 @@ public class CompanyService {
         return toMemberResponse(membership, user);
     }
 
+    /**
+     * Guard used by other services to assert that the user is a company member;
+     * throws {@link io.k2dv.garden.shared.exception.ForbiddenException} otherwise.
+     */
     public void requireMemberAccess(UUID companyId, UUID userId) {
         requireMember(companyId, userId);
     }
 
+    /**
+     * Admin-only: returns all companies in the platform without access filtering.
+     */
     @Transactional(readOnly = true)
     public List<CompanyResponse> listAll() {
         return companyRepo.findAll().stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Admin-only: retrieves a company by ID without membership verification.
+     */
     @Transactional(readOnly = true)
     public CompanyResponse adminGetById(UUID companyId) {
         return companyRepo.findById(companyId)
@@ -167,6 +215,10 @@ public class CompanyService {
             .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
     }
 
+    /**
+     * Admin-only: performs a partial update on any company field including the
+     * assigned sales rep, which is not exposed in the self-service update endpoint.
+     */
     @Transactional
     public CompanyResponse adminUpdate(UUID companyId, AdminUpdateCompanyRequest req) {
         Company company = companyRepo.findById(companyId)
@@ -185,6 +237,10 @@ public class CompanyService {
         return toResponse(companyRepo.save(company));
     }
 
+    /**
+     * Replaces the free-form metadata blob on a company, used for custom integrations
+     * and back-office annotations.
+     */
     @Transactional
     public CompanyResponse updateMetadata(UUID companyId, Map<String, Object> metadata) {
         Company company = companyRepo.findById(companyId)
@@ -193,6 +249,9 @@ public class CompanyService {
         return toResponse(companyRepo.save(company));
     }
 
+    /**
+     * Returns whether the company holds tax-exempt status; used by the order/tax calculation pipeline.
+     */
     @Transactional(readOnly = true)
     public boolean isTaxExempt(UUID companyId) {
         return companyRepo.findById(companyId)
@@ -200,6 +259,9 @@ public class CompanyService {
             .orElse(false);
     }
 
+    /**
+     * Returns the per-order spending cap configured for this member, or null if unlimited.
+     */
     @Transactional(readOnly = true)
     public BigDecimal getSpendingLimit(UUID companyId, UUID userId) {
         return membershipRepo.findByCompanyIdAndUserId(companyId, userId)
@@ -207,6 +269,11 @@ public class CompanyService {
             .orElse(null);
     }
 
+    /**
+     * Throws a {@link io.k2dv.garden.shared.exception.ValidationException} if the order total
+     * exceeds the member's configured spending limit; no-ops when no limit is set.
+     * Called during order placement to enforce B2B purchasing controls.
+     */
     @Transactional(readOnly = true)
     public void assertSpendingLimit(UUID companyId, UUID userId, BigDecimal orderTotal) {
         BigDecimal limit = getSpendingLimit(companyId, userId);
@@ -235,6 +302,10 @@ public class CompanyService {
             .orElse(false);
     }
 
+    /**
+     * Changes a member's role within the company. Promoting to OWNER is disallowed to
+     * preserve the single-owner invariant; changing the existing OWNER's role is also blocked.
+     */
     @Transactional
     public CompanyMemberResponse updateMemberRole(UUID companyId, UUID targetUserId, UUID requestorId,
                                                    UpdateMemberRoleRequest req) {
@@ -280,12 +351,21 @@ public class CompanyService {
 
     // ─── Catalog ──────────────────────────────────────────────────────────────
 
+    /**
+     * Returns the IDs of all products in the company's curated product catalog.
+     * An empty catalog means no restriction; a non-empty catalog implies the company
+     * only has access to those listed products.
+     */
     @Transactional(readOnly = true)
     public List<UUID> getCatalogProductIds(UUID companyId) {
         assertCompanyExists(companyId);
         return catalogRepo.findProductIdsByCompanyId(companyId);
     }
 
+    /**
+     * Adds a product to the company's catalog; idempotent if already present.
+     * Validates that the product exists and is not soft-deleted.
+     */
     @Transactional
     public void addToCatalog(UUID companyId, UUID productId) {
         assertCompanyExists(companyId);
@@ -299,6 +379,9 @@ public class CompanyService {
         }
     }
 
+    /**
+     * Removes a product from the company's catalog; no-ops if the product was not present.
+     */
     @Transactional
     public void removeFromCatalog(UUID companyId, UUID productId) {
         catalogRepo.deleteByCompanyIdAndProductId(companyId, productId);
@@ -310,6 +393,11 @@ public class CompanyService {
         }
     }
 
+    /**
+     * Builds a comprehensive spending report for a company: total order volume, invoice aging
+     * buckets (pending / overdue / paid), and per-member utilization percentages for members
+     * who have a spending limit configured. Uses bulk queries to avoid N+1 patterns.
+     */
     @Transactional(readOnly = true)
     public CompanySpendingSummaryResponse getSpendingSummary(UUID companyId) {
         if (!companyRepo.existsById(companyId)) {

@@ -22,6 +22,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Enables authorized administrators to act on behalf of customer accounts for support
+ * and debugging purposes. Issues short-lived (30-minute) impersonation JWTs that carry
+ * an empty permission set and an {@code impersonatedBy} claim for audit purposes. Staff
+ * and admin accounts are explicitly excluded from being impersonated to prevent privilege
+ * escalation.
+ */
 @Service
 @RequiredArgsConstructor
 public class ImpersonationService {
@@ -33,6 +40,11 @@ public class ImpersonationService {
     private final UserRepository userRepo;
     private final JwtService jwtService;
 
+    /**
+     * Initiates an impersonation session: verifies that the target is not a staff/admin
+     * account, mints an impersonation JWT, and persists an audit record. Returns a response
+     * containing the token and its expiry so the caller can relay it to the admin client.
+     */
     @Transactional
     public ImpersonateResponse impersonate(UUID targetUserId, UUID adminUserId) {
         User target = userRepo.findById(targetUserId)

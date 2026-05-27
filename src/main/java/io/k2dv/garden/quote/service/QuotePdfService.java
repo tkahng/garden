@@ -18,6 +18,11 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.stream.Collectors;
 
+/**
+ * Generates a PDF document for a quote by rendering a Thymeleaf HTML template and converting
+ * it to PDF via OpenHTMLToPDF. The resulting bytes are returned to the caller for storage and
+ * email delivery; this service has no side effects of its own.
+ */
 @Service
 @RequiredArgsConstructor
 public class QuotePdfService {
@@ -27,6 +32,11 @@ public class QuotePdfService {
 
     private final TemplateEngine templateEngine;
 
+    /**
+     * Renders the {@code quote-template} Thymeleaf template with the given quote, line items,
+     * and company details, then converts the resulting HTML to a PDF byte array. Line totals
+     * and the grand total are computed here and injected into the template context.
+     */
     public byte[] generate(QuoteRequest quote, List<QuoteItem> items, Company company) {
         List<BigDecimal> lineTotals = items.stream()
             .map(i -> i.getUnitPrice() != null
