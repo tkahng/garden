@@ -18,6 +18,12 @@ import java.time.Instant;
 import java.util.Base64;
 import java.util.List;
 
+/**
+ * Responsible for minting RS256-signed JWTs used as short-lived access tokens.
+ * The RSA key pair is loaded once at startup from application configuration; both
+ * regular access tokens and impersonation tokens (which carry an {@code impersonatedBy}
+ * claim) are produced here.
+ */
 @Service
 public class JwtService {
 
@@ -39,6 +45,11 @@ public class JwtService {
         }
     }
 
+    /**
+     * Issues a standard access token embedding the user's identity, email, email-verified
+     * timestamp (if present), and their resolved permission set. The token lifetime is
+     * governed by the configured {@code jwt.access-token-ttl}.
+     */
     public String mintAccessToken(User user, List<String> permissions) {
         Instant now = Instant.now();
         JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).build();
@@ -56,6 +67,11 @@ public class JwtService {
         return encoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();
     }
 
+    /**
+     * Issues a short-lived impersonation token that acts on behalf of a target user.
+     * The {@code impersonatedBy} claim records the admin's UUID for audit trails, and
+     * the token intentionally carries an empty permissions list to limit blast radius.
+     */
     public String mintImpersonationToken(User user, java.util.UUID adminUserId, java.time.Instant expiresAt) {
         JwsHeader header = JwsHeader.with(SignatureAlgorithm.RS256).build();
         JwtClaimsSet claims = JwtClaimsSet.builder()

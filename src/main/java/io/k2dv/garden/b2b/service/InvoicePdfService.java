@@ -33,6 +33,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Renders printable PDF invoices by combining invoice data, order line items,
+ * and payment history into a Thymeleaf HTML template and converting it to PDF
+ * via OpenHTMLToPDF. Enriches line items with product and variant names to
+ * produce a human-readable document rather than raw variant IDs.
+ */
 @Service
 @RequiredArgsConstructor
 public class InvoicePdfService {
@@ -49,6 +55,11 @@ public class InvoicePdfService {
     private final ProductRepository productRepo;
     private final CompanyRepository companyRepo;
 
+    /**
+     * Builds and returns the raw PDF bytes for the given invoice, ready to be streamed
+     * to the client as an attachment. Resolves product names, variant titles, and
+     * payment rows in bulk to avoid N+1 queries.
+     */
     @Transactional(readOnly = true)
     public byte[] generate(UUID invoiceId) {
         Invoice invoice = invoiceRepo.findById(invoiceId)

@@ -26,23 +26,38 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Manages the lifecycle of discount codes and automatic promotions, including creation,
+ * validation, and atomic redemption at checkout. Supports percentage, fixed-amount, and
+ * free-shipping discount types with optional minimum order thresholds, date windows, usage
+ * caps, and company-scoped eligibility.
+ */
 @Service
 @RequiredArgsConstructor
 public class DiscountService {
 
     private final DiscountRepository discountRepo;
 
+    /**
+     * Returns a paginated list of discounts, optionally filtered by status, type, or other
+     * criteria defined in {@link io.k2dv.garden.discount.dto.DiscountFilter}.
+     */
     @Transactional(readOnly = true)
     public PagedResult<DiscountResponse> list(DiscountFilter filter, Pageable pageable) {
         return PagedResult.of(discountRepo.findAll(DiscountSpecification.toSpec(filter), pageable),
             DiscountResponse::from);
     }
 
+    /** Retrieves a single discount by its ID, throwing {@code NotFoundException} if absent. */
     @Transactional(readOnly = true)
     public DiscountResponse getById(UUID id) {
         return DiscountResponse.from(findOrThrow(id));
     }
 
+    /**
+     * Creates a new discount, enforcing that non-automatic promotions must have a unique code
+     * and that the active date range is valid. Codes are stored in uppercase.
+     */
     @Transactional
     public DiscountResponse create(CreateDiscountRequest req) {
         if (req.startsAt() != null && req.endsAt() != null && !req.startsAt().isBefore(req.endsAt())) {
@@ -68,6 +83,11 @@ public class DiscountService {
         return DiscountResponse.from(discountRepo.save(d));
     }
 
+    /**
+     * Updates mutable fields of an existing discount. Date-range consistency is re-validated
+     * against the merged effective dates, and code uniqueness is checked if the code is being
+     * changed. This operation is recorded in the audit log.
+     */
     @Audited(entityType = "discount", entityId = "#id")
     @Transactional
     public DiscountResponse update(UUID id, UpdateDiscountRequest req) {
@@ -97,6 +117,10 @@ public class DiscountService {
         return DiscountResponse.from(discountRepo.save(d));
     }
 
+    /**
+     * Permanently removes a discount. This operation is recorded in the audit log and cannot
+     * be undone; consider deactivating instead of deleting if historical orders reference the code.
+     */
     @Audited(entityType = "discount", entityId = "#id")
     @Transactional
     public void delete(UUID id) {
@@ -104,11 +128,19 @@ public class DiscountService {
         discountRepo.delete(d);
     }
 
+    /**
+     * Checks whether a discount code is eligible for the given order amount without consuming
+     * a usage slot. Use this for real-time coupon validation in the checkout UI.
+     */
     @Transactional(readOnly = true)
     public DiscountValidationResponse validate(String code, BigDecimal orderAmount) {
         return validate(code, orderAmount, null);
     }
 
+    /**
+     * Company-scoped variant of {@link #validate(String, BigDecimal)}: also enforces that
+     * company-restricted discounts may only be used by members of the matching company.
+     */
     @Transactional(readOnly = true)
     public DiscountValidationResponse validate(String code, BigDecimal orderAmount, UUID companyId) {
         Discount d = discountRepo.findByCodeIgnoreCase(code).orElse(null);
@@ -123,6 +155,11 @@ public class DiscountService {
         return new DiscountValidationResponse(true, d.getCode(), d.getType(), d.getValue(), discountedAmount, null);
     }
 
+    /**
+     * Finds the automatic promotion that yields the highest discount for the given order,
+     * considering only currently active, company-eligible promotions. Returns empty if none
+     * apply. Does not consume any usage slots.
+     */
     @Transactional(readOnly = true)
     public java.util.Optional<DiscountApplication> findBestAutomatic(BigDecimal orderAmount, UUID companyId) {
         List<Discount> candidates = discountRepo.findActiveAutomatic(Instant.now(), companyId);
@@ -133,6 +170,11 @@ public class DiscountService {
             .max(java.util.Comparator.comparing(DiscountApplication::discountedAmount));
     }
 
+    /**
+     * Increments the usage counter for an automatic promotion and returns the computed
+     * discount amount. Intended for the order-placement flow after {@link #findBestAutomatic}
+     * has already selected the winning promotion.
+     */
     @Transactional
     public DiscountApplication applyAutomatic(UUID discountId, BigDecimal orderAmount) {
         Discount d = discountRepo.findById(discountId)
@@ -142,11 +184,21 @@ public class DiscountService {
             calculateDiscount(d, orderAmount));
     }
 
+    /**
+     * Validates and atomically redeems a discount code at checkout without company scoping.
+     * Delegates to the company-scoped overload with a null company ID.
+     */
     @Transactional
     public DiscountApplication redeem(String code, BigDecimal orderAmount) {
         return redeem(code, orderAmount, null);
     }
 
+    /**
+     * Validates eligibility and atomically increments the usage counter for a coupon code,
+     * preventing over-redemption under concurrent checkout traffic. Throws
+     * {@code ValidationException} if the code is ineligible and {@code ConflictException}
+     * if the usage cap was reached between validation and the DB update.
+     */
     @Transactional
     public DiscountApplication redeem(String code, BigDecimal orderAmount, UUID companyId) {
         Discount d = discountRepo.findByCodeIgnoreCaseForUpdate(code)

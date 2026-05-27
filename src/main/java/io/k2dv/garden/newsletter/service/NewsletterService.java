@@ -8,12 +8,22 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+/**
+ * Handles newsletter subscription sign-ups, normalising email addresses and
+ * enforcing idempotency so that re-subscribing an already-subscribed address
+ * is a no-op rather than an error.
+ */
 @Service
 @RequiredArgsConstructor
 public class NewsletterService {
 
     private final NewsletterSubscriberRepository repo;
 
+    /**
+     * Subscribes an email address to the newsletter, creating a new subscriber record if
+     * this email has not been seen before. The response indicates whether the address was
+     * already subscribed, which callers can use to tailor confirmation messaging.
+     */
     @Transactional
     public SubscribeResponse subscribe(SubscribeRequest req) {
         String email = req.email().trim().toLowerCase();

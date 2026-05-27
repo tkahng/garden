@@ -25,6 +25,14 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Core authentication service responsible for the full identity lifecycle: registration,
+ * login, logout, email verification, and password management. Applies enumeration
+ * protection (silent no-ops on unknown emails) and in-process rate limiting for
+ * password-reset requests. Collaborates with {@link TokenService} for one-time tokens,
+ * {@link JwtService} for access-token minting, and {@link IamService} for RBAC role
+ * assignment at registration time.
+ */
 @Service
 @RequiredArgsConstructor
 public class AuthService {
@@ -48,6 +56,11 @@ public class AuthService {
     private final AppProperties props;
     private final BCryptPasswordEncoder passwordEncoder;
 
+    /**
+     * Creates a new user account with CREDENTIALS identity, assigns the CUSTOMER role,
+     * sends an email-verification link, and returns a fresh access + refresh token pair.
+     * Throws {@code ConflictException} if the email address is already in use.
+     */
     @Transactional
     public AuthTokenResponse register(RegisterRequest req) {
         if (userRepo.existsByEmail(req.email())) {
@@ -78,6 +91,12 @@ public class AuthService {
         return mintTokenPair(user);
     }
 
+    /**
+     * Authenticates a user by email and password and returns a new token pair.
+     * Throws {@code UnauthorizedException} using a generic message for both bad
+     * credentials and unknown emails to prevent account enumeration. Throws
+     * {@code ForbiddenException} if the account is suspended.
+     */
     @Transactional
     public AuthTokenResponse login(LoginRequest req) {
         User user = userRepo.findByEmail(req.email())
@@ -97,6 +116,11 @@ public class AuthService {
         return mintTokenPair(user);
     }
 
+    /**
+     * Rotates the refresh token (invalidating the old one) and issues a new access + refresh
+     * token pair. Detects token-reuse attacks by revoking all active sessions for the user
+     * if a previously-consumed token is presented.
+     */
     @Transactional
     public AuthTokenResponse refresh(RefreshRequest req) {
         TokenService.RotatedRefreshToken rotated =
@@ -111,12 +135,21 @@ public class AuthService {
         return new AuthTokenResponse(accessToken, rotated.newRawToken());
     }
 
+    /**
+     * Revokes the refresh token to terminate the session. Safe to call with an already-revoked
+     * or unknown token — the operation is idempotent and never throws.
+     */
     @Transactional
     public void logout(String rawRefreshToken) {
         // Revoke the rotating refresh token; no-op if already revoked or not found
         tokenService.revokeRefreshToken(rawRefreshToken);
     }
 
+    /**
+     * Consumes a single-use email-verification token and transitions the user's status from
+     * UNVERIFIED to ACTIVE. Throws {@code UnauthorizedException} if the token is invalid or
+     * expired, and {@code NotFoundException} if the associated user no longer exists.
+     */
     @Transactional
     public void verifyEmail(String rawToken) {
         UUID userId = tokenService.validateAndConsume(rawToken, TokenType.EMAIL_VERIFICATION);
@@ -127,6 +160,10 @@ public class AuthService {
         userRepo.save(user);
     }
 
+    /**
+     * Re-sends the email-verification link for an unverified account. Silently succeeds
+     * when the email is not found or already verified, preventing account enumeration.
+     */
     @Transactional
     public void resendVerification(String email) {
         userRepo.findByEmail(email).ifPresent(user -> {
@@ -139,6 +176,12 @@ public class AuthService {
         // Silent if email not found — prevents account enumeration
     }
 
+    /**
+     * Initiates a password-reset flow by sending a one-time reset link to the given email.
+     * Rate-limited to one request per email per minute and always returns silently — both
+     * the rate-limit short-circuit and the unknown-email case produce no observable response,
+     * preventing enumeration attacks.
+     */
     @Transactional
     public void requestPasswordReset(String email) {
         // Rate-limit: one request per email per minute.
@@ -159,6 +202,10 @@ public class AuthService {
         // Silent if email not found — prevents user enumeration
     }
 
+    /**
+     * Completes a password-reset flow by consuming the one-time token and replacing the
+     * stored password hash. The token is invalidated on first use, so replaying it will fail.
+     */
     @Transactional
     public void confirmPasswordReset(String rawToken, PasswordResetConfirmRequest req) {
         UUID userId = tokenService.validateAndConsume(rawToken, TokenType.PASSWORD_RESET);
@@ -170,6 +217,11 @@ public class AuthService {
         identityRepo.save(identity);
     }
 
+    /**
+     * Allows an authenticated user to change their own password by verifying the current
+     * password before storing the new hash. Throws {@code UnauthorizedException} if the
+     * current password does not match, preventing unauthorized credential changes.
+     */
     @Transactional
     public void updatePassword(UUID userId, UpdatePasswordRequest req) {
         User user = userRepo.findById(userId)
@@ -191,6 +243,10 @@ public class AuthService {
         return new AuthTokenResponse(accessToken, refreshToken);
     }
 
+    /**
+     * Checks whether an email address is already registered, for use during pre-validation
+     * (e.g., real-time availability feedback in the registration form).
+     */
     @Transactional(readOnly = true)
     public boolean emailExists(String email) {
         return userRepo.existsByEmail(email);

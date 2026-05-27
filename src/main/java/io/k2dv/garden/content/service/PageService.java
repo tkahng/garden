@@ -17,12 +17,22 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Manages the full lifecycle of CMS static pages, including draft/publish transitions,
+ * handle uniqueness enforcement, and soft deletion.
+ * Exposes separate admin (all statuses) and storefront (published-only) read paths to
+ * prevent draft content from leaking to unauthenticated users.
+ */
 @Service
 @RequiredArgsConstructor
 public class PageService {
 
     private final PageRepository pageRepo;
 
+    /**
+     * Creates a new static page in draft state, auto-generating a URL-safe handle from the title
+     * if none is supplied. Throws {@link io.k2dv.garden.shared.exception.ConflictException} if the handle is already taken.
+     */
     @Transactional
     public AdminPageResponse create(CreatePageRequest req) {
         String handle = req.handle() != null ? req.handle() : slugify(req.title(), "page");
@@ -51,6 +61,10 @@ public class PageService {
         return toAdminResponse(findOrThrow(id));
     }
 
+    /**
+     * Partially updates a page's content and metadata; only non-null fields are applied,
+     * guarding against handle collisions with other existing pages.
+     */
     @Transactional
     public AdminPageResponse update(UUID id, UpdatePageRequest req) {
         SitePage page = findOrThrow(id);
@@ -67,6 +81,11 @@ public class PageService {
         return toAdminResponse(page);
     }
 
+    /**
+     * Transitions a page's publication status; publishing stamps the current timestamp as
+     * {@code publishedAt} so the storefront knows when the page went live.
+     * Un-publishing clears that timestamp and hides the page from the public listing.
+     */
     @Transactional
     public AdminPageResponse changeStatus(UUID id, PageStatusRequest req) {
         SitePage page = findOrThrow(id);
@@ -79,12 +98,20 @@ public class PageService {
         return toAdminResponse(page);
     }
 
+    /**
+     * Soft-deletes a page by stamping {@code deletedAt}, preserving the record for audit
+     * purposes while immediately removing it from all storefront queries.
+     */
     @Transactional
     public void delete(UUID id) {
         SitePage page = findOrThrow(id);
         page.setDeletedAt(Instant.now());
     }
 
+    /**
+     * Fetches a published page by its URL handle for storefront rendering; throws
+     * {@link io.k2dv.garden.shared.exception.NotFoundException} if the handle does not correspond to a live page.
+     */
     @Transactional(readOnly = true)
     public PageResponse getByHandle(String handle) {
         var pages = pageRepo.findAll(

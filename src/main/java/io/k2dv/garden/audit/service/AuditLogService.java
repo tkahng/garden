@@ -13,12 +13,23 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
 
+/**
+ * Persists and queries the append-only audit log that records every admin mutation
+ * captured by the {@link io.k2dv.garden.audit.aspect.AuditAspect}.
+ * Writes always run in a new, independent transaction so that an audit record is
+ * committed even if the calling transaction rolls back.
+ */
 @Service
 @RequiredArgsConstructor
 public class AuditLogService {
 
     private final AuditLogRepository repo;
 
+    /**
+     * Writes a single immutable audit entry in its own transaction ({@code REQUIRES_NEW})
+     * so the log survives even when the outer business transaction is rolled back.
+     * Typically called by {@link io.k2dv.garden.audit.aspect.AuditAspect} rather than directly.
+     */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void record(UUID actorId, String actorEmail, String action,
                        String entityType, String entityId,
@@ -34,6 +45,10 @@ public class AuditLogService {
         repo.save(entry);
     }
 
+    /**
+     * Queries the audit log with optional filters for entity type, entity ID, and actor email,
+     * returning results in reverse-chronological order for the admin audit trail UI.
+     */
     @Transactional(readOnly = true)
     public PagedResult<AuditLogResponse> list(String entityType, String entityId,
                                               String actorEmail, Pageable pageable) {

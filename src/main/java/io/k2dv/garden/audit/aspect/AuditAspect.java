@@ -18,6 +18,13 @@ import org.springframework.stereotype.Component;
 import java.lang.reflect.Parameter;
 import java.util.UUID;
 
+/**
+ * Spring AOP aspect that intercepts methods annotated with {@link Audited} and delegates
+ * to {@link io.k2dv.garden.audit.service.AuditLogService} to record the actor, action, and
+ * affected entity after the method returns successfully.
+ * The entity ID is resolved from the annotation's SpEL expression against the method arguments
+ * using a restricted {@code SimpleEvaluationContext} to prevent injection attacks.
+ */
 @Aspect
 @Component
 @RequiredArgsConstructor

@@ -17,6 +17,11 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Provides aggregated analytics for the admin dashboard, including revenue summaries,
+ * order counts, average order value, and new customer acquisition for a given date window.
+ * All queries target only paid orders to exclude cancelled and pending revenue.
+ */
 @Service
 @RequiredArgsConstructor
 public class StatsService {
@@ -24,6 +29,11 @@ public class StatsService {
     private final OrderRepository orderRepo;
     private final UserRepository userRepo;
 
+    /**
+     * Returns high-level KPIs for the given time window: total revenue, order count,
+     * average order value, and new registrations. Throws a {@code ValidationException}
+     * if {@code from} is after {@code to}.
+     */
     @Transactional(readOnly = true)
     public StatsResponse getStats(Instant from, Instant to) {
         if (from.isAfter(to)) {
@@ -43,6 +53,10 @@ public class StatsService {
         return new StatsResponse(from, to, orderCount, totalRevenue, averageOrderValue, newCustomerCount);
     }
 
+    /**
+     * Returns daily revenue and order-count data points for the given window,
+     * suitable for rendering a time-series chart on the admin dashboard.
+     */
     @Transactional(readOnly = true)
     public List<TimeSeriesPoint> getTimeSeries(Instant from, Instant to) {
         return orderRepo.findRevenueTimeSeries(from, to).stream()
@@ -54,6 +68,10 @@ public class StatsService {
             .toList();
     }
 
+    /**
+     * Returns the best-selling products by units sold within the date range,
+     * capped at {@code limit} entries, for the admin "Top Products" leaderboard.
+     */
     @Transactional(readOnly = true)
     public List<TopProductEntry> getTopProducts(Instant from, Instant to, int limit) {
         return orderRepo.findTopProducts(from, to, limit).stream()
@@ -67,6 +85,10 @@ public class StatsService {
             .toList();
     }
 
+    /**
+     * Returns the highest-spending customers by total revenue within the date range,
+     * capped at {@code limit} entries, for the admin "Top Customers" leaderboard.
+     */
     @Transactional(readOnly = true)
     public List<TopCustomerEntry> getTopCustomers(Instant from, Instant to, int limit) {
         return orderRepo.findTopCustomers(from, to, limit).stream()

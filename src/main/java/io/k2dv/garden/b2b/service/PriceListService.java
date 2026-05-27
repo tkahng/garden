@@ -27,6 +27,12 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Manages custom price lists assigned to B2B companies, including volume-tiered
+ * per-variant pricing and list-level percentage adjustments. The key method
+ * {@link #resolvePrice} is called at cart and order creation time to determine
+ * the effective price for a given company, variant, and quantity combination.
+ */
 @Service
 @RequiredArgsConstructor
 public class PriceListService {
@@ -37,6 +43,11 @@ public class PriceListService {
     private final ProductVariantRepository variantRepo;
     private final ProductRepository productRepo;
 
+    /**
+     * Creates a new price list for a company, with optional activation window (startsAt/endsAt)
+     * and an optional list-level adjustment rule (percentage off or markup) that applies when
+     * no per-variant entry matches.
+     */
     @Transactional
     public PriceListResponse create(CreatePriceListRequest req) {
         companyRepo.findById(req.companyId())
@@ -67,6 +78,11 @@ public class PriceListService {
         return toResponse(requirePriceList(id));
     }
 
+    /**
+     * Updates all mutable fields of a price list including its activation window and
+     * list-level adjustment rule; validates that adjustmentType and adjustmentValue are
+     * both set or both null.
+     */
     @Transactional
     public PriceListResponse update(UUID id, UpdatePriceListRequest req) {
         validateAdjustment(req.adjustmentType(), req.adjustmentValue());
@@ -88,6 +104,11 @@ public class PriceListService {
         priceListRepo.deleteById(id);
     }
 
+    /**
+     * Creates or updates a volume-tier entry for a specific variant on a price list.
+     * The combination of (priceListId, variantId, minQty) is the natural key; if a matching
+     * entry already exists, its price is overwritten.
+     */
     @Transactional
     public PriceListEntryResponse upsertEntry(UUID priceListId, UUID variantId, UpsertPriceListEntryRequest req) {
         requirePriceList(priceListId);
@@ -118,6 +139,13 @@ public class PriceListService {
             .stream().map(this::toEntryResponse).toList();
     }
 
+    /**
+     * Resolves the effective unit price for a company/variant/quantity combination by
+     * evaluating all currently active price lists in priority order. Checks per-variant
+     * volume tiers first; falls back to list-level percentage adjustment rules; and
+     * returns the catalog price when no B2B pricing applies. This is the primary
+     * entry point called at cart and order time.
+     */
     @Transactional(readOnly = true)
     public ResolvedPriceResponse resolvePrice(UUID companyId, UUID variantId, int qty) {
         companyRepo.findById(companyId)
@@ -162,6 +190,11 @@ public class PriceListService {
         );
     }
 
+    /**
+     * Returns price list entries visible to a company, enriched with product title, handle,
+     * variant title, SKU, and the retail price for comparison. Validates that the price list
+     * belongs to the requesting company.
+     */
     @Transactional(readOnly = true)
     public List<CustomerPriceEntryResponse> listEntriesForCustomer(UUID priceListId, UUID companyId) {
         PriceList pl = requirePriceList(priceListId);
@@ -196,6 +229,11 @@ public class PriceListService {
         }).toList();
     }
 
+    /**
+     * Returns all volume-pricing tiers grouped by variant for a product, filtered to the
+     * company's currently active price lists. Used by the storefront to display tiered
+     * pricing tables on product detail pages.
+     */
     @Transactional(readOnly = true)
     public List<VariantPriceTiersResponse> getProductTiers(UUID companyId, String productHandle) {
         companyRepo.findById(companyId)

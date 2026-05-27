@@ -28,6 +28,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Handles customer-submitted product reviews including submission, storefront display,
+ * and admin moderation (status transitions between pending, published, and rejected).
+ * Enforces a one-review-per-user-per-product rule and partially anonymises reviewer names
+ * when surfacing reviews to the storefront.
+ */
 @Service
 @RequiredArgsConstructor
 public class ProductReviewService {
@@ -36,6 +42,11 @@ public class ProductReviewService {
     private final ProductRepository productRepo;
     private final UserRepository userRepo;
 
+    /**
+     * Submits a new review for an active product. Reviews start in a pending moderation state
+     * and are not shown to other shoppers until an admin publishes them.
+     * Throws {@link io.k2dv.garden.shared.exception.ConflictException} if the user has already reviewed this product.
+     */
     @Transactional
     public ReviewResponse createReview(UUID productId, UUID userId, CreateReviewRequest req) {
         productRepo.findByIdAndDeletedAtIsNull(productId)
@@ -59,6 +70,10 @@ public class ProductReviewService {
         return toResponse(saved, user.getFirstName() + " " + user.getLastName().charAt(0) + ".");
     }
 
+    /**
+     * Returns paginated published reviews for a product, with reviewer names partially
+     * anonymised (first name + last initial) to protect customer privacy on the storefront.
+     */
     @Transactional(readOnly = true)
     public PagedResult<ReviewResponse> listReviews(UUID productId, Pageable pageable) {
         productRepo.findByIdAndDeletedAtIsNull(productId)
@@ -82,6 +97,10 @@ public class ProductReviewService {
         });
     }
 
+    /**
+     * Returns the aggregate rating (average rounded to one decimal place) and published review
+     * count for a product, used to power the star-rating widget on product detail pages.
+     */
     @Transactional(readOnly = true)
     public ReviewSummaryResponse getReviewSummary(UUID productId) {
         Double avg = reviewRepo.findAverageRatingByProductId(productId);
@@ -92,6 +111,10 @@ public class ProductReviewService {
         return new ReviewSummaryResponse(averageRating, count);
     }
 
+    /**
+     * Admin operation to approve or reject a pending review, making it immediately visible
+     * or hiding it from the storefront based on the requested status.
+     */
     @Transactional
     public ReviewResponse updateStatus(UUID reviewId, UpdateReviewStatusRequest req) {
         ProductReview review = reviewRepo.findById(reviewId)

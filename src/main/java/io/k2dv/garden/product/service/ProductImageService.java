@@ -16,6 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * Manages the gallery of images attached to a product, backed by pre-uploaded blob objects.
+ * Automatically maintains the product's featured image pointer, promoting the next image
+ * in position order when the current featured image is removed.
+ */
 @Service
 @RequiredArgsConstructor
 public class ProductImageService {
@@ -25,6 +30,11 @@ public class ProductImageService {
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
 
+    /**
+     * Attaches a previously uploaded blob as a product image and appends it at the next
+     * position. If this is the first image on the product, it is automatically set as the
+     * featured image.
+     */
     @Transactional
     public ProductImageResponse addImage(UUID productId, CreateImageRequest req) {
         var product = productRepo.findByIdAndDeletedAtIsNull(productId)
@@ -48,6 +58,10 @@ public class ProductImageService {
         return toResponse(img);
     }
 
+    /**
+     * Removes an image from the product gallery. If the deleted image was the featured image,
+     * the next image by position is automatically promoted to featured.
+     */
     @Transactional
     public void deleteImage(UUID productId, UUID imageId) {
         var product = productRepo.findByIdAndDeletedAtIsNull(productId)
@@ -67,6 +81,10 @@ public class ProductImageService {
         }
     }
 
+    /**
+     * Updates the display order of product images in a single transaction by applying the
+     * provided position values. Images not included in the list are left unchanged.
+     */
     @Transactional
     public void reorderImages(UUID productId, List<ImagePositionItem> items) {
         productRepo.findByIdAndDeletedAtIsNull(productId)

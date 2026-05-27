@@ -28,6 +28,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Manages stock levels, reservations, and the sales ledger across one or more warehouse
+ * locations. Implements a two-phase commit model: stock is reserved on order placement,
+ * confirmed (deducted) on payment capture, and released back on cancellation.
+ */
 @Service
 @RequiredArgsConstructor
 public class InventoryService {
@@ -39,6 +44,10 @@ public class InventoryService {
     private final ProductVariantRepository variantRepo;
     private final ProductOptionRepository optionRepo;
 
+    /**
+     * Returns the stock levels for a variant across all locations it has been stocked at,
+     * including both on-hand quantity and the quantity currently committed to open orders.
+     */
     @Transactional(readOnly = true)
     public List<InventoryLevelResponse> getLevels(UUID variantId) {
         InventoryItem item = findItemByVariant(variantId);
@@ -47,6 +56,11 @@ public class InventoryService {
             .toList();
     }
 
+    /**
+     * Records a stock receipt at a specific location, creating the inventory level record if
+     * this is the first time stock has been received there. Also writes a RECEIVED transaction
+     * for audit purposes.
+     */
     @Transactional
     public InventoryLevelResponse receiveStock(UUID variantId, ReceiveStockRequest req) {
         InventoryItem item = findItemByVariant(variantId);
@@ -69,6 +83,12 @@ public class InventoryService {
         return toLevelResponse(level);
     }
 
+    /**
+     * Applies a positive or negative stock correction (e.g., damage write-off, count
+     * reconciliation). RECEIVED and SOLD reasons are reserved for system use and will be
+     * rejected; use {@link #receiveStock} for inbound stock. Negative adjustments that would
+     * push on-hand below zero are blocked when the variant's inventory policy is DENY.
+     */
     @Transactional
     public InventoryLevelResponse adjustStock(UUID variantId, AdjustStockRequest req) {
         if (req.reason() == InventoryTransactionReason.RECEIVED
@@ -104,6 +124,10 @@ public class InventoryService {
         return toLevelResponse(level);
     }
 
+    /**
+     * Returns a paginated audit trail of all stock movements for a variant, optionally
+     * filtered to a single location.
+     */
     @Transactional(readOnly = true)
     public PagedResult<InventoryTransactionResponse> listTransactions(
             UUID variantId, UUID locationId, Pageable pageable) {
@@ -114,6 +138,11 @@ public class InventoryService {
         return PagedResult.of(page, this::toTxnResponse);
     }
 
+    /**
+     * Updates fulfillment-related settings on a variant (fulfillment type, inventory policy,
+     * lead time), which control how the order management system handles this item at checkout
+     * and pick/pack time.
+     */
     @Transactional
     public AdminVariantResponse updateVariantFulfillment(UUID variantId, UpdateVariantFulfillmentRequest req) {
         ProductVariant variant = variantRepo.findById(variantId)
@@ -174,6 +203,11 @@ public class InventoryService {
             v.getMinimumOrderQty(), v.getDeletedAt());
     }
 
+    /**
+     * Reserves stock across locations on order placement, incrementing the committed quantity
+     * using a pessimistic lock to prevent overselling. Throws if total available stock
+     * (on-hand minus committed) is insufficient.
+     */
     @Transactional
     public void reserveStock(UUID variantId, int quantity) {
         InventoryItem item = findItemByVariant(variantId);
@@ -201,6 +235,10 @@ public class InventoryService {
         }
     }
 
+    /**
+     * Releases a previously made stock reservation on order cancellation, decrementing the
+     * committed quantity so the stock becomes available to other orders again.
+     */
     @Transactional
     public void releaseReservation(UUID variantId, int quantity) {
         InventoryItem item = findItemByVariant(variantId);
@@ -218,6 +256,10 @@ public class InventoryService {
         }
     }
 
+    /**
+     * Confirms a sale on payment capture by deducting the quantity from both on-hand stock
+     * and the committed reservation, and writing a SOLD transaction for the audit ledger.
+     */
     @Transactional
     public void confirmSale(UUID variantId, int quantity) {
         InventoryItem item = findItemByVariant(variantId);

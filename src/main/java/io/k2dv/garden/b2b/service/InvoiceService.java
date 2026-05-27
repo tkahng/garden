@@ -33,6 +33,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Handles the full lifecycle of B2B invoices: creation from orders, partial and full
+ * payment recording, overdue marking, and voiding. Works in tandem with
+ * {@link CreditAccountService} for net-terms customers and fires webhook events on
+ * status transitions so downstream systems (e.g. ERP integrations) stay in sync.
+ */
 @Service
 @RequiredArgsConstructor
 public class InvoiceService {
@@ -43,6 +49,11 @@ public class InvoiceService {
     private final OutboundWebhookService outboundWebhookService;
     private final OrderService orderService;
 
+    /**
+     * Creates a single invoice for an existing order on demand, used by back-office staff
+     * when the invoice was not generated automatically at order placement.
+     * Throws if an invoice already exists for the order.
+     */
     @Transactional
     public InvoiceResponse createManualInvoice(UUID orderId, UUID companyId, int paymentTermsDays) {
         boolean exists = invoiceRepo.existsByOrderId(orderId);
@@ -56,6 +67,11 @@ public class InvoiceService {
         return toResponse(invoice);
     }
 
+    /**
+     * Internal helper called by the order and quote flows to generate an invoice and
+     * advance the linked order to {@code INVOICED} status. Fires the {@code INVOICE_ISSUED}
+     * webhook event for downstream notification.
+     */
     @Transactional
     public Invoice createFromOrder(UUID companyId, UUID orderId, UUID quoteId,
                                    BigDecimal total, String currency, int paymentTermsDays) {
@@ -83,6 +99,11 @@ public class InvoiceService {
         return invoice;
     }
 
+    /**
+     * Applies a payment against an open invoice, advancing the invoice to {@code PARTIAL}
+     * or {@code PAID} status. When fully paid, propagates {@code PAID} to the linked order
+     * and fires the {@code INVOICE_PAID} webhook. Overpayments are rejected.
+     */
     @Transactional
     public InvoiceResponse recordPayment(UUID invoiceId, RecordPaymentRequest req) {
         Invoice invoice = requireInvoice(invoiceId);
@@ -120,6 +141,10 @@ public class InvoiceService {
         return toResponse(invoice);
     }
 
+    /**
+     * Transitions an {@code ISSUED} or {@code PARTIAL} invoice to {@code OVERDUE} and fires
+     * the {@code INVOICE_OVERDUE} webhook. Typically called by a scheduled job after the due date passes.
+     */
     @Transactional
     public InvoiceResponse markOverdue(UUID invoiceId) {
         Invoice invoice = requireInvoice(invoiceId);
@@ -134,6 +159,10 @@ public class InvoiceService {
         return toResponse(invoice);
     }
 
+    /**
+     * Voids an unpaid invoice, preventing further payments, and cancels the linked order
+     * if it is still in {@code INVOICED} status. Cannot void an already paid invoice.
+     */
     @Transactional
     public InvoiceResponse voidInvoice(UUID invoiceId) {
         Invoice invoice = requireInvoice(invoiceId);
@@ -162,6 +191,9 @@ public class InvoiceService {
             .stream().map(this::toResponse).toList();
     }
 
+    /**
+     * Admin-facing paginated invoice query with optional filters for company, status, and order.
+     */
     @Transactional(readOnly = true)
     public PagedResult<InvoiceResponse> listAll(UUID companyId, InvoiceStatus status, UUID orderId, Pageable pageable) {
         Specification<Invoice> spec = (root, query, cb) -> {
@@ -174,6 +206,10 @@ public class InvoiceService {
         return PagedResult.of(invoiceRepo.findAll(spec, pageable), this::toResponse);
     }
 
+    /**
+     * Generates a CSV account statement for a company covering all invoices within
+     * the optional date range, suitable for download or emailing to the customer.
+     */
     @Transactional(readOnly = true)
     public String generateStatementCsv(UUID companyId, Instant from, Instant to) {
         Specification<Invoice> spec = (root, query, cb) -> {

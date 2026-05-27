@@ -18,6 +18,12 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+/**
+ * Manages the hierarchical department structure within a B2B company.
+ * Departments form an arbitrary-depth tree; members can be assigned to a department
+ * to support organizational reporting and spend segmentation. This service enforces
+ * cycle detection when re-parenting departments and propagates child re-parenting on delete.
+ */
 @Service
 @RequiredArgsConstructor
 public class DepartmentService {
@@ -25,6 +31,10 @@ public class DepartmentService {
     private final DepartmentRepository deptRepo;
     private final CompanyMembershipRepository membershipRepo;
 
+    /**
+     * Returns the full department hierarchy for a company as a nested tree, with root
+     * departments at the top level and their descendants embedded recursively.
+     */
     @Transactional(readOnly = true)
     public List<DepartmentResponse> tree(UUID companyId) {
         List<Department> all = deptRepo.findByCompanyId(companyId);
@@ -32,11 +42,19 @@ public class DepartmentService {
         return roots.stream().map(r -> buildTree(r, all)).toList();
     }
 
+    /**
+     * Returns all departments for a company as a flat list without nesting, useful for
+     * drop-down selection in admin UIs.
+     */
     @Transactional(readOnly = true)
     public List<DepartmentResponse> listFlat(UUID companyId) {
         return deptRepo.findByCompanyId(companyId).stream().map(d -> toResponse(d, List.of())).toList();
     }
 
+    /**
+     * Creates a new department under the given company, optionally as a child of an existing
+     * department. Department names must be unique within the company.
+     */
     @Transactional
     public DepartmentResponse create(UUID companyId, DepartmentRequest req) {
         if (deptRepo.existsByCompanyIdAndName(companyId, req.name())) {
@@ -54,6 +72,10 @@ public class DepartmentService {
         return toResponse(deptRepo.save(dept), List.of());
     }
 
+    /**
+     * Renames a department and optionally re-parents it within the hierarchy.
+     * Guards against cycles: setting an ancestor as a child's parent is rejected.
+     */
     @Transactional
     public DepartmentResponse rename(UUID deptId, UUID companyId, DepartmentRequest req) {
         Department dept = requireOwned(deptId, companyId);
@@ -92,6 +114,10 @@ public class DepartmentService {
         return false;
     }
 
+    /**
+     * Deletes a department, automatically re-parenting its immediate children to the
+     * deleted department's parent so the tree remains intact.
+     */
     @Transactional
     public void delete(UUID deptId, UUID companyId) {
         Department dept = requireOwned(deptId, companyId);
@@ -103,6 +129,10 @@ public class DepartmentService {
         deptRepo.delete(dept);
     }
 
+    /**
+     * Assigns or clears the department for a company member. Passing a null department ID
+     * removes the member from their current department.
+     */
     @Transactional
     public void assignMemberDepartment(UUID companyId, UUID userId, AssignDepartmentRequest req) {
         if (req.departmentId() != null) {

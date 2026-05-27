@@ -30,6 +30,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Core service for managing the product catalog, including creation, status transitions,
+ * soft-delete lifecycle, and tag-driven collection sync. Serves both the admin back-office
+ * and the customer-facing storefront, enforcing B2B catalog visibility rules where applicable.
+ */
 @Service
 @RequiredArgsConstructor
 public class ProductService {
@@ -46,6 +51,10 @@ public class ProductService {
     private final ProductReviewService reviewService;
     private final CompanyProductCatalogRepository catalogRepo;
 
+    /**
+     * Creates a new product in DRAFT status, auto-generating a URL handle from the title
+     * if one is not supplied. Rejects the request if the handle is already taken by another active product.
+     */
     @Transactional
     public AdminProductResponse create(CreateProductRequest req) {
         if (req.title() == null) {
@@ -70,6 +79,10 @@ public class ProductService {
         return toAdminResponse(saved);
     }
 
+    /**
+     * Fetches a single product for the admin view, including all variants, options, images,
+     * and resolved blob URLs. Throws {@code NotFoundException} if the product is soft-deleted.
+     */
     @Transactional(readOnly = true)
     public AdminProductResponse getAdmin(UUID id) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
@@ -77,12 +90,20 @@ public class ProductService {
         return toAdminResponse(p);
     }
 
+    /**
+     * Returns a paginated, filterable list of products for admin use, including soft-deleted
+     * products when the filter requests them.
+     */
     @Transactional(readOnly = true)
     public PagedResult<AdminProductResponse> listAdmin(ProductFilterRequest filter, Pageable pageable) {
         Page<Product> page = productRepo.findAll(ProductSpecification.toSpec(filter), pageable);
         return PagedResult.of(page, this::toAdminResponse);
     }
 
+    /**
+     * Applies partial updates to a product's attributes. When tags are changed, triggers an
+     * automated collection membership sync so tag-based collections stay current.
+     */
     @Transactional
     public AdminProductResponse update(UUID id, UpdateProductRequest req) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
@@ -113,6 +134,10 @@ public class ProductService {
         return toAdminResponse(saved);
     }
 
+    /**
+     * Transitions a product to a new publishing status. Archiving a product automatically
+     * removes it from all collections. This operation is recorded in the audit log.
+     */
     @Audited(entityType = "product", entityId = "#id")
     @Transactional
     public AdminProductResponse changeStatus(UUID id, ProductStatusRequest req) {
@@ -125,6 +150,10 @@ public class ProductService {
         return toAdminResponse(productRepo.save(p));
     }
 
+    /**
+     * Replaces the product's freeform metadata map, which is used to store arbitrary
+     * merchant-defined attributes not covered by the standard product schema.
+     */
     @Transactional
     public AdminProductResponse updateMetadata(UUID id, Map<String, Object> metadata) {
         Product p = productRepo.findByIdAndDeletedAtIsNull(id)
@@ -133,6 +162,11 @@ public class ProductService {
         return toAdminResponse(productRepo.save(p));
     }
 
+    /**
+     * Soft-deletes a product by stamping {@code deletedAt}, making it invisible to all
+     * queries that filter by {@code deletedAtIsNull}. Also removes the product from every
+     * collection. This operation is recorded in the audit log.
+     */
     @Audited(entityType = "product", entityId = "#id")
     @Transactional
     public void softDelete(UUID id) {
@@ -143,6 +177,11 @@ public class ProductService {
         productRepo.save(p);
     }
 
+    /**
+     * Changes the publishing status for a batch of products in a single transaction.
+     * Silently skips IDs that do not resolve to active products. Archiving removes each
+     * product from its collections.
+     */
     @Transactional
     public void bulkChangeStatus(List<UUID> ids, ProductStatus status) {
         List<Product> products = productRepo.findAllByIdInAndDeletedAtIsNull(ids);
@@ -156,6 +195,10 @@ public class ProductService {
         productRepo.saveAll(products);
     }
 
+    /**
+     * Soft-deletes a batch of products in a single transaction, removing each from all
+     * collections before stamping the deletion timestamp.
+     */
     @Transactional
     public void bulkDelete(List<UUID> ids) {
         List<Product> products = productRepo.findAllByIdInAndDeletedAtIsNull(ids);
@@ -167,6 +210,10 @@ public class ProductService {
         productRepo.saveAll(products);
     }
 
+    /**
+     * Returns a customer-facing paginated product listing with price ranges and featured image
+     * URLs. Variant prices and images are batch-loaded to avoid N+1 queries.
+     */
     @Transactional(readOnly = true)
     public PagedResult<ProductSummaryResponse> listStorefront(StorefrontProductFilterRequest filter, Pageable pageable) {
         Page<Product> page = productRepo.findAll(ProductSpecification.storefrontSpec(filter), pageable);
@@ -216,6 +263,10 @@ public class ProductService {
         });
     }
 
+    /**
+     * Resolves a variant and its parent product by SKU, used by POS and fulfillment integrations
+     * to look up purchasable items by barcode. Only returns results for active, non-deleted products.
+     */
     @Transactional(readOnly = true)
     public VariantLookupResponse lookupBySku(String sku) {
         ProductVariant variant = variantRepo.findBySkuIgnoreCaseAndDeletedAtIsNull(sku)
@@ -240,6 +291,11 @@ public class ProductService {
         );
     }
 
+    /**
+     * Fetches a full product detail page by URL handle for the storefront. Products that belong
+     * to a B2B company-restricted catalog are hidden from shoppers who are not members of that
+     * company, surfacing as a 404 to avoid leaking catalog structure.
+     */
     @Transactional(readOnly = true)
     public ProductDetailResponse getByHandle(String handle, UUID companyId) {
         Product p = productRepo.findByHandle(handle)

@@ -36,6 +36,12 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+/**
+ * Unified search service that queries products, collections, articles, and static pages
+ * in a single request using database full-text search.
+ * Callers specify which content types to include via the {@code types} filter so that
+ * unused result buckets are not fetched.
+ */
 @Service
 @RequiredArgsConstructor
 public class SearchService {
@@ -50,6 +56,10 @@ public class SearchService {
     private final BlobObjectRepository blobRepo;
     private final StorageService storageService;
 
+    /**
+     * Executes a cross-entity search against the requested content types and returns
+     * a composite response where each bucket is {@code null} when its type was not requested.
+     */
     @Transactional(readOnly = true)
     public SearchResponse search(String q, Set<String> types, Pageable pageable) {
         String term = q.trim();

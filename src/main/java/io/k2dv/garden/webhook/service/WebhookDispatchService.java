@@ -29,6 +29,12 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Polls for pending webhook deliveries every 30 seconds and dispatches them via HTTP POST
+ * to the registered endpoint URLs, signing each payload with HMAC-SHA256.
+ * Failed deliveries are retried up to five times with exponential back-off (1 min → 1 day);
+ * ShedLock prevents concurrent dispatch across multiple application instances.
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -48,12 +54,20 @@ public class WebhookDispatchService {
         .connectTimeout(Duration.ofSeconds(10))
         .build();
 
+    /**
+     * Scheduled entry point that runs every 30 seconds under a distributed ShedLock
+     * to pick up and deliver any queued webhook payloads.
+     */
     @Scheduled(fixedDelay = 30_000)
     @SchedulerLock(name = "webhookDispatch", lockAtMostFor = "PT25S", lockAtLeastFor = "PT5S")
     public void dispatchPending() {
         doDispatch();
     }
 
+    /**
+     * Loads all dispatchable deliveries and attempts each one within the current transaction.
+     * Exposed as a public method to allow direct invocation in tests without the scheduler.
+     */
     @Transactional
     public void doDispatch() {
         List<WebhookDelivery> deliveries = deliveryRepo.findDispatchable(Instant.now());
