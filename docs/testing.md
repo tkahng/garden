@@ -1,83 +1,181 @@
-# testing
+# Testing
 
-The integration test harness, end to end
+## Test Types
 
-1. Testcontainers starts a real PostgreSQL instance
+| Type | Suffix | What it tests | Speed |
+|---|---|---|---|
+| Unit test | `*Test` or `*Tests` | Single class in isolation (mocked dependencies) | Fast (milliseconds) |
+| Integration test | `*IT` | Full Spring context + real Postgres (Testcontainers) | Slower (~seconds each) |
+| Seeder test | `DevDataSeederIT` | Dev data seeder — run separately to avoid slowing the main integration suite |
 
-AbstractIntegrationTest starts a PostgreSQLContainer in a static block:
+---
 
+## Running Tests
+
+```bash
+# Unit tests only
+./mvnw test -Dtest="**/*Test,**/*Tests"
+
+# Integration tests (excluding the seeder)
+./mvnw test -Dtest="**/*IT,!DevDataSeederIT"
+
+# Seeder integration test only
+./mvnw test -Dtest="DevDataSeederIT"
+
+# Everything (slow — avoid locally, use CI)
+./mvnw test
+```
+
+---
+
+## Integration Test Harness
+
+All integration tests extend `AbstractIntegrationTest`. The harness:
+
+### 1. Starts a real Postgres with Testcontainers
+
+```java
 static final PostgreSQLContainer<?> postgres;
 static {
-postgres = new PostgreSQLContainer<>("postgres:17-alpine");
-postgres.start();
+    postgres = new PostgreSQLContainer<>("postgres:17-alpine");
+    postgres.start();
 }
+```
 
-static means it starts once for the entire JVM — all test classes that extend AbstractIntegrationTest share the same running container. If it were instance-level, a new container would start and stop for every test class, which is very
-slow.
+`static` means the container starts once for the entire JVM. All test classes that extend `AbstractIntegrationTest` share the same running container. This is intentional — starting a new container per test class would be very slow.
 
-It's deliberately not annotated with @Container / @Testcontainers because those annotations hand lifecycle control to JUnit, which would stop the container between test classes, invalidating Spring's cached application context.
+The container is **not** annotated with `@Container`/`@Testcontainers` because those annotations hand lifecycle control to JUnit, which would stop the container between test classes and break Spring's cached application context.
 
----
+### 2. Injects the connection URL via @DynamicPropertySource
 
-1. Spring is told where the database is via @DynamicPropertySource
-
+```java
 @DynamicPropertySource
 static void datasourceProperties(DynamicPropertyRegistry registry) {
-registry.add("spring.datasource.url", postgres::getJdbcUrl);
-registry.add("spring.datasource.username", postgres::getUsername);
-registry.add("spring.datasource.password", postgres::getPassword);
+    registry.add("spring.datasource.url", postgres::getJdbcUrl);
+    registry.add("spring.datasource.username", postgres::getUsername);
+    registry.add("spring.datasource.password", postgres::getPassword);
 }
+```
 
-The container assigns a random port at startup. @DynamicPropertySource injects those values into Spring's environment before the application context starts, overriding anything in application.properties. This is why there's no hardcoded
-JDBC URL in application-test.properties.
+Testcontainers assigns a random port at startup. `@DynamicPropertySource` injects the actual URL before Spring starts — no hardcoded JDBC URL is needed in `application-test.properties`.
 
----
+### 3. Boots a full application context
 
-1. Spring Boot starts a full application context (@SpringBootTest)
+`@SpringBootTest` on `AbstractIntegrationTest` boots the real application context — all beans, all configuration, all security. `@ActiveProfiles("test")` loads `application-test.properties` on top of `application.properties`.
 
-@SpringBootTest on AbstractIntegrationTest boots the real application context — all beans, all configuration, the whole thing. @ActiveProfiles("test") activates the test profile, which loads application-test.properties on top of
-application.properties.
+The context is cached by Spring's test framework — it is created once and reused across all test classes that share the same configuration.
 
----
+### 4. Runs Flyway migrations automatically
 
-1. Flyway runs all migrations automatically on startup
+On context startup, Flyway runs all migrations in `classpath:db/migration`. The test profile adds a second location:
 
-application.properties has:
-spring.flyway.enabled=true
-spring.flyway.locations=classpath:db/migration
-
-application-test.properties overrides the locations to add a second path:
+```properties
+# application-test.properties
 spring.flyway.locations=classpath:db/migration,classpath:db/testmigration
+```
 
-When the Spring context boots, Flyway runs before any test code executes. It scans classpath:db/migration (V1 through V14 — your production migrations) and classpath:db/testmigration (V9999 — a test-only table used by BaseEntityIT).
-Flyway's checksum tracking means it only runs migrations that haven't been applied yet.
+`classpath:db/testmigration` contains `V9999__test_probe_entity.sql` — a test-only table used by `BaseEntityIT` to verify UUID v7 generation and timestamp behavior. It does not interfere with production migrations.
 
-The migration files live in:
+### 5. Each test method rolls back
 
-- src/main/resources/db/migration/ — picked up from main resources on the classpath
-- src/test/resources/db/testmigration/ — picked up from test resources on the classpath
+`@Transactional` + `@Rollback` on `AbstractIntegrationTest` means every `@Test` method runs in a transaction that is rolled back after the method completes. This gives a clean slate per test without truncating tables or restarting the container.
 
----
-
-1. Each test method gets a transaction that rolls back
-
-@Transactional + @Rollback on AbstractIntegrationTest means every test method runs inside a transaction that is never committed — it's rolled back after the test completes. This gives you a clean slate for each test without truncating
-tables or restarting the container. The database schema and seed data from the migrations persist; only the data written by each test is rolled back.
+The post-migration state (schema + seed data from Flyway) persists across all tests. Only the data written by each test method is rolled back.
 
 ---
 
-The full sequence for a single test run
+## Test Security Config
 
+`TestSecurityConfig` replaces the production security configuration in the test context. It disables JWT validation so tests can inject a fake current user without needing real tokens.
+
+`TestCurrentUserConfig` provides a `@Bean` that returns a configurable `CurrentUser` — tests can set the user ID, email, and roles before exercising service code.
+
+---
+
+## Controller Tests (MockMvc)
+
+Controller-layer tests (`*Test`) use `@WebMvcTest` with `MockMvc` and mock out the service layer. These tests check:
+- HTTP status codes
+- Request deserialization and validation (`@Valid` constraints)
+- Response body shape
+- Permission checks (`@HasPermission` and `@Authenticated`)
+
+They do not hit the database.
+
+---
+
+## The Full Test Sequence
+
+```
 JVM starts
 └─ PostgreSQLContainer starts (random port, blank DB)
 └─ Spring context starts (@SpringBootTest)
-├─ DynamicPropertySource injects the JDBC URL
-├─ Flyway runs V1→V14 + V9999 (schema + seed data applied once)
-└─ Application context cached for all test classes
+    ├─ DynamicPropertySource injects the JDBC URL
+    ├─ Flyway runs V1→V74 + V9999 (schema + seed data applied once)
+    └─ Application context cached for all test classes
 └─ For each @Test method:
-├─ Transaction begins
-├─ Test runs (inserts, updates, service calls)
-├─ Transaction rolls back
-└─ DB is back to post-migration state
+    ├─ Transaction begins
+    ├─ Test runs (inserts, service calls, assertions)
+    ├─ Transaction rolls back
+    └─ DB returns to post-migration state
+```
 
-The context is cached by Spring's test framework — it's created once and reused across all test classes that share the same configuration. This is why the integration tests are fast despite using a real database.
+---
+
+## Writing New Tests
+
+### Integration test
+
+```java
+class MyServiceIT extends AbstractIntegrationTest {
+
+    @Autowired
+    MyService myService;
+
+    @Test
+    void doesTheThing() {
+        // arrange
+        // act
+        var result = myService.doThing();
+        // assert
+        assertThat(result).isNotNull();
+    }
+}
+```
+
+The transaction and rollback are handled by `AbstractIntegrationTest`. Do not manually call `@BeforeEach` cleanup — rollback handles it.
+
+### Unit test
+
+```java
+class MyServiceTest {
+
+    @Mock
+    MyRepository repo;
+
+    @InjectMocks
+    MyService service;
+
+    @BeforeEach
+    void setUp() { MockitoAnnotations.openMocks(this); }
+
+    @Test
+    void doesTheThing() { ... }
+}
+```
+
+Prefer unit tests for pure business logic. Use integration tests when the test depends on Postgres behavior (queries, constraints, Flyway migrations).
+
+---
+
+## CI Test Matrix
+
+GitHub Actions runs three parallel jobs on every pull request to `main`:
+
+| Job | Command | What runs |
+|---|---|---|
+| Unit Tests | `./mvnw test -Dtest="**/*Test,**/*Tests"` | All unit tests |
+| Integration Tests | `./mvnw test -Dtest="**/*IT,!DevDataSeederIT"` | All IT tests except seeder |
+| Seeder Integration Tests | `./mvnw test -Dtest="DevDataSeederIT"` | Dev data seeder only |
+
+Integration tests have a 20-minute timeout; seeder tests have 15 minutes. Unit tests run first; integration tests run in parallel after unit tests pass.
