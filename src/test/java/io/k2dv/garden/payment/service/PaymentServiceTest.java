@@ -169,7 +169,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
@@ -198,7 +198,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(stubCartItem(variantId)));
-    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any()))
         .thenThrow(mock(StripeException.class));
@@ -229,7 +229,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(item));
-    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
@@ -293,14 +293,14 @@ class PaymentServiceTest {
     when(addressRepo.findByUserId(userId)).thenReturn(List.of(fallbackAddress));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any(), any())).thenReturn(order);
     when(variantRepo.findAllById(any())).thenReturn(List.of(variant));
     when(stripeGateway.createCheckoutSession(any())).thenReturn(session);
 
     paymentService.initiateCheckout(userId, null, null);
 
     ArgumentCaptor<String> addressCaptor = ArgumentCaptor.forClass(String.class);
-    verify(orderService).createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), addressCaptor.capture(), any());
+    verify(orderService).createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), addressCaptor.capture(), any(), any());
     assertThat(addressCaptor.getValue()).contains("\"address1\":\"Fallback St\"");
   }
 
@@ -530,7 +530,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(orderAfterCreate);
+    when(orderService.createFromCart(eq(userId), any(), anyBoolean(), any(), any(), any(), any(), any(), any())).thenReturn(orderAfterCreate);
     when(discountService.redeem(eq("SAVE10"), any(), any()))
         .thenReturn(new DiscountApplication(discountId, "SAVE10", DiscountType.FIXED_AMOUNT, new BigDecimal("10.00"), new BigDecimal("10.00")));
     when(orderService.getById(orderAfterCreate.getId())).thenReturn(orderAfterDiscount);
@@ -565,7 +565,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any(), any())).thenReturn(order);
     when(creditAccountService.getPaymentTermsDays(companyId)).thenReturn(30);
 
     CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
@@ -592,7 +592,7 @@ class PaymentServiceTest {
     when(addressRepo.findByUserIdAndIsDefaultTrue(userId)).thenReturn(Optional.of(stubAddress()));
     when(cartService.requireActiveCart(userId)).thenReturn(cart);
     when(cartService.getCartItems(any())).thenReturn(List.of(cartItem));
-    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any())).thenReturn(order);
+    when(orderService.createFromCart(eq(userId), eq(companyId), anyBoolean(), any(), any(), any(), any(), any(), any())).thenReturn(order);
     when(companyService.getSpendingLimit(companyId, userId)).thenReturn(new BigDecimal("50.00"));
 
     CheckoutResponse response = paymentService.initiateCheckout(userId, null, null);
