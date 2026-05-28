@@ -88,6 +88,8 @@ class PaymentServiceTest {
   @Mock
   io.k2dv.garden.b2b.service.CreditAccountService creditAccountService;
   @Mock
+  io.k2dv.garden.b2b.service.PriceListService priceListService;
+  @Mock
   io.k2dv.garden.payment.repository.ProcessedStripeEventRepository processedStripeEventRepo;
 
   PaymentService paymentService;
@@ -95,7 +97,7 @@ class PaymentServiceTest {
   @BeforeEach
   void setUp() {
     Mockito.lenient().when(appProperties.getFrontendUrl()).thenReturn("http://localhost:3000");
-    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, stripeProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService, companyService, creditAccountService, processedStripeEventRepo);
+    paymentService = new PaymentService(cartService, orderService, stripeGateway, variantRepo, appProperties, stripeProperties, quoteRequestRepo, addressRepo, discountService, giftCardService, orderEventService, shippingRateRepo, userRepo, invoiceService, shippingService, companyService, creditAccountService, priceListService, processedStripeEventRepo);
   }
 
   private Cart stubCart(UUID userId) {

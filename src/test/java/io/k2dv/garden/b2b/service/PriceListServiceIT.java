@@ -427,4 +427,27 @@ class PriceListServiceIT extends AbstractIntegrationTest {
             priceListService.listEntriesForCustomer(pl.id(), companyId);
         assertThat(entries).isEmpty();
     }
+
+    @Test
+    void getActiveCurrency_noActiveLists_returnsUSD() {
+        String currency = priceListService.getActiveCurrency(companyId);
+        assertThat(currency).isEqualTo("USD");
+    }
+
+    @Test
+    void getActiveCurrency_activeList_returnsListCurrency() {
+        Instant now = Instant.now();
+        priceListService.create(new CreatePriceListRequest(
+            companyId, "EUR List", "EUR", 10,
+            now.minusSeconds(3600), now.plusSeconds(3600), null, null));
+
+        String currency = priceListService.getActiveCurrency(companyId);
+        assertThat(currency).isEqualTo("EUR");
+    }
+
+    @Test
+    void getActiveCurrency_unknownCompany_throwsNotFound() {
+        assertThatThrownBy(() -> priceListService.getActiveCurrency(UUID.randomUUID()))
+            .isInstanceOf(NotFoundException.class);
+    }
 }

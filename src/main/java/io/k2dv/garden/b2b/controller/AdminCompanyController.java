@@ -13,6 +13,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.UUID;
@@ -86,5 +87,13 @@ public class AdminCompanyController {
     public ResponseEntity<ApiResponse<CompanySpendingSummaryResponse>> spendingSummary(
             @PathVariable UUID id) {
         return ResponseEntity.ok(ApiResponse.of(companyService.getSpendingSummary(id)));
+    }
+
+    @PostMapping(value = "/{id}/tax-certificate", consumes = "multipart/form-data")
+    @HasPermission("company:write")
+    public ResponseEntity<ApiResponse<CompanyResponse>> uploadTaxCertificate(
+            @PathVariable UUID id,
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(ApiResponse.of(companyService.uploadTaxCertificateAdmin(id, file)));
     }
 }

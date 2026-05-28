@@ -147,6 +147,14 @@ public class PriceListService {
      * entry point called at cart and order time.
      */
     @Transactional(readOnly = true)
+    public String getActiveCurrency(UUID companyId) {
+        companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        List<PriceList> activeLists = priceListRepo.findActiveLists(companyId, Instant.now());
+        return activeLists.isEmpty() ? "USD" : activeLists.get(0).getCurrency();
+    }
+
+    @Transactional(readOnly = true)
     public ResolvedPriceResponse resolvePrice(UUID companyId, UUID variantId, int qty) {
         companyRepo.findById(companyId)
             .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));

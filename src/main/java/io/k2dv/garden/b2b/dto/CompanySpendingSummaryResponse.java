@@ -7,6 +7,7 @@ import java.util.UUID;
 public record CompanySpendingSummaryResponse(
     long totalOrders,
     BigDecimal totalSpend,
+    String currency,
     InvoiceSummary invoiceSummary,
     List<MemberSpend> memberSpending
 ) {

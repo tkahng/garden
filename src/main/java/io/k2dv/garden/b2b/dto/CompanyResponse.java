@@ -17,6 +17,7 @@ public record CompanyResponse(
     String billingCountry,
     boolean taxExempt,
     UUID salesRepUserId,
+    String taxCertificateUrl,
     Map<String, Object> metadata,
     Instant createdAt,
     Instant updatedAt

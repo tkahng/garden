@@ -18,6 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Instant;
 import java.util.List;
@@ -229,5 +230,21 @@ public class CompanyController {
             .contentType(MediaType.parseMediaType("text/csv"))
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"statement-" + id + ".csv\"")
             .body(csv);
+    }
+
+    @GetMapping("/{id}/spending-summary")
+    public ResponseEntity<ApiResponse<CompanySpendingSummaryResponse>> spendingSummary(
+        @CurrentUser User user,
+        @PathVariable UUID id) {
+        companyService.requireMemberAccess(id, user.getId());
+        return ResponseEntity.ok(ApiResponse.of(companyService.getSpendingSummary(id)));
+    }
+
+    @PostMapping(value = "/{id}/tax-certificate", consumes = "multipart/form-data")
+    public ResponseEntity<ApiResponse<CompanyResponse>> uploadTaxCertificate(
+        @CurrentUser User user,
+        @PathVariable UUID id,
+        @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(ApiResponse.of(companyService.uploadTaxCertificate(id, user.getId(), file)));
     }
 }

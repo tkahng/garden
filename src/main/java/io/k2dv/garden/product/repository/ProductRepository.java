@@ -24,16 +24,36 @@ public interface ProductRepository extends JpaRepository<Product, UUID>, JpaSpec
     @Query(value = """
         SELECT * FROM catalog.products
         WHERE deleted_at IS NULL AND status = 'ACTIVE'
-          AND search_vector @@ plainto_tsquery('english', :query)
+          AND (search_vector @@ plainto_tsquery('english', :query)
+               OR title ILIKE '%' || :query || '%')
         ORDER BY ts_rank(search_vector, plainto_tsquery('english', :query)) DESC
         """,
         countQuery = """
         SELECT COUNT(*) FROM catalog.products
         WHERE deleted_at IS NULL AND status = 'ACTIVE'
-          AND search_vector @@ plainto_tsquery('english', :query)
+          AND (search_vector @@ plainto_tsquery('english', :query)
+               OR title ILIKE '%' || :query || '%')
         """,
         nativeQuery = true)
     Page<Product> fullTextSearch(@Param("query") String query, Pageable pageable);
+
+    @Query(value = """
+        SELECT DISTINCT p.* FROM catalog.products p
+        JOIN catalog.product_variants v ON v.product_id = p.id
+        WHERE p.deleted_at IS NULL AND p.status = 'ACTIVE'
+          AND v.sku ILIKE :skuPattern
+        LIMIT 50
+        """, nativeQuery = true)
+    List<Product> findByVariantSkuContaining(@Param("skuPattern") String skuPattern);
+
+    @Query(value = """
+        SELECT DISTINCT p.* FROM catalog.products p
+        JOIN catalog.product_variants v ON v.product_id = p.id
+        WHERE p.deleted_at IS NULL AND p.status = 'ACTIVE'
+          AND v.sku % :query
+        LIMIT 20
+        """, nativeQuery = true)
+    List<Product> findByVariantSkuFuzzy(@Param("query") String query);
 
     @Query(value = """
         SELECT p.* FROM catalog.product_product_tags t
