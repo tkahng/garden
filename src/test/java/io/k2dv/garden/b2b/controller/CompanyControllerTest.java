@@ -55,7 +55,7 @@ class CompanyControllerTest {
 
     private CompanyResponse stubCompany(UUID id) {
         return new CompanyResponse(id, "Acme", null, null, null, null, null, null, null, null, false,
-            null, null, Instant.now(), Instant.now());
+            null, null, null, Instant.now(), Instant.now());
     }
 
     private CompanyMemberResponse stubMember(UUID userId) {

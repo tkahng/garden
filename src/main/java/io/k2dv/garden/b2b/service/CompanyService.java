@@ -11,6 +11,8 @@ import io.k2dv.garden.b2b.repository.CompanyMembershipRepository;
 import io.k2dv.garden.b2b.repository.CompanyProductCatalogRepository;
 import io.k2dv.garden.b2b.repository.CompanyRepository;
 import io.k2dv.garden.b2b.repository.InvoiceRepository;
+import io.k2dv.garden.blob.config.StorageProperties;
+import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.repository.OrderRepository;
 import io.k2dv.garden.product.repository.ProductRepository;
@@ -23,6 +25,9 @@ import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 
 import java.math.RoundingMode;
 import java.util.Collection;
@@ -41,6 +46,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class CompanyService {
 
+    private static final Set<String> ALLOWED_CERT_TYPES = Set.of(
+        "application/pdf", "image/jpeg", "image/png"
+    );
+
     private final CompanyRepository companyRepo;
     private final CompanyMembershipRepository membershipRepo;
     private final UserRepository userRepo;
@@ -48,6 +57,9 @@ public class CompanyService {
     private final ProductRepository productRepo;
     private final OrderRepository orderRepo;
     private final InvoiceRepository invoiceRepo;
+    private final StorageService storageService;
+    private final StorageProperties storageProperties;
+    private final PriceListService priceListService;
 
     /**
      * Creates a new company and automatically enrolls the requestor as its OWNER.
@@ -338,13 +350,68 @@ public class CompanyService {
         }
     }
 
+    private void requireOwnerOrManager(UUID companyId, UUID userId) {
+        CompanyMembership membership = membershipRepo.findByCompanyIdAndUserId(companyId, userId)
+            .orElseThrow(() -> new ForbiddenException("NOT_A_MEMBER", "You are not a member of this company"));
+        if (membership.getRole() != CompanyRole.OWNER && membership.getRole() != CompanyRole.MANAGER) {
+            throw new ForbiddenException("NOT_OWNER_OR_MANAGER",
+                "Only company owners and managers can perform this action");
+        }
+    }
+
+    @Transactional
+    public CompanyResponse uploadTaxCertificate(UUID companyId, UUID requestorId, MultipartFile file) {
+        Company company = companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        requireOwnerOrManager(companyId, requestorId);
+        String oldKey = company.getTaxCertificateKey();
+        String key = storeCertificate(companyId, file);
+        if (oldKey != null) storageService.delete(oldKey);
+        company.setTaxCertificateKey(key);
+        return toResponse(companyRepo.save(company));
+    }
+
+    @Transactional
+    public CompanyResponse uploadTaxCertificateAdmin(UUID companyId, MultipartFile file) {
+        Company company = companyRepo.findById(companyId)
+            .orElseThrow(() -> new NotFoundException("COMPANY_NOT_FOUND", "Company not found"));
+        String oldKey = company.getTaxCertificateKey();
+        String key = storeCertificate(companyId, file);
+        if (oldKey != null) storageService.delete(oldKey);
+        company.setTaxCertificateKey(key);
+        return toResponse(companyRepo.save(company));
+    }
+
+    private String storeCertificate(UUID companyId, MultipartFile file) {
+        String contentType = file.getContentType() != null ? file.getContentType() : "application/octet-stream";
+        if (!ALLOWED_CERT_TYPES.contains(contentType)) {
+            throw new ValidationException("INVALID_FILE_TYPE", "Certificate must be a PDF, JPEG, or PNG");
+        }
+        if (file.getSize() > storageProperties.getMaxUploadSize()) {
+            throw new ValidationException("FILE_TOO_LARGE",
+                "Certificate exceeds the maximum upload size of " + storageProperties.getMaxUploadSize() + " bytes");
+        }
+        String key = "tax-certificates/" + companyId + "/" + UUID.randomUUID()
+            + "-" + (file.getOriginalFilename() != null ? file.getOriginalFilename() : "cert");
+        byte[] bytes;
+        try {
+            bytes = file.getBytes();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read certificate file", e);
+        }
+        storageService.store(key, contentType, new ByteArrayInputStream(bytes), bytes.length);
+        return key;
+    }
+
     private CompanyResponse toResponse(Company c) {
+        String certUrl = c.getTaxCertificateKey() != null
+            ? storageService.resolveUrl(c.getTaxCertificateKey()) : null;
         return new CompanyResponse(
             c.getId(), c.getName(), c.getTaxId(), c.getPhone(),
             c.getBillingAddressLine1(), c.getBillingAddressLine2(),
             c.getBillingCity(), c.getBillingState(),
             c.getBillingPostalCode(), c.getBillingCountry(),
-            c.isTaxExempt(), c.getSalesRepUserId(), c.getMetadata(),
+            c.isTaxExempt(), c.getSalesRepUserId(), certUrl, c.getMetadata(),
             c.getCreatedAt(), c.getUpdatedAt()
         );
     }
@@ -454,9 +521,12 @@ public class CompanyService {
             })
             .toList();
 
+        String currency = priceListService.getActiveCurrency(companyId);
+
         return new CompanySpendingSummaryResponse(
             totalOrders,
             totalSpend,
+            currency,
             new CompanySpendingSummaryResponse.InvoiceSummary(
                 pendingCount, pendingAmount,
                 overdueCount, overdueAmount,

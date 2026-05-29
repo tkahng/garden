@@ -50,6 +50,9 @@ public class Company extends BaseEntity {
     @Column(name = "sales_rep_user_id")
     private UUID salesRepUserId;
 
+    @Column(name = "tax_certificate_key")
+    private String taxCertificateKey;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "metadata", columnDefinition = "jsonb")
     private Map<String, Object> metadata = new HashMap<>();

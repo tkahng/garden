@@ -5,15 +5,18 @@ import io.k2dv.garden.auth.service.AuthService;
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.dto.*;
 import io.k2dv.garden.b2b.model.CompanyRole;
-import io.k2dv.garden.shared.exception.ForbiddenException;
+import io.k2dv.garden.blob.service.StorageService;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
 import io.k2dv.garden.shared.exception.ConflictException;
 import io.k2dv.garden.shared.exception.ForbiddenException;
 import io.k2dv.garden.shared.exception.NotFoundException;
+import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.repository.UserRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
@@ -23,6 +26,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 class CompanyServiceIT extends AbstractIntegrationTest {
 
@@ -30,16 +39,19 @@ class CompanyServiceIT extends AbstractIntegrationTest {
     @Autowired AuthService authService;
     @Autowired UserRepository userRepo;
     @MockitoBean EmailService emailService;
+    @MockitoBean StorageService storageService;
 
     private static final AtomicInteger counter = new AtomicInteger(0);
 
     private UUID ownerUserId;
     private UUID memberUserId;
+    private UUID managerUserId;
 
     @BeforeEach
     void setUp() {
         ownerUserId = createUser();
         memberUserId = createUser();
+        managerUserId = createUser();
     }
 
     private UUID createUser() {
@@ -304,5 +316,94 @@ class CompanyServiceIT extends AbstractIntegrationTest {
     void getSpendingSummary_unknownCompany_throwsNotFound() {
         assertThatThrownBy(() -> companyService.getSpendingSummary(UUID.randomUUID()))
             .isInstanceOf(io.k2dv.garden.shared.exception.NotFoundException.class);
+    }
+
+    @Test
+    void getSpendingSummary_defaultCurrencyIsUSD() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Curr Co", null, null, null, null, null, null, null, null));
+
+        CompanySpendingSummaryResponse summary = companyService.getSpendingSummary(company.id());
+
+        assertThat(summary.currency()).isEqualTo("USD");
+    }
+
+    // ─── Tax certificate upload ───────────────────────────────────────────────
+
+    @Test
+    void uploadTaxCertificate_byOwner_succeeds() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Cert Co", null, null, null, null, null, null, null, null));
+        MockMultipartFile pdf = new MockMultipartFile("file", "cert.pdf", "application/pdf", new byte[100]);
+
+        companyService.uploadTaxCertificate(company.id(), ownerUserId, pdf);
+
+        verify(storageService).store(anyString(), eq("application/pdf"), any(), eq(100L));
+    }
+
+    @Test
+    void uploadTaxCertificate_byManager_succeeds() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Cert Co", null, null, null, null, null, null, null, null));
+        String managerEmail = userRepo.findById(managerUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(managerEmail, null));
+        companyService.updateMemberRole(company.id(), managerUserId, ownerUserId,
+            new UpdateMemberRoleRequest(CompanyRole.MANAGER));
+        MockMultipartFile pdf = new MockMultipartFile("file", "cert.pdf", "application/pdf", new byte[50]);
+
+        companyService.uploadTaxCertificate(company.id(), managerUserId, pdf);
+
+        verify(storageService).store(anyString(), eq("application/pdf"), any(), eq(50L));
+    }
+
+    @Test
+    void uploadTaxCertificate_byMember_throwsForbidden() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Cert Co", null, null, null, null, null, null, null, null));
+        String memberEmail = userRepo.findById(memberUserId).orElseThrow().getEmail();
+        companyService.addMember(company.id(), ownerUserId, new AddMemberRequest(memberEmail, null));
+        MockMultipartFile pdf = new MockMultipartFile("file", "cert.pdf", "application/pdf", new byte[100]);
+
+        assertThatThrownBy(() -> companyService.uploadTaxCertificate(company.id(), memberUserId, pdf))
+            .isInstanceOf(ForbiddenException.class)
+            .satisfies(e -> assertThat(((ForbiddenException) e).getErrorCode()).isEqualTo("NOT_OWNER_OR_MANAGER"));
+    }
+
+    @Test
+    void uploadTaxCertificate_invalidMimeType_throwsValidation() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Cert Co", null, null, null, null, null, null, null, null));
+        MockMultipartFile exe = new MockMultipartFile("file", "cert.exe", "application/octet-stream", new byte[100]);
+
+        assertThatThrownBy(() -> companyService.uploadTaxCertificate(company.id(), ownerUserId, exe))
+            .isInstanceOf(ValidationException.class)
+            .satisfies(e -> assertThat(((ValidationException) e).getErrorCode()).isEqualTo("INVALID_FILE_TYPE"));
+    }
+
+    @Test
+    void uploadTaxCertificate_oversizedFile_throwsValidation() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Cert Co", null, null, null, null, null, null, null, null));
+        byte[] oversized = new byte[10_485_761]; // 10 MB + 1 byte
+        MockMultipartFile huge = new MockMultipartFile("file", "cert.pdf", "application/pdf", oversized);
+
+        assertThatThrownBy(() -> companyService.uploadTaxCertificate(company.id(), ownerUserId, huge))
+            .isInstanceOf(ValidationException.class)
+            .satisfies(e -> assertThat(((ValidationException) e).getErrorCode()).isEqualTo("FILE_TOO_LARGE"));
+    }
+
+    @Test
+    void uploadTaxCertificate_replacingExisting_deletesOldKey() {
+        CompanyResponse company = companyService.create(ownerUserId,
+            new CreateCompanyRequest("Cert Co", null, null, null, null, null, null, null, null));
+        MockMultipartFile pdf = new MockMultipartFile("file", "cert.pdf", "application/pdf", new byte[100]);
+
+        companyService.uploadTaxCertificate(company.id(), ownerUserId, pdf);
+        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
+        verify(storageService, times(1)).store(keyCaptor.capture(), anyString(), any(), anyLong());
+        String firstKey = keyCaptor.getValue();
+
+        companyService.uploadTaxCertificate(company.id(), ownerUserId, pdf);
+        verify(storageService).delete(firstKey);
     }
 }

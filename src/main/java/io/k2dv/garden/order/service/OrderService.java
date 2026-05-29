@@ -112,14 +112,21 @@ public class OrderService {
     public Order createFromCart(UUID userId, List<CartItem> cartItems,
                                 UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                                 String poNumber) {
-        return buildOrder(userId, null, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+        return buildOrder(userId, null, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber, null);
     }
 
     @Transactional
     public Order createFromCart(UUID userId, UUID companyId, boolean taxExempt, List<CartItem> cartItems,
                                 UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                                 String poNumber) {
-        return buildOrder(userId, null, companyId, taxExempt, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+        return buildOrder(userId, null, companyId, taxExempt, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber, null);
+    }
+
+    @Transactional
+    public Order createFromCart(UUID userId, UUID companyId, boolean taxExempt, List<CartItem> cartItems,
+                                UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
+                                String poNumber, String currency) {
+        return buildOrder(userId, null, companyId, taxExempt, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber, currency);
     }
 
     /**
@@ -136,13 +143,13 @@ public class OrderService {
     public Order createGuestOrder(String guestEmail, List<CartItem> cartItems,
                                   UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
                                   String poNumber) {
-        return buildOrder(null, guestEmail, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber);
+        return buildOrder(null, guestEmail, null, false, cartItems, shippingRateId, shippingCost, shippingAddress, poNumber, null);
     }
 
     private Order buildOrder(UUID userId, String guestEmail, UUID companyId, boolean taxExempt,
                              List<CartItem> cartItems,
                              UUID shippingRateId, BigDecimal shippingCost, String shippingAddress,
-                             String poNumber) {
+                             String poNumber, String currency) {
         if (cartItems.isEmpty()) {
             throw new ValidationException("EMPTY_CART", "Cart is empty");
         }
@@ -196,6 +203,7 @@ public class OrderService {
         order.setShippingRateId(shippingRateId);
         order.setShippingAddress(shippingAddress);
         order.setPoNumber(poNumber);
+        if (currency != null && !currency.isBlank()) order.setCurrency(currency.toLowerCase());
         order = orderRepo.save(order);
 
         List<OrderItem> items = new ArrayList<>();

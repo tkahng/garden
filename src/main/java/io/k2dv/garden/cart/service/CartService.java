@@ -465,7 +465,9 @@ public class CartService {
             return new CartItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo, moq);
         }).toList();
 
-        return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), items, cart.getCreatedAt());
+        String currency = cart.getCompanyId() != null
+            ? priceListService.getActiveCurrency(cart.getCompanyId()) : "USD";
+        return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), currency, items, cart.getCreatedAt());
     }
 
     /**

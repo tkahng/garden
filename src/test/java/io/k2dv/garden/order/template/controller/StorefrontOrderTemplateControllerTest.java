@@ -111,7 +111,7 @@ class StorefrontOrderTemplateControllerTest {
         UUID id = UUID.randomUUID();
         when(templateService.loadToCart(eq(STUB_USER_ID), eq(id)))
             .thenReturn(new CartResponse(UUID.randomUUID(),
-                io.k2dv.garden.cart.model.CartStatus.ACTIVE, null, List.of(), null));
+                io.k2dv.garden.cart.model.CartStatus.ACTIVE, null, "USD", List.of(), null));
 
         mvc.perform(post("/api/v1/storefront/order-templates/{id}/load", id))
             .andExpect(status().isOk());

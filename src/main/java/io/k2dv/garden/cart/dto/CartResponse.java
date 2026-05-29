@@ -10,6 +10,7 @@ public record CartResponse(
     UUID id,
     CartStatus status,
     UUID companyId,
+    String currency,
     List<CartItemResponse> items,
     Instant createdAt
 ) {}

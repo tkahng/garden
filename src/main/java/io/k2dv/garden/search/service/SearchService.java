@@ -21,6 +21,7 @@ import io.k2dv.garden.search.dto.SearchArticleResult;
 import io.k2dv.garden.search.dto.SearchPageResult;
 import io.k2dv.garden.search.dto.SearchResponse;
 import io.k2dv.garden.shared.dto.PagedResult;
+import io.k2dv.garden.shared.dto.PageMeta;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +29,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -87,29 +89,61 @@ public class SearchService {
 
     private PagedResult<ProductSummaryResponse> searchProducts(String term, Pageable pageable) {
         Page<Product> page = productRepo.fullTextSearch(term, pageable);
-        List<Product> products = page.getContent();
 
-        Set<UUID> productIds = products.stream().map(Product::getId).collect(Collectors.toSet());
+        // Augment with SKU matches (exact first, then fuzzy) not already in FTS results
+        Set<UUID> ftsIds = page.getContent().stream().map(Product::getId).collect(Collectors.toSet());
+        List<Product> skuMatches = new ArrayList<>();
+        productRepo.findByVariantSkuContaining("%" + term + "%").stream()
+            .filter(p -> !ftsIds.contains(p.getId())).forEach(skuMatches::add);
+        if (skuMatches.isEmpty()) {
+            productRepo.findByVariantSkuFuzzy(term).stream()
+                .filter(p -> !ftsIds.contains(p.getId())).forEach(skuMatches::add);
+        }
+
+        List<Product> allProducts = new ArrayList<>(page.getContent());
+        allProducts.addAll(skuMatches);
+
+        Set<UUID> productIds = allProducts.stream().map(Product::getId).collect(Collectors.toSet());
         Map<UUID, List<ProductVariant>> variantsByProduct = productIds.isEmpty() ? Map.of() :
             variantRepo.findByProductIdInAndDeletedAtIsNull(productIds).stream()
                 .collect(Collectors.groupingBy(ProductVariant::getProductId));
 
-        Map<UUID, String> imageUrlByProductId = imageResolver.resolveByProductId(products);
+        Map<UUID, String> imageUrlByProductId = imageResolver.resolveByProductId(allProducts);
 
-        return PagedResult.of(page, p -> {
-            List<ProductVariant> variants = variantsByProduct.getOrDefault(p.getId(), List.of());
-            BigDecimal priceMin = variants.stream().map(ProductVariant::getPrice)
-                .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
-            BigDecimal priceMax = variants.stream().map(ProductVariant::getPrice)
-                .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
-            BigDecimal compareAtPriceMin = variants.stream().map(ProductVariant::getCompareAtPrice)
-                .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
-            BigDecimal compareAtPriceMax = variants.stream().map(ProductVariant::getCompareAtPrice)
-                .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
-            String imageUrl = imageUrlByProductId.get(p.getId());
-            return new ProductSummaryResponse(p.getId(), p.getTitle(), p.getHandle(), p.getVendor(),
-                imageUrl, priceMin, priceMax, compareAtPriceMin, compareAtPriceMax);
-        });
+        // Build a response list for extra SKU-matched products
+        List<ProductSummaryResponse> extraItems = skuMatches.stream().map(p -> toProductSummary(p, variantsByProduct, imageUrlByProductId)).toList();
+
+        // Wrap: keep original paged FTS results, append SKU extras as bonus items
+        PagedResult<ProductSummaryResponse> ftsResult = PagedResult.of(page, p ->
+            toProductSummary(p, variantsByProduct, imageUrlByProductId));
+
+        if (extraItems.isEmpty() || pageable.getPageNumber() > 0) return ftsResult;
+
+        List<ProductSummaryResponse> combined = new ArrayList<>(ftsResult.getContent());
+        combined.addAll(extraItems);
+        PageMeta newMeta = PageMeta.builder()
+            .page(ftsResult.getMeta().getPage())
+            .pageSize(ftsResult.getMeta().getPageSize())
+            .total(ftsResult.getMeta().getTotal() + extraItems.size())
+            .build();
+        return new PagedResult<>(combined, newMeta);
+    }
+
+    private ProductSummaryResponse toProductSummary(Product p,
+            Map<UUID, List<ProductVariant>> variantsByProduct,
+            Map<UUID, String> imageUrlByProductId) {
+        List<ProductVariant> variants = variantsByProduct.getOrDefault(p.getId(), List.of());
+        BigDecimal priceMin = variants.stream().map(ProductVariant::getPrice)
+            .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
+        BigDecimal priceMax = variants.stream().map(ProductVariant::getPrice)
+            .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+        BigDecimal compareAtPriceMin = variants.stream().map(ProductVariant::getCompareAtPrice)
+            .filter(Objects::nonNull).min(Comparator.naturalOrder()).orElse(null);
+        BigDecimal compareAtPriceMax = variants.stream().map(ProductVariant::getCompareAtPrice)
+            .filter(Objects::nonNull).max(Comparator.naturalOrder()).orElse(null);
+        String imageUrl = imageUrlByProductId.get(p.getId());
+        return new ProductSummaryResponse(p.getId(), p.getTitle(), p.getHandle(), p.getVendor(),
+            imageUrl, priceMin, priceMax, compareAtPriceMin, compareAtPriceMax);
     }
 
     private PagedResult<CollectionSummaryResponse> searchCollections(String term, Pageable pageable) {

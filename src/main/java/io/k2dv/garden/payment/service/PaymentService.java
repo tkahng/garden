@@ -91,6 +91,7 @@ public class PaymentService {
   private final io.k2dv.garden.shipping.service.ShippingService shippingService;
   private final CompanyService companyService;
   private final CreditAccountService creditAccountService;
+  private final io.k2dv.garden.b2b.service.PriceListService priceListService;
   private final ProcessedStripeEventRepository processedStripeEventRepo;
 
   private static final ObjectMapper MAPPER = new ObjectMapper();
@@ -147,8 +148,9 @@ public class PaymentService {
 
     String shippingAddressJson = serializeAddress(shippingAddress);
 
+    String cartCurrency = companyId != null ? priceListService.getActiveCurrency(companyId) : "USD";
     Order order = orderService.createFromCart(userId, companyId, taxExempt, cartItems,
-        shippingRateId, shippingCost, shippingAddressJson, poNumber);
+        shippingRateId, shippingCost, shippingAddressJson, poNumber, cartCurrency);
 
     order = applyDiscountAndGiftCard(order, discountCode, giftCardCode, companyId);
 
