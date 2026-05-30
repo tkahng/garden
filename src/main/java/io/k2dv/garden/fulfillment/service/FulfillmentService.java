@@ -1,16 +1,20 @@
 package io.k2dv.garden.fulfillment.service;
 
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.fulfillment.dto.CreateFulfillmentRequest;
 import io.k2dv.garden.fulfillment.dto.FulfillmentItemResponse;
 import io.k2dv.garden.fulfillment.dto.FulfillmentResponse;
 import io.k2dv.garden.fulfillment.dto.UpdateFulfillmentRequest;
+import io.k2dv.garden.fulfillment.event.FulfillmentDeliveredEvent;
+import io.k2dv.garden.fulfillment.event.FulfillmentShippedEvent;
 import io.k2dv.garden.fulfillment.model.Fulfillment;
 import io.k2dv.garden.fulfillment.model.FulfillmentItem;
 import io.k2dv.garden.fulfillment.model.FulfillmentStatus;
-import io.k2dv.garden.auth.service.EmailService;
-import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.fulfillment.repository.FulfillmentItemRepository;
 import io.k2dv.garden.fulfillment.repository.FulfillmentRepository;
+import io.k2dv.garden.notification.model.NotificationType;
+import io.k2dv.garden.notification.service.NotificationPreferenceService;
+import io.k2dv.garden.order.model.Order;
 import io.k2dv.garden.order.model.OrderEventType;
 import io.k2dv.garden.order.model.OrderItem;
 import io.k2dv.garden.order.model.OrderStatus;
@@ -22,15 +26,12 @@ import io.k2dv.garden.shared.exception.NotFoundException;
 import io.k2dv.garden.shared.exception.ValidationException;
 import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.repository.UserRepository;
-import io.k2dv.garden.notification.model.NotificationType;
-import io.k2dv.garden.notification.service.NotificationPreferenceService;
 import io.k2dv.garden.webhook.model.WebhookEventType;
 import io.k2dv.garden.webhook.service.OutboundWebhookService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-
-import io.k2dv.garden.order.model.Order;
 
 import java.util.List;
 import java.util.Map;
@@ -53,10 +54,10 @@ public class FulfillmentService {
     private final OrderItemRepository orderItemRepo;
     private final OrderEventService orderEventService;
     private final UserRepository userRepo;
-    private final EmailService emailService;
     private final AppProperties appProperties;
     private final OutboundWebhookService outboundWebhookService;
     private final NotificationPreferenceService notificationPreferenceService;
+    private final ApplicationEventPublisher eventPublisher;
 
     /**
      * Records a new shipment against a paid order, validating that each requested line-item quantity
@@ -157,13 +158,13 @@ public class FulfillmentService {
             "Fulfillment updated", null, "admin", null);
 
         if (transitioningToShipped) {
-            sendShippingNotificationEmail(orderId, f);
+            publishShippedEvent(orderId, f);
             outboundWebhookService.scheduleDelivery(WebhookEventType.FULFILLMENT_SHIPPED,
                 Map.of("orderId", orderId.toString(), "fulfillmentId", f.getId().toString(),
                     "trackingNumber", f.getTrackingNumber() != null ? f.getTrackingNumber() : ""));
         }
         if (transitioningToDelivered) {
-            sendDeliveredEmail(orderId);
+            publishDeliveredEvent(orderId);
             outboundWebhookService.scheduleDelivery(WebhookEventType.FULFILLMENT_DELIVERED,
                 Map.of("orderId", orderId.toString(), "fulfillmentId", f.getId().toString()));
         }
@@ -201,32 +202,34 @@ public class FulfillmentService {
         return toResponse(f);
     }
 
-    private void sendDeliveredEmail(UUID orderId) {
+    private void publishDeliveredEvent(UUID orderId) {
         orderRepo.findById(orderId).ifPresent(order -> {
             if (!notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_DELIVERED)) return;
-            String to = order.getGuestEmail() != null ? order.getGuestEmail()
-                : (order.getUserId() != null
-                    ? userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null)
-                    : null);
+            String to = resolveEmail(order);
             if (to == null) return;
             String orderRef = "#" + orderId.toString().substring(0, 8).toUpperCase();
-            emailService.sendOrderDelivered(to, orderRef, null, appProperties.getFrontendUrl());
+            eventPublisher.publishEvent(new FulfillmentDeliveredEvent(to, orderRef, appProperties.getFrontendUrl()));
         });
     }
 
-    private void sendShippingNotificationEmail(UUID orderId, Fulfillment f) {
+    private void publishShippedEvent(UUID orderId, Fulfillment f) {
         orderRepo.findById(orderId).ifPresent(order -> {
             if (!notificationPreferenceService.isEnabled(order.getUserId(), NotificationType.ORDER_SHIPPED)) return;
-            String to = order.getGuestEmail() != null ? order.getGuestEmail()
-                : (order.getUserId() != null
-                    ? userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null)
-                    : null);
+            String to = resolveEmail(order);
             if (to == null) return;
             String orderRef = "#" + orderId.toString().substring(0, 8).toUpperCase();
-            emailService.sendShippingNotification(to, orderRef,
-                f.getTrackingNumber(), f.getTrackingCompany(), f.getTrackingUrl(),
-                appProperties.getFrontendUrl());
+            eventPublisher.publishEvent(new FulfillmentShippedEvent(
+                to, orderRef, f.getTrackingNumber(), f.getTrackingCompany(),
+                f.getTrackingUrl(), appProperties.getFrontendUrl()));
         });
+    }
+
+    private String resolveEmail(Order order) {
+        if (order.getGuestEmail() != null) return order.getGuestEmail();
+        if (order.getUserId() != null) {
+            return userRepo.findById(order.getUserId()).map(User::getEmail).orElse(null);
+        }
+        return null;
     }
 
     private void recalculateOrderStatus(UUID orderId) {
