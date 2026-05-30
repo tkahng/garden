@@ -328,18 +328,8 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.CANCELLED, null, null, null, null));
 
-        verify(emailService, never()).sendShippingNotification(
-            eq(adminUser.getEmail()),
-            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
-            eq("T-CANCEL"),
-            isNull(),
-            isNull(),
-            eq("http://localhost:3000"));
-        verify(emailService, never()).sendOrderDelivered(
-            eq(adminUser.getEmail()),
-            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
-            isNull(),
-            eq("http://localhost:3000"));
+        assertThat(applicationEvents.stream(FulfillmentShippedEvent.class).count()).isZero();
+        assertThat(applicationEvents.stream(FulfillmentDeliveredEvent.class).count()).isZero();
     }
 
     @Test
