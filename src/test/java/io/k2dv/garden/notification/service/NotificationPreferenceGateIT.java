@@ -31,6 +31,8 @@ import io.k2dv.garden.product.dto.ProductStatusRequest;
 import io.k2dv.garden.product.model.ProductStatus;
 import io.k2dv.garden.product.service.ProductService;
 import io.k2dv.garden.product.service.VariantService;
+import io.k2dv.garden.fulfillment.event.FulfillmentDeliveredEvent;
+import io.k2dv.garden.fulfillment.event.FulfillmentShippedEvent;
 import io.k2dv.garden.order.event.OrderCancelledEvent;
 import io.k2dv.garden.order.event.OrderConfirmedEvent;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
@@ -50,10 +52,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.contains;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.verify;
 
 /**
  * Verifies that notification preference gates suppress or allow emails
@@ -175,7 +173,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
 
-        verify(emailService).sendShippingNotification(any(), any(), any(), any(), any(), any());
+        assertThat(applicationEvents.stream(FulfillmentShippedEvent.class).count()).isEqualTo(1);
     }
 
     @Test
@@ -191,7 +189,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
 
-        verify(emailService, never()).sendShippingNotification(any(), any(), any(), any(), any(), any());
+        assertThat(applicationEvents.stream(FulfillmentShippedEvent.class).count()).isZero();
     }
 
     // ─── ORDER_DELIVERED gate ─────────────────────────────────────────────────
@@ -208,7 +206,7 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.DELIVERED, null, null, null, null));
 
-        verify(emailService).sendOrderDelivered(any(), any(), any(), any());
+        assertThat(applicationEvents.stream(FulfillmentDeliveredEvent.class).count()).isEqualTo(1);
     }
 
     @Test
@@ -226,6 +224,6 @@ class NotificationPreferenceGateIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.DELIVERED, null, null, null, null));
 
-        verify(emailService, never()).sendOrderDelivered(any(), any(), any(), any());
+        assertThat(applicationEvents.stream(FulfillmentDeliveredEvent.class).count()).isZero();
     }
 }

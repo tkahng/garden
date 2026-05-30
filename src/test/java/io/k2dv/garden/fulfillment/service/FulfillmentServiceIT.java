@@ -9,6 +9,8 @@ import io.k2dv.garden.fulfillment.dto.CreateFulfillmentRequest;
 import io.k2dv.garden.fulfillment.dto.FulfillmentItemRequest;
 import io.k2dv.garden.fulfillment.dto.FulfillmentResponse;
 import io.k2dv.garden.fulfillment.dto.UpdateFulfillmentRequest;
+import io.k2dv.garden.fulfillment.event.FulfillmentDeliveredEvent;
+import io.k2dv.garden.fulfillment.event.FulfillmentShippedEvent;
 import io.k2dv.garden.fulfillment.model.FulfillmentStatus;
 import io.k2dv.garden.inventory.model.InventoryLevel;
 import io.k2dv.garden.inventory.model.Location;
@@ -36,6 +38,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.context.event.ApplicationEvents;
+import org.springframework.test.context.event.RecordApplicationEvents;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -44,12 +48,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 
+@RecordApplicationEvents
 class FulfillmentServiceIT extends AbstractIntegrationTest {
 
     @Autowired FulfillmentService fulfillmentService;
@@ -64,6 +64,7 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
     @Autowired InventoryItemRepository inventoryItemRepo;
     @Autowired InventoryLevelRepository levelRepo;
     @MockitoBean EmailService emailService;
+    @Autowired ApplicationEvents applicationEvents;
 
     private static final AtomicInteger counter = new AtomicInteger(0);
 
@@ -248,13 +249,15 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
             new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
 
         String orderRef = "#" + order.getId().toString().substring(0, 8).toUpperCase();
-        verify(emailService).sendShippingNotification(
-            eq(adminUser.getEmail()),
-            eq(orderRef),
-            eq("T-SHIP"),
-            eq("UPS"),
-            eq("https://track.example/T-SHIP"),
-            eq("http://localhost:3000"));
+        assertThat(applicationEvents.stream(FulfillmentShippedEvent.class))
+            .singleElement()
+            .satisfies(event -> {
+                assertThat(event.to()).isEqualTo(adminUser.getEmail());
+                assertThat(event.orderRef()).isEqualTo(orderRef);
+                assertThat(event.trackingNumber()).isEqualTo("T-SHIP");
+                assertThat(event.trackingCompany()).isEqualTo("UPS");
+                assertThat(event.trackingUrl()).isEqualTo("https://track.example/T-SHIP");
+            });
     }
 
     @Test
@@ -271,13 +274,7 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.SHIPPED, null, null, null, null));
 
-        verify(emailService, times(1)).sendShippingNotification(
-            eq(adminUser.getEmail()),
-            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
-            eq("T-ONCE"),
-            eq("UPS"),
-            isNull(),
-            eq("http://localhost:3000"));
+        assertThat(applicationEvents.stream(FulfillmentShippedEvent.class).count()).isEqualTo(1);
     }
 
     @Test
@@ -310,11 +307,13 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.DELIVERED, null, null, null, null));
 
-        verify(emailService).sendOrderDelivered(
-            eq(adminUser.getEmail()),
-            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
-            isNull(),
-            eq("http://localhost:3000"));
+        String orderRef = "#" + order.getId().toString().substring(0, 8).toUpperCase();
+        assertThat(applicationEvents.stream(FulfillmentDeliveredEvent.class))
+            .singleElement()
+            .satisfies(event -> {
+                assertThat(event.to()).isEqualTo(adminUser.getEmail());
+                assertThat(event.orderRef()).isEqualTo(orderRef);
+            });
     }
 
     @Test
@@ -329,18 +328,8 @@ class FulfillmentServiceIT extends AbstractIntegrationTest {
         fulfillmentService.update(order.getId(), f.id(),
             new UpdateFulfillmentRequest(FulfillmentStatus.CANCELLED, null, null, null, null));
 
-        verify(emailService, never()).sendShippingNotification(
-            eq(adminUser.getEmail()),
-            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
-            eq("T-CANCEL"),
-            isNull(),
-            isNull(),
-            eq("http://localhost:3000"));
-        verify(emailService, never()).sendOrderDelivered(
-            eq(adminUser.getEmail()),
-            eq("#" + order.getId().toString().substring(0, 8).toUpperCase()),
-            isNull(),
-            eq("http://localhost:3000"));
+        assertThat(applicationEvents.stream(FulfillmentShippedEvent.class).count()).isZero();
+        assertThat(applicationEvents.stream(FulfillmentDeliveredEvent.class).count()).isZero();
     }
 
     @Test
