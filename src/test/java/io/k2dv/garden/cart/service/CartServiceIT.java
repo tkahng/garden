@@ -301,6 +301,7 @@ class CartServiceIT extends AbstractIntegrationTest {
     AdminVariantResponse variant = createActiveVariant(new BigDecimal("19.99"));
     UUID sessionId = UUID.randomUUID();
 
+    cartService.getOrCreateActiveCart(userId);
     cartService.addItem(userId, new AddCartItemRequest(variant.id(), 3));
     cartService.getOrCreateGuestCart(sessionId);
     cartService.addGuestItem(sessionId, new AddCartItemRequest(variant.id(), 5));
