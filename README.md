@@ -15,10 +15,12 @@ Spring Boot REST API for the Garden e-commerce platform. Designed as a Shopify a
 ## What's in it
 
 **Core commerce**
+
 - Products, variants, collections, inventory management across locations
 - Cart (authenticated and guest), checkout via Stripe, order lifecycle
 
 **B2B**
+
 - Companies with multi-user membership (Owner / Manager / Member)
 - Per-company product catalogs and price lists with quantity-break pricing and percentage-off / markup rules
 - Quote workflow: cart → quote → review → PDF → accept → order
@@ -27,11 +29,13 @@ Spring Boot REST API for the Garden e-commerce platform. Designed as a Shopify a
 - Company shipping address book
 
 **Post-order**
+
 - Fulfillment with item-level tracking, shipping emails, delivery confirmation
 - Return requests (RMA): submit, approve, reject, complete
 - Refunds via Stripe
 
 **Other**
+
 - Discounts (fixed, percentage, automatic promotions)
 - Gift cards with balance tracking
 - Order templates for repeat ordering
@@ -44,7 +48,7 @@ Spring Boot REST API for the Garden e-commerce platform. Designed as a Shopify a
 
 ```bash
 # Requires PostgreSQL and Java 26
-./mvnw spring-boot:run
+./mvnw spring-boot:run -Dspring-boot.run.profiles=demo
 ```
 
 The API runs on port **8080**. OpenAPI docs are at `/swagger-ui.html`.
