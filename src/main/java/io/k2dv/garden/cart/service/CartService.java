@@ -289,15 +289,16 @@ public class CartService {
     @Transactional
     public CartResponse getOrCreateGuestCart(UUID sessionId) {
         Cart cart = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE)
-            .orElseGet(() -> {
-                cartRepo.findBySessionId(sessionId).ifPresent(c -> {
-                    c.setSessionId(null);
-                    cartRepo.saveAndFlush(c);
-                });
-                Cart c = new Cart();
-                c.setSessionId(sessionId);
-                return cartRepo.save(c);
-            });
+            .orElseGet(() -> cartRepo.findBySessionId(sessionId)
+                .map(existing -> {
+                    existing.setStatus(CartStatus.ACTIVE);
+                    return cartRepo.save(existing);
+                })
+                .orElseGet(() -> {
+                    Cart c = new Cart();
+                    c.setSessionId(sessionId);
+                    return cartRepo.save(c);
+                }));
         return toResponse(cart);
     }
 
