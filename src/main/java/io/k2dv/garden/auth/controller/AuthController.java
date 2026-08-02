@@ -14,6 +14,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
@@ -29,8 +31,9 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ApiResponse<AuthTokenResponse> login(@Valid @RequestBody LoginRequest req) {
-        return ApiResponse.of(authService.login(req));
+    public ApiResponse<AuthTokenResponse> login(@Valid @RequestBody LoginRequest req,
+            @RequestHeader(value = "X-Guest-Session", required = false) UUID guestSessionId) {
+        return ApiResponse.of(authService.login(req, guestSessionId));
     }
 
     @PostMapping("/refresh")

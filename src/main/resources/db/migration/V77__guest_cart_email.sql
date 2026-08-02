@@ -1,0 +1,1 @@
+ALTER TABLE checkout.carts ADD COLUMN IF NOT EXISTS guest_email VARCHAR(255);
