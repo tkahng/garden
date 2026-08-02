@@ -292,7 +292,7 @@ public class CartService {
             .orElseGet(() -> {
                 cartRepo.findBySessionId(sessionId).ifPresent(c -> {
                     c.setSessionId(null);
-                    cartRepo.save(c);
+                    cartRepo.saveAndFlush(c);
                 });
                 Cart c = new Cart();
                 c.setSessionId(sessionId);
