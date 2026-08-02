@@ -2,6 +2,8 @@ package io.k2dv.garden.payment.controller;
 
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
+import io.k2dv.garden.order.dto.GuestOrderResponse;
+import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutRequest;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
@@ -27,6 +29,7 @@ import java.util.UUID;
 public class CheckoutController {
 
     private final PaymentService paymentService;
+    private final OrderService orderService;
 
     @Authenticated
     @PostMapping
@@ -58,6 +61,14 @@ public class CheckoutController {
             @RequestParam("session_id") String sessionId) {
         UUID userId = resolveCurrentUserId();
         return ResponseEntity.ok(ApiResponse.of(paymentService.verifyReturn(sessionId, userId)));
+    }
+
+    @SecurityRequirements({})
+    @GetMapping("/orders/{orderId}/lookup")
+    public ResponseEntity<ApiResponse<GuestOrderResponse>> lookupGuestOrder(
+            @PathVariable UUID orderId,
+            @RequestParam String guestEmail) {
+        return ResponseEntity.ok(ApiResponse.of(orderService.lookupGuestOrder(orderId, guestEmail)));
     }
 
     private UUID resolveCurrentUserId() {
