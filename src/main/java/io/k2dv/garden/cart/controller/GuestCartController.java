@@ -2,14 +2,13 @@ package io.k2dv.garden.cart.controller;
 
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
 import io.k2dv.garden.cart.dto.CartResponse;
+import io.k2dv.garden.cart.dto.SetGuestEmailRequest;
 import io.k2dv.garden.cart.dto.UpdateCartItemRequest;
 import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.Email;
-import jakarta.validation.constraints.NotBlank;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -60,13 +59,11 @@ public class GuestCartController {
         return ResponseEntity.ok(ApiResponse.of(cartService.removeGuestItem(sessionId, itemId)));
     }
 
-    @PutMapping
+    @PutMapping("/email")
     public ResponseEntity<Void> setGuestEmail(
             @RequestHeader("X-Guest-Session") UUID sessionId,
             @RequestBody @Valid SetGuestEmailRequest req) {
         cartService.setGuestEmail(sessionId, req.email());
         return ResponseEntity.noContent().build();
     }
-
-    public record SetGuestEmailRequest(@NotBlank @Email String email) {}
 }

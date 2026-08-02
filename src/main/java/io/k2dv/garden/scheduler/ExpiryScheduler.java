@@ -15,6 +15,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -85,7 +86,7 @@ public class ExpiryScheduler {
     @Transactional
     public void purgeAbandonedGuestCarts() {
         try {
-            Instant cutoff = Instant.now().minus(java.time.Duration.ofDays(props.getCart().getGuestTtlDays()));
+            Instant cutoff = Instant.now().minus(Duration.ofDays(props.getCart().getGuestTtlDays()));
             int items = cartRepo.deleteGuestCartItemsOlderThan(cutoff);
             int carts = cartRepo.deleteGuestCartsOlderThan(cutoff);
             if (carts > 0) {

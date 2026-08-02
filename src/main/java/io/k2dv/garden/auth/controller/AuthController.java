@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.dto.*;
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.auth.service.AuthService;
+import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -24,6 +25,7 @@ import java.util.UUID;
 public class AuthController {
 
     private final AuthService authService;
+    private final CartService cartService;
 
     @PostMapping("/register")
     public ApiResponse<AuthTokenResponse> register(@Valid @RequestBody RegisterRequest req) {
@@ -33,7 +35,17 @@ public class AuthController {
     @PostMapping("/login")
     public ApiResponse<AuthTokenResponse> login(@Valid @RequestBody LoginRequest req,
             @RequestHeader(value = "X-Guest-Session", required = false) UUID guestSessionId) {
-        return ApiResponse.of(authService.login(req, guestSessionId));
+        var tokens = authService.login(req);
+        if (guestSessionId != null) {
+            authService.resolveUserId(req.email()).ifPresent(userId -> {
+                try {
+                    cartService.mergeGuestCartIntoUserCart(guestSessionId, userId);
+                } catch (Exception ignored) {
+                    // Merge failure must not block login
+                }
+            });
+        }
+        return ApiResponse.of(tokens);
     }
 
     @PostMapping("/refresh")

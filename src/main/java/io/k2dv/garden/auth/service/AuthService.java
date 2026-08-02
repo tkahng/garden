@@ -5,7 +5,6 @@ import io.k2dv.garden.auth.model.Identity;
 import io.k2dv.garden.auth.model.IdentityProvider;
 import io.k2dv.garden.auth.model.TokenType;
 import io.k2dv.garden.auth.repository.IdentityRepository;
-import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.iam.service.IamService;
 import io.k2dv.garden.shared.exception.ConflictException;
@@ -16,7 +15,6 @@ import io.k2dv.garden.user.model.User;
 import io.k2dv.garden.user.model.UserStatus;
 import io.k2dv.garden.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,7 +35,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class AuthService {
 
     private static final Duration PASSWORD_RESET_RATE_LIMIT = Duration.ofMinutes(1);
@@ -56,7 +53,6 @@ public class AuthService {
     private final JwtService jwtService;
     private final IamService iamService;
     private final EmailService emailService;
-    private final CartService cartService;
     private final AppProperties props;
     private final BCryptPasswordEncoder passwordEncoder;
 
@@ -103,11 +99,6 @@ public class AuthService {
      */
     @Transactional
     public AuthTokenResponse login(LoginRequest req) {
-        return login(req, null);
-    }
-
-    @Transactional
-    public AuthTokenResponse login(LoginRequest req, UUID guestSessionId) {
         User user = userRepo.findByEmail(req.email())
             .orElseThrow(() -> new UnauthorizedException("INVALID_CREDENTIALS", "Invalid email or password"));
 
@@ -122,18 +113,16 @@ public class AuthService {
             throw new ForbiddenException("ACCOUNT_SUSPENDED", "Your account has been suspended");
         }
 
-        AuthTokenResponse tokens = mintTokenPair(user);
+        return mintTokenPair(user);
+    }
 
-        if (guestSessionId != null) {
-            try {
-                cartService.mergeGuestCartIntoUserCart(guestSessionId, user.getId());
-            } catch (Exception e) {
-                log.error("Failed to merge guest cart {} into user cart for user {}",
-                    guestSessionId, user.getId(), e);
-            }
-        }
-
-        return tokens;
+    /**
+     * Resolves a user ID by email, returning empty if not found. Used by the login
+     * controller to optionally merge a guest cart after successful authentication.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<UUID> resolveUserId(String email) {
+        return userRepo.findByEmail(email).map(User::getId);
     }
 
     /**

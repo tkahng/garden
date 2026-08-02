@@ -1,5 +1,6 @@
 package io.k2dv.garden.config;
 
+import io.k2dv.garden.cart.dto.CartResponse;
 import io.k2dv.garden.cart.model.CartStatus;
 import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.giftcard.dto.GiftCardValidationResponse;
@@ -8,8 +9,11 @@ import io.k2dv.garden.order.dto.GuestOrderResponse;
 import io.k2dv.garden.order.model.OrderStatus;
 import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.service.PaymentService;
+import io.k2dv.garden.search.dto.SearchResponse;
 import io.k2dv.garden.search.service.SearchService;
 import io.k2dv.garden.shared.AbstractIntegrationTest;
+import io.k2dv.garden.shared.dto.PageMeta;
+import io.k2dv.garden.shared.dto.PagedResult;
 import io.k2dv.garden.shipping.service.ShippingService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
@@ -44,7 +48,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     @Test
     void guestCart_get_returns200_withoutAuth() throws Exception {
         when(cartService.getOrCreateGuestCart(eq(SESSION_ID)))
-            .thenReturn(new io.k2dv.garden.cart.dto.CartResponse(
+            .thenReturn(new CartResponse(
                 UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
                 List.of(), null));
 
@@ -56,7 +60,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     @Test
     void guestCart_post_returns200_withoutAuth() throws Exception {
         when(cartService.addGuestItem(eq(SESSION_ID), any()))
-            .thenReturn(new io.k2dv.garden.cart.dto.CartResponse(
+            .thenReturn(new CartResponse(
                 UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
                 List.of(), null));
 
@@ -70,7 +74,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     @Test
     void guestCart_put_returns200_withoutAuth() throws Exception {
         when(cartService.updateGuestItem(eq(SESSION_ID), any(), any()))
-            .thenReturn(new io.k2dv.garden.cart.dto.CartResponse(
+            .thenReturn(new CartResponse(
                 UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
                 List.of(), null));
 
@@ -91,7 +95,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     @Test
     void guestCart_deleteItem_returns200_withoutAuth() throws Exception {
         when(cartService.removeGuestItem(eq(SESSION_ID), any()))
-            .thenReturn(new io.k2dv.garden.cart.dto.CartResponse(
+            .thenReturn(new CartResponse(
                 UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
                 List.of(), null));
 
@@ -125,12 +129,12 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     @Test
     @SuppressWarnings("unchecked")
     void search_returns200_withoutAuth() throws Exception {
-        var emptyPage = new io.k2dv.garden.shared.dto.PagedResult(
+        var emptyPage = new PagedResult(
             List.of(),
-            io.k2dv.garden.shared.dto.PageMeta.builder().page(0).pageSize(10).total(0).build());
+            PageMeta.builder().page(0).pageSize(10).total(0).build());
 
         when(searchService.search(eq("widget"), any(), any()))
-            .thenReturn(new io.k2dv.garden.search.dto.SearchResponse(
+            .thenReturn(new SearchResponse(
                 emptyPage, emptyPage, emptyPage, emptyPage));
 
         mvc.perform(get("/api/v1/search")

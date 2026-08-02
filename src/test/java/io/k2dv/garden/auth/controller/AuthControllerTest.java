@@ -5,6 +5,7 @@ import io.k2dv.garden.auth.dto.AuthTokenResponse;
 import io.k2dv.garden.auth.dto.LoginRequest;
 import io.k2dv.garden.auth.dto.RegisterRequest;
 import io.k2dv.garden.auth.service.AuthService;
+import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.shared.exception.GlobalExceptionHandler;
 import org.junit.jupiter.api.Test;
@@ -15,14 +16,13 @@ import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.util.Optional;
+import java.util.UUID;
+
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
-
-import java.util.UUID;
 
 @WebMvcTest(controllers = AuthController.class)
 @Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
@@ -35,6 +35,8 @@ class AuthControllerTest {
 
     @MockitoBean
     AuthService authService;
+    @MockitoBean
+    CartService cartService;
 
     @Test
     void register_validBody_returns200WithTokens() throws Exception {
@@ -62,7 +64,8 @@ class AuthControllerTest {
 
     @Test
     void login_validBody_returns200WithTokens() throws Exception {
-        when(authService.login(any(LoginRequest.class), isNull())).thenReturn(new AuthTokenResponse("acc.tok.en", "ref.tok.en"));
+        when(authService.login(any(LoginRequest.class))).thenReturn(new AuthTokenResponse("acc.tok.en", "ref.tok.en"));
+        when(authService.resolveUserId(any())).thenReturn(Optional.empty());
 
         LoginRequest req = new LoginRequest("user@example.com", "password123");
 
@@ -76,8 +79,8 @@ class AuthControllerTest {
     @Test
     void login_withGuestSessionHeader_passesSessionIdToService() throws Exception {
         UUID sessionId = UUID.randomUUID();
-        when(authService.login(any(LoginRequest.class), eq(sessionId)))
-            .thenReturn(new AuthTokenResponse("acc.tok.en", "ref.tok.en"));
+        when(authService.login(any(LoginRequest.class))).thenReturn(new AuthTokenResponse("acc.tok.en", "ref.tok.en"));
+        when(authService.resolveUserId(any())).thenReturn(Optional.empty());
 
         LoginRequest req = new LoginRequest("user@example.com", "password123");
 
