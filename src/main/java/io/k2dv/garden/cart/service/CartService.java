@@ -290,6 +290,10 @@ public class CartService {
     public CartResponse getOrCreateGuestCart(UUID sessionId) {
         Cart cart = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE)
             .orElseGet(() -> {
+                cartRepo.findBySessionId(sessionId).ifPresent(c -> {
+                    c.setSessionId(null);
+                    cartRepo.save(c);
+                });
                 Cart c = new Cart();
                 c.setSessionId(sessionId);
                 return cartRepo.save(c);

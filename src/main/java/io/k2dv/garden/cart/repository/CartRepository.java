@@ -15,6 +15,7 @@ import java.util.UUID;
 public interface CartRepository extends JpaRepository<Cart, UUID> {
     Optional<Cart> findByUserIdAndStatus(UUID userId, CartStatus status);
     Optional<Cart> findBySessionIdAndStatus(UUID sessionId, CartStatus status);
+    Optional<Cart> findBySessionId(UUID sessionId);
 
     @Query(value = """
         SELECT c.* FROM checkout.carts c
