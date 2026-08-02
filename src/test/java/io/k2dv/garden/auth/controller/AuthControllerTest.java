@@ -16,9 +16,13 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+
+import java.util.UUID;
 
 @WebMvcTest(controllers = AuthController.class)
 @Import({TestSecurityConfig.class, GlobalExceptionHandler.class})
@@ -58,13 +62,29 @@ class AuthControllerTest {
 
     @Test
     void login_validBody_returns200WithTokens() throws Exception {
-        when(authService.login(any())).thenReturn(new AuthTokenResponse("acc.tok.en", "ref.tok.en"));
+        when(authService.login(any(LoginRequest.class), isNull())).thenReturn(new AuthTokenResponse("acc.tok.en", "ref.tok.en"));
 
         LoginRequest req = new LoginRequest("user@example.com", "password123");
 
         mvc.perform(post("/api/v1/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.accessToken").value("acc.tok.en"));
+    }
+
+    @Test
+    void login_withGuestSessionHeader_passesSessionIdToService() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        when(authService.login(any(LoginRequest.class), eq(sessionId)))
+            .thenReturn(new AuthTokenResponse("acc.tok.en", "ref.tok.en"));
+
+        LoginRequest req = new LoginRequest("user@example.com", "password123");
+
+        mvc.perform(post("/api/v1/auth/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req))
+                        .header("X-Guest-Session", sessionId.toString()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.accessToken").value("acc.tok.en"));
     }

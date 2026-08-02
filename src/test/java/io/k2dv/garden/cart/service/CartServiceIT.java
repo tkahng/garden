@@ -274,4 +274,61 @@ class CartServiceIT extends AbstractIntegrationTest {
 
     assertThat(result.results()).isEmpty();
   }
+
+  // --- mergeGuestCartIntoUserCart ---
+
+  @Test
+  void mergeGuestCartIntoUserCart_transfersItemsAndAbandonsGuestCart() {
+    UUID userId = createUserId();
+    AdminVariantResponse variant = createActiveVariant(new BigDecimal("29.99"));
+    UUID sessionId = UUID.randomUUID();
+
+    cartService.addGuestItem(sessionId, new AddCartItemRequest(variant.id(), 2));
+
+    cartService.mergeGuestCartIntoUserCart(sessionId, userId);
+
+    CartResponse userCart = cartService.getOrCreateActiveCart(userId);
+    assertThat(userCart.items()).hasSize(1);
+    assertThat(userCart.items().get(0).variantId()).isEqualTo(variant.id());
+    assertThat(userCart.items().get(0).quantity()).isEqualTo(2);
+    assertThat(userCart.items().get(0).unitPrice()).isEqualByComparingTo(new BigDecimal("29.99"));
+  }
+
+  @Test
+  void mergeGuestCartIntoUserCart_deduplicatesByVariant() {
+    UUID userId = createUserId();
+    AdminVariantResponse variant = createActiveVariant(new BigDecimal("19.99"));
+    UUID sessionId = UUID.randomUUID();
+
+    cartService.addItem(userId, new AddCartItemRequest(variant.id(), 3));
+    cartService.addGuestItem(sessionId, new AddCartItemRequest(variant.id(), 5));
+
+    cartService.mergeGuestCartIntoUserCart(sessionId, userId);
+
+    CartResponse userCart = cartService.getOrCreateActiveCart(userId);
+    assertThat(userCart.items()).hasSize(1);
+    assertThat(userCart.items().get(0).quantity()).isEqualTo(8);
+  }
+
+  @Test
+  void mergeGuestCartIntoUserCart_noGuestCart_isNoOp() {
+    UUID userId = createUserId();
+
+    cartService.mergeGuestCartIntoUserCart(UUID.randomUUID(), userId);
+
+    CartResponse userCart = cartService.getOrCreateActiveCart(userId);
+    assertThat(userCart.items()).isEmpty();
+  }
+
+  @Test
+  void mergeGuestCartIntoUserCart_emptyGuestCart_isNoOp() {
+    UUID userId = createUserId();
+    UUID sessionId = UUID.randomUUID();
+    cartService.getOrCreateGuestCart(sessionId);
+
+    cartService.mergeGuestCartIntoUserCart(sessionId, userId);
+
+    CartResponse userCart = cartService.getOrCreateActiveCart(userId);
+    assertThat(userCart.items()).isEmpty();
+  }
 }
