@@ -60,7 +60,7 @@ public class GuestCartController {
         return ResponseEntity.ok(ApiResponse.of(cartService.removeGuestItem(sessionId, itemId)));
     }
 
-    @PatchMapping
+    @PutMapping
     public ResponseEntity<Void> setGuestEmail(
             @RequestHeader("X-Guest-Session") UUID sessionId,
             @RequestBody @Valid SetGuestEmailRequest req) {
