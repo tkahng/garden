@@ -283,6 +283,7 @@ class CartServiceIT extends AbstractIntegrationTest {
     AdminVariantResponse variant = createActiveVariant(new BigDecimal("29.99"));
     UUID sessionId = UUID.randomUUID();
 
+    cartService.getOrCreateGuestCart(sessionId);
     cartService.addGuestItem(sessionId, new AddCartItemRequest(variant.id(), 2));
 
     cartService.mergeGuestCartIntoUserCart(sessionId, userId);
@@ -301,6 +302,7 @@ class CartServiceIT extends AbstractIntegrationTest {
     UUID sessionId = UUID.randomUUID();
 
     cartService.addItem(userId, new AddCartItemRequest(variant.id(), 3));
+    cartService.getOrCreateGuestCart(sessionId);
     cartService.addGuestItem(sessionId, new AddCartItemRequest(variant.id(), 5));
 
     cartService.mergeGuestCartIntoUserCart(sessionId, userId);
