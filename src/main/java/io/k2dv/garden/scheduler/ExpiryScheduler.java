@@ -2,6 +2,8 @@ package io.k2dv.garden.scheduler;
 
 import io.k2dv.garden.auth.service.EmailService;
 import io.k2dv.garden.b2b.repository.InvoiceRepository;
+import io.k2dv.garden.cart.repository.CartRepository;
+import io.k2dv.garden.config.AppProperties;
 import io.k2dv.garden.quote.model.QuoteRequest;
 import io.k2dv.garden.quote.model.QuoteStatus;
 import io.k2dv.garden.quote.repository.QuoteRequestRepository;
@@ -26,6 +28,8 @@ public class ExpiryScheduler {
     private final InvoiceRepository invoiceRepo;
     private final UserRepository userRepo;
     private final EmailService emailService;
+    private final CartRepository cartRepo;
+    private final AppProperties props;
 
     @Scheduled(cron = "0 */15 * * * *")
     @SchedulerLock(name = "expireQuotes", lockAtMostFor = "PT14M", lockAtLeastFor = "PT1M")
@@ -73,6 +77,23 @@ public class ExpiryScheduler {
             }
         } catch (Exception e) {
             log.error("Failed to mark invoices overdue", e);
+        }
+    }
+
+    @Scheduled(cron = "0 0 3 * * *")
+    @SchedulerLock(name = "purgeAbandonedGuestCarts", lockAtMostFor = "PT50M", lockAtLeastFor = "PT1M")
+    @Transactional
+    public void purgeAbandonedGuestCarts() {
+        try {
+            Instant cutoff = Instant.now().minus(java.time.Duration.ofDays(props.getCart().getGuestTtlDays()));
+            int items = cartRepo.deleteGuestCartItemsOlderThan(cutoff);
+            int carts = cartRepo.deleteGuestCartsOlderThan(cutoff);
+            if (carts > 0) {
+                log.info("Purged {} abandoned guest carts and {} items older than {} days",
+                    carts, items, props.getCart().getGuestTtlDays());
+            }
+        } catch (Exception e) {
+            log.error("Failed to purge abandoned guest carts", e);
         }
     }
 }

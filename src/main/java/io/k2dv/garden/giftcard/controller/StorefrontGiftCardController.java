@@ -15,7 +15,6 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/v1/storefront/gift-cards")
 @RequiredArgsConstructor
-@Authenticated
 public class StorefrontGiftCardController {
 
     private final GiftCardService giftCardService;
@@ -26,11 +25,13 @@ public class StorefrontGiftCardController {
     }
 
     @GetMapping("/balance")
+    @Authenticated
     public ApiResponse<GiftCardValidationResponse> balance(@RequestParam String code) {
         return ApiResponse.of(giftCardService.validate(code));
     }
 
     @GetMapping("/transactions")
+    @Authenticated
     public ApiResponse<List<GiftCardTransactionResponse>> transactions(@RequestParam String code) {
         return ApiResponse.of(giftCardService.listTransactionsByCode(code));
     }

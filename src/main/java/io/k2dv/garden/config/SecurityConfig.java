@@ -75,9 +75,14 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.GET, "/api/v1/pages/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/blogs/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/menus/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/search/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/storefront/discounts/validate").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/storefront/shipping/**").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/storefront/gift-cards/validate").permitAll()
+                .requestMatchers("/api/v1/guest-cart/**").permitAll()
                 .requestMatchers("/api/v1/webhooks/**").permitAll()
                 .requestMatchers(HttpMethod.GET, "/api/v1/checkout/return").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/v1/checkout/orders/*/lookup").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/checkout/guest").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/v1/newsletter/**").permitAll()
                 // Swagger UI / OpenAPI spec — non-prod only (disabled in prod via properties)
@@ -102,7 +107,7 @@ public class SecurityConfig {
     @Bean
     CorsConfigurationSource corsConfigurationSource() {
         var cors = new CorsConfiguration();
-        cors.setAllowedOriginPatterns(List.of("*"));
+        cors.setAllowedOriginPatterns(List.of(props.getFrontendUrl()));
         cors.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         cors.setAllowedHeaders(List.of("*"));
         cors.setAllowCredentials(true);
