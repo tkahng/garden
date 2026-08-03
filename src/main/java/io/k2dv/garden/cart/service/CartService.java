@@ -289,16 +289,24 @@ public class CartService {
     @Transactional
     public CartResponse getOrCreateGuestCart(UUID sessionId) {
         Cart cart = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE)
-            .orElseGet(() -> cartRepo.findBySessionId(sessionId)
-                .map(existing -> {
-                    existing.setStatus(CartStatus.ACTIVE);
-                    return cartRepo.save(existing);
-                })
-                .orElseGet(() -> {
-                    Cart c = new Cart();
-                    c.setSessionId(sessionId);
-                    return cartRepo.save(c);
-                }));
+            .orElseGet(() -> {
+                Cart abandoned = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ABANDONED)
+                    .orElse(null);
+                if (abandoned != null) {
+                    abandoned.setStatus(CartStatus.ACTIVE);
+                    return cartRepo.save(abandoned);
+                }
+                Cart checkedOut = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.CHECKED_OUT)
+                    .orElse(null);
+                if (checkedOut != null) {
+                    cartItemRepo.deleteByCartId(checkedOut.getId());
+                    checkedOut.setStatus(CartStatus.ACTIVE);
+                    return cartRepo.save(checkedOut);
+                }
+                Cart c = new Cart();
+                c.setSessionId(sessionId);
+                return cartRepo.save(c);
+            });
         return toResponse(cart);
     }
 
@@ -534,7 +542,7 @@ public class CartService {
 
         String currency = cart.getCompanyId() != null
             ? priceListService.getActiveCurrency(cart.getCompanyId()) : "USD";
-        return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), currency, items, cart.getCreatedAt());
+        return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), currency, cart.getGuestEmail(), items, cart.getCreatedAt());
     }
 
     /**

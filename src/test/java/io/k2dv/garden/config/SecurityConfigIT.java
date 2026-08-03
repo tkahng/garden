@@ -49,7 +49,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     void guestCart_get_returns200_withoutAuth() throws Exception {
         when(cartService.getOrCreateGuestCart(eq(SESSION_ID)))
             .thenReturn(new CartResponse(
-                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
+                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD", null,
                 List.of(), null));
 
         mvc.perform(get("/api/v1/guest-cart")
@@ -61,7 +61,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     void guestCart_post_returns200_withoutAuth() throws Exception {
         when(cartService.addGuestItem(eq(SESSION_ID), any()))
             .thenReturn(new CartResponse(
-                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
+                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD", null,
                 List.of(), null));
 
         mvc.perform(post("/api/v1/guest-cart/items")
@@ -75,7 +75,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     void guestCart_put_returns200_withoutAuth() throws Exception {
         when(cartService.updateGuestItem(eq(SESSION_ID), any(), any()))
             .thenReturn(new CartResponse(
-                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
+                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD", null,
                 List.of(), null));
 
         mvc.perform(put("/api/v1/guest-cart/items/{id}", UUID.randomUUID())
@@ -96,7 +96,7 @@ class SecurityConfigIT extends AbstractIntegrationTest {
     void guestCart_deleteItem_returns200_withoutAuth() throws Exception {
         when(cartService.removeGuestItem(eq(SESSION_ID), any()))
             .thenReturn(new CartResponse(
-                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD",
+                UUID.randomUUID(), CartStatus.ACTIVE, SESSION_ID, "USD", null,
                 List.of(), null));
 
         mvc.perform(delete("/api/v1/guest-cart/items/{id}", UUID.randomUUID())

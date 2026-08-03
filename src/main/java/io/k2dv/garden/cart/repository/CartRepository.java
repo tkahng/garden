@@ -33,7 +33,7 @@ public interface CartRepository extends JpaRepository<Cart, UUID> {
     @Modifying
     @Query(value = """
         DELETE FROM checkout.cart_items WHERE cart_id IN (
-            SELECT id FROM checkout.carts WHERE status = 'ABANDONED'
+            SELECT id FROM checkout.carts WHERE status IN ('ABANDONED', 'CHECKED_OUT')
             AND updated_at < :cutoff AND session_id IS NOT NULL
         )
         """, nativeQuery = true)
@@ -41,7 +41,7 @@ public interface CartRepository extends JpaRepository<Cart, UUID> {
 
     @Modifying
     @Query(value = """
-        DELETE FROM checkout.carts WHERE status = 'ABANDONED'
+        DELETE FROM checkout.carts WHERE status IN ('ABANDONED', 'CHECKED_OUT')
         AND updated_at < :cutoff AND session_id IS NOT NULL
         """, nativeQuery = true)
     int deleteGuestCartsOlderThan(@Param("cutoff") Instant cutoff);

@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,6 +23,7 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Tag(name = "Auth", description = "Registration, login, token refresh, and password management")
 @SecurityRequirements({})
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
@@ -40,8 +42,8 @@ public class AuthController {
             authService.resolveUserId(req.email()).ifPresent(userId -> {
                 try {
                     cartService.mergeGuestCartIntoUserCart(guestSessionId, userId);
-                } catch (Exception ignored) {
-                    // Merge failure must not block login
+                } catch (Exception e) {
+                    log.warn("Guest cart merge failed for session {}: {}", guestSessionId, e.getMessage());
                 }
             });
         }
