@@ -117,6 +117,15 @@ public class AuthService {
     }
 
     /**
+     * Resolves a user ID by email, returning empty if not found. Used by the login
+     * controller to optionally merge a guest cart after successful authentication.
+     */
+    @Transactional(readOnly = true)
+    public java.util.Optional<UUID> resolveUserId(String email) {
+        return userRepo.findByEmail(email).map(User::getId);
+    }
+
+    /**
      * Rotates the refresh token (invalidating the old one) and issues a new access + refresh
      * token pair. Detects token-reuse attacks by revoking all active sessions for the user
      * if a previously-consumed token is presented.

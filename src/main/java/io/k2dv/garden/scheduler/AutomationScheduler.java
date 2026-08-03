@@ -63,14 +63,18 @@ public class AutomationScheduler {
             .collect(Collectors.toMap(User::getId, u -> u));
 
         for (Cart cart : carts) {
-            User user = usersById.get(cart.getUserId());
-            if (user == null) continue;
-
             List<String> itemLines = buildCartItemLines(cart.getId());
             if (itemLines.isEmpty()) continue;
 
             String cartUrl = appProperties.getFrontendUrl() + "/cart";
-            emailService.sendAbandonedCartReminder(user.getEmail(), user.getFirstName(), itemLines, cartUrl);
+
+            if (cart.getUserId() != null) {
+                User user = usersById.get(cart.getUserId());
+                if (user == null) continue;
+                emailService.sendAbandonedCartReminder(user.getEmail(), user.getFirstName(), itemLines, cartUrl);
+            } else if (cart.getGuestEmail() != null) {
+                emailService.sendAbandonedCartReminder(cart.getGuestEmail(), null, itemLines, cartUrl);
+            }
 
             cart.setAbandonedReminderSentAt(Instant.now());
             cartRepo.save(cart);

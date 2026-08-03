@@ -3,6 +3,7 @@ package io.k2dv.garden.payment.controller;
 import io.k2dv.garden.config.TestCurrentUserConfig;
 import io.k2dv.garden.config.TestSecurityConfig;
 import io.k2dv.garden.order.model.OrderStatus;
+import io.k2dv.garden.order.service.OrderService;
 import io.k2dv.garden.payment.dto.CheckoutResponse;
 import io.k2dv.garden.payment.dto.CheckoutReturnResponse;
 import io.k2dv.garden.payment.exception.PaymentException;
@@ -33,6 +34,8 @@ class CheckoutControllerTest {
   MockMvc mvc;
   @MockitoBean
   PaymentService paymentService;
+  @MockitoBean
+  OrderService orderService;
 
   @Test
   void checkout_happyPath_returns200WithUrl() throws Exception {

@@ -29,4 +29,7 @@ public class Cart extends BaseEntity {
 
     @Column(name = "company_id")
     private UUID companyId;
+
+    @Column(name = "guest_email")
+    private String guestEmail;
 }

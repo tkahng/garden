@@ -226,6 +226,61 @@ public class CartService {
         });
     }
 
+    /**
+     * Merges items from an active guest cart into the user's active cart, deduplicating
+     * by variantId (quantities are summed). The guest cart is then abandoned.
+     * No-ops silently if no guest cart exists. Skips deleted/inactive variants and
+     * quote-only variants when the user has no company context.
+     */
+    @Transactional
+    public void mergeGuestCartIntoUserCart(UUID sessionId, UUID userId) {
+        var guestCartOpt = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE);
+        if (guestCartOpt.isEmpty()) return;
+
+        Cart guestCart = guestCartOpt.get();
+        List<CartItem> guestItems = cartItemRepo.findByCartId(guestCart.getId());
+        if (guestItems.isEmpty()) {
+            abandonGuestCart(sessionId);
+            return;
+        }
+
+        Cart userCart = cartRepo.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
+            .orElseGet(() -> {
+                Cart c = new Cart();
+                c.setUserId(userId);
+                return cartRepo.save(c);
+            });
+
+        for (CartItem guestItem : guestItems) {
+            var variantOpt = variantRepo.findByIdAndDeletedAtIsNull(guestItem.getVariantId());
+            if (variantOpt.isEmpty()) continue;
+            ProductVariant variant = variantOpt.get();
+            var productOpt = productRepo.findByIdAndDeletedAtIsNull(variant.getProductId());
+            if (productOpt.isEmpty() || productOpt.get().getStatus() != ProductStatus.ACTIVE) continue;
+            if (variant.getPrice() == null && userCart.getCompanyId() == null) continue;
+
+            CartItem existing = cartItemRepo.findByCartIdAndVariantId(userCart.getId(), guestItem.getVariantId())
+                .orElse(null);
+            if (existing != null) {
+                int newQty = existing.getQuantity() + guestItem.getQuantity();
+                if (newQty < variant.getMinimumOrderQty()) continue;
+                existing.setQuantity(newQty);
+                existing.setUnitPrice(resolveItemPrice(userCart, variant, newQty));
+                cartItemRepo.save(existing);
+            } else {
+                if (guestItem.getQuantity() < variant.getMinimumOrderQty()) continue;
+                CartItem newItem = new CartItem();
+                newItem.setCartId(userCart.getId());
+                newItem.setVariantId(guestItem.getVariantId());
+                newItem.setQuantity(guestItem.getQuantity());
+                newItem.setUnitPrice(resolveItemPrice(userCart, variant, guestItem.getQuantity()));
+                cartItemRepo.save(newItem);
+            }
+        }
+
+        abandonGuestCart(sessionId);
+    }
+
     // --- Guest cart ---
 
     /**
@@ -235,6 +290,19 @@ public class CartService {
     public CartResponse getOrCreateGuestCart(UUID sessionId) {
         Cart cart = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ACTIVE)
             .orElseGet(() -> {
+                Cart abandoned = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.ABANDONED)
+                    .orElse(null);
+                if (abandoned != null) {
+                    abandoned.setStatus(CartStatus.ACTIVE);
+                    return cartRepo.save(abandoned);
+                }
+                Cart checkedOut = cartRepo.findBySessionIdAndStatus(sessionId, CartStatus.CHECKED_OUT)
+                    .orElse(null);
+                if (checkedOut != null) {
+                    cartItemRepo.deleteByCartId(checkedOut.getId());
+                    checkedOut.setStatus(CartStatus.ACTIVE);
+                    return cartRepo.save(checkedOut);
+                }
                 Cart c = new Cart();
                 c.setSessionId(sessionId);
                 return cartRepo.save(c);
@@ -308,6 +376,13 @@ public class CartService {
             cart.setStatus(CartStatus.ABANDONED);
             cartRepo.save(cart);
         });
+    }
+
+    @Transactional
+    public void setGuestEmail(UUID sessionId, String email) {
+        Cart cart = findActiveGuestCartOrThrow(sessionId);
+        cart.setGuestEmail(email);
+        cartRepo.save(cart);
     }
 
     /**
@@ -467,7 +542,7 @@ public class CartService {
 
         String currency = cart.getCompanyId() != null
             ? priceListService.getActiveCurrency(cart.getCompanyId()) : "USD";
-        return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), currency, items, cart.getCreatedAt());
+        return new CartResponse(cart.getId(), cart.getStatus(), cart.getCompanyId(), currency, cart.getGuestEmail(), items, cart.getCreatedAt());
     }
 
     /**

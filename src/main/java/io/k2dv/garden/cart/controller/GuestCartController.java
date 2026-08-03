@@ -2,6 +2,7 @@ package io.k2dv.garden.cart.controller;
 
 import io.k2dv.garden.cart.dto.AddCartItemRequest;
 import io.k2dv.garden.cart.dto.CartResponse;
+import io.k2dv.garden.cart.dto.SetGuestEmailRequest;
 import io.k2dv.garden.cart.dto.UpdateCartItemRequest;
 import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.shared.dto.ApiResponse;
@@ -56,5 +57,13 @@ public class GuestCartController {
             @RequestHeader("X-Guest-Session") UUID sessionId,
             @PathVariable UUID itemId) {
         return ResponseEntity.ok(ApiResponse.of(cartService.removeGuestItem(sessionId, itemId)));
+    }
+
+    @PutMapping("/email")
+    public ResponseEntity<Void> setGuestEmail(
+            @RequestHeader("X-Guest-Session") UUID sessionId,
+            @RequestBody @Valid SetGuestEmailRequest req) {
+        cartService.setGuestEmail(sessionId, req.email());
+        return ResponseEntity.noContent().build();
     }
 }

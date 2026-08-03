@@ -11,6 +11,7 @@ public record CartResponse(
     CartStatus status,
     UUID companyId,
     String currency,
+    String guestEmail,
     List<CartItemResponse> items,
     Instant createdAt
 ) {}

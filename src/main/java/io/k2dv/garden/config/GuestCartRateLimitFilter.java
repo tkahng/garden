@@ -25,21 +25,18 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * Per-IP rate limiter for all /api/v1/** endpoints (excluding /api/v1/auth/**,
- * which has its own JDBC-backed limiter).
- *
- * Limits: 300 requests / minute per IP (token bucket, 5 req/sec refill).
- * Buckets are evicted after 2 minutes of inactivity via a bounded Caffeine cache
- * (max 100k unique IPs).
+ * Per-IP rate limiter specifically for guest cart endpoints (/api/v1/guest-cart/**).
+ * Guest cart operations are low-frequency by nature, so the limit is tighter than
+ * the general API rate limiter (60 req/min vs 300 req/min).
  *
  * X-Forwarded-For is only trusted when the direct connection comes from a configured
- * trusted-proxy address (app.rate-limit.trusted-proxies, defaults to loopback only).
+ * trusted-proxy address.
  */
 @Component
-@Order(2)
-public class ApiRateLimitFilter implements Filter {
+@Order(1)
+public class GuestCartRateLimitFilter implements Filter {
 
-    private static final int CAPACITY = 300;
+    private static final int CAPACITY = 60;
     private static final Duration REFILL_PERIOD = Duration.ofMinutes(1);
 
     private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
@@ -49,12 +46,11 @@ public class ApiRateLimitFilter implements Filter {
 
     private final Set<String> trustedProxies;
 
-    public ApiRateLimitFilter(Environment env) {
+    public GuestCartRateLimitFilter(Environment env) {
         List<String> configured = Binder.get(env)
             .bind("app.rate-limit.trusted-proxies", String[].class)
             .map(List::of)
             .orElse(List.of());
-        // Always include loopback so local/dev deployments work without explicit config
         this.trustedProxies = configured.isEmpty()
             ? Set.of("127.0.0.1", "::1", "0:0:0:0:0:0:0:1")
             : configured.stream().collect(Collectors.toUnmodifiableSet());
@@ -69,8 +65,9 @@ public class ApiRateLimitFilter implements Filter {
         }
 
         String path = http.getRequestURI();
-        boolean isGuestCart = path.equals("/api/v1/guest-cart") || path.startsWith("/api/v1/guest-cart/");
-        if (!path.startsWith("/api/v1/") || path.startsWith("/api/v1/auth/") || isGuestCart) {
+        boolean isGuestCart = path.equals("/api/v1/guest-cart")
+            || path.startsWith("/api/v1/guest-cart/");
+        if (!isGuestCart) {
             chain.doFilter(req, resp);
             return;
         }
@@ -100,8 +97,6 @@ public class ApiRateLimitFilter implements Filter {
             .build();
     }
 
-    // Only trust X-Forwarded-For when the direct connection is from a known proxy.
-    // Without this guard any client could spoof an arbitrary IP to bypass per-IP limits.
     private String resolveClientIp(HttpServletRequest request) {
         String remoteAddr = request.getRemoteAddr();
         if (trustedProxies.contains(remoteAddr)) {

@@ -10,6 +10,7 @@ import io.k2dv.garden.inventory.service.InventoryService;
 import io.k2dv.garden.order.dto.CreateDraftOrderRequest;
 import io.k2dv.garden.order.dto.OrderEventResponse;
 import io.k2dv.garden.order.dto.OrderFilter;
+import io.k2dv.garden.order.dto.GuestOrderResponse;
 import io.k2dv.garden.order.dto.OrderItemProductInfo;
 import io.k2dv.garden.order.dto.OrderItemResponse;
 import io.k2dv.garden.order.dto.OrderResponse;
@@ -921,6 +922,53 @@ public class OrderService {
             .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
         order.setMetadata(metadata);
         return toResponse(orderRepo.save(order));
+    }
+
+    @Transactional(readOnly = true)
+    public GuestOrderResponse lookupGuestOrder(UUID orderId, String guestEmail) {
+        Order order = orderRepo.findByIdAndGuestEmail(orderId, guestEmail)
+            .orElseThrow(() -> new NotFoundException("ORDER_NOT_FOUND", "Order not found"));
+        if (order.getUserId() != null) {
+            throw new NotFoundException("ORDER_NOT_FOUND", "Order not found");
+        }
+        return toGuestResponse(order);
+    }
+
+    private GuestOrderResponse toGuestResponse(Order order) {
+        List<OrderItem> orderItems = orderItemRepo.findByOrderId(order.getId());
+
+        Set<UUID> variantIds = orderItems.stream()
+            .map(OrderItem::getVariantId).filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, ProductVariant> variantsById = variantRepo.findAllById(variantIds).stream()
+            .collect(Collectors.toMap(ProductVariant::getId, v -> v));
+
+        Set<UUID> productIds = variantsById.values().stream()
+            .map(ProductVariant::getProductId).collect(Collectors.toSet());
+        Map<UUID, Product> productsById = productRepo.findAllById(productIds).stream()
+            .collect(Collectors.toMap(Product::getId, p -> p));
+
+        Map<UUID, String> resolvedImageUrls = imageResolver.resolveByProductId(productsById.values());
+
+        List<OrderItemResponse> items = orderItems.stream().map(i -> {
+            OrderItemProductInfo productInfo = null;
+            if (i.getVariantId() != null) {
+                ProductVariant variant = variantsById.get(i.getVariantId());
+                if (variant != null) {
+                    Product product = productsById.get(variant.getProductId());
+                    if (product != null) {
+                        productInfo = new OrderItemProductInfo(
+                            product.getId(), product.getTitle(), variant.getTitle(),
+                            resolvedImageUrls.get(product.getId()));
+                    }
+                }
+            }
+            return new OrderItemResponse(i.getId(), i.getVariantId(), i.getQuantity(), i.getUnitPrice(), productInfo);
+        }).toList();
+
+        return new GuestOrderResponse(order.getId(), order.getGuestEmail(), order.getStatus(),
+            order.getTotalAmount(), order.getCurrency(), order.getDiscountAmount(),
+            order.getGiftCardAmount(), order.getShippingCost(), order.getTaxAmount(),
+            order.getShippingAddress(), order.getPoNumber(), items, order.getCreatedAt());
     }
 
     private OrderResponse toResponse(Order order) {

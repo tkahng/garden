@@ -4,6 +4,7 @@ import io.k2dv.garden.auth.dto.*;
 import io.k2dv.garden.auth.security.Authenticated;
 import io.k2dv.garden.auth.security.CurrentUser;
 import io.k2dv.garden.auth.service.AuthService;
+import io.k2dv.garden.cart.service.CartService;
 import io.k2dv.garden.shared.dto.ApiResponse;
 import io.k2dv.garden.user.model.User;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
@@ -11,17 +12,22 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirements;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/auth")
 @RequiredArgsConstructor
 @Tag(name = "Auth", description = "Registration, login, token refresh, and password management")
 @SecurityRequirements({})
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
+    private final CartService cartService;
 
     @PostMapping("/register")
     public ApiResponse<AuthTokenResponse> register(@Valid @RequestBody RegisterRequest req) {
@@ -29,8 +35,19 @@ public class AuthController {
     }
 
     @PostMapping("/login")
-    public ApiResponse<AuthTokenResponse> login(@Valid @RequestBody LoginRequest req) {
-        return ApiResponse.of(authService.login(req));
+    public ApiResponse<AuthTokenResponse> login(@Valid @RequestBody LoginRequest req,
+            @RequestHeader(value = "X-Guest-Session", required = false) UUID guestSessionId) {
+        var tokens = authService.login(req);
+        if (guestSessionId != null) {
+            authService.resolveUserId(req.email()).ifPresent(userId -> {
+                try {
+                    cartService.mergeGuestCartIntoUserCart(guestSessionId, userId);
+                } catch (Exception e) {
+                    log.warn("Guest cart merge failed for session {}: {}", guestSessionId, e.getMessage());
+                }
+            });
+        }
+        return ApiResponse.of(tokens);
     }
 
     @PostMapping("/refresh")

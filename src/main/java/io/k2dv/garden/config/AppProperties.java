@@ -91,6 +91,9 @@ public class AppProperties {
     public static class Cart {
         /** Maximum number of data rows accepted in a bulk CSV upload. */
         private int csvMaxRows = 500;
+
+        /** Days after which abandoned guest carts are permanently deleted. */
+        private int guestTtlDays = 14;
     }
 
     @Valid
